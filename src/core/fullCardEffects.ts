@@ -25,7 +25,7 @@ export function fullCardEffects(s:ReadState,card:CardInstance,targets:string[]):
   const alliedNavy=(region:string)=>s.units.some(u=>u.type==='navy'&&allianceOf(u.country)==='allies'&&u.regionId===region);
   const range=(home:string,n:number,type='army')=>own.some(u=>(type==='base'?u.type!=='air':u.type===type)&&distanceWithin(s,c,home,u.regionId,n));
   const choose=(effects:Effect[],max=1):Effect=>({kind:'choose',seat,min:1,max,options:effects.map((e,i)=>({id:String(i),label:e.label,effects:[e]})),label:`选择 1 至 ${max} 项行动`});
-  const removeChoice=(target:SeatId,units:ReadState['units']):Effect=>({kind:'choose',seat:target,min:1,max:1,label:'选择移除部队，或弃牌库顶两张',options:[{id:'discard',label:'弃牌库顶两张',effects:[top(target,2)]},...units.map(unit=>({id:unit.id,label:`移除${REGIONS.find(r=>r.id===unit.regionId)?.name}的部队`,effects:[{kind:'remove' as const,unit:{...unit},supplied:suppliedUnits(s).has(unit.id),cause:'economic',label:'经济战：移除部队'}]}))]});
+  const removeChoice=(target:SeatId,units:ReadState['units']):Effect=>({kind:'choose',seat:target,min:1,max:1,autoSingle:true,label:units.length?'选择移除自己的部队，或弃牌库顶两张':'没有可移除的部队，必须弃置牌库顶两张',options:[{id:'discard',label:'弃牌库顶两张',effects:[top(target,2)]},...units.map(unit=>({id:unit.id,label:`移除${REGIONS.find(r=>r.id===unit.regionId)?.name}的部队`,effects:[{kind:'remove' as const,unit:{...unit},supplied:suppliedUnits(s).has(unit.id),cause:'economic',label:'经济战：移除部队'}]}))]});
   if(s.rules?.balanceEnabled){
     const choose=(effects:Effect[][]):Effect=>({kind:'choose',seat,min:1,max:1,label:'选择卡牌效果',options:effects.map((effects,i)=>({id:String(i),label:effects.map(e=>e.label).join('；'),effects}))});
     const returnSource=(filter:string):Effect=>({kind:'choose',seat,min:0,max:1,label:`可选择弃置一张【${cardName({definitionId:filter})}】，将本牌洗回牌库`,options:[{id:'return',label:'支付并洗回',effects:[{kind:'cards',seat,from:'hand',to:'discardPile',filter,min:1,max:1,fee:true,label:'支付'+cardName({definitionId:filter})},balanceEffect(seat,'return-source')]}]});
@@ -40,7 +40,7 @@ export function fullCardEffects(s:ReadState,card:CardInstance,targets:string[]):
       case 241:return [balanceEffect('soviet_union','reveal-response')];
       case 27:case 28:return [choose([[a('build_navy')],[a('sea_battle')]])];
       case 33:case 35:return [choose([[a('build_army')],[a('land_battle')]])];
-      case 29:return [a('land_battle'),{kind:'cards',seat,from:'drawPile',to:'hand',min:0,max:1,allowedIds:s.decks[seat].drawPile.filter(c=>(specialCard(c.definitionId,c.balance)?.country??c.country)==='france').map(c=>c.id),shuffle:true,label:'可选择一张法国牌加入手牌'}];
+      case 29:return [a('land_battle'),{kind:'cards',seat,from:'drawPile',to:'hand',min:0,max:1,allowedIds:s.decks[seat].drawPile.filter(c=>(specialCard(c.definitionId,c.balance)?.country??c.country)==='france').map(c=>c.id),label:'可选择一张法国牌加入手牌'}];
       case 61:return [a('recruit_army',['siberia']),a('land_battle',near(s,c,'siberia'))];
       case 64:return [a('recruit_army',['kazakhstan','vladivostok']),a('build_army',['moscow','siberia'])];
       case 65:return [a('recruit_army',['eastern_europe']),a('recruit_army',['ukraine'])];
@@ -49,7 +49,7 @@ export function fullCardEffects(s:ReadState,card:CardInstance,targets:string[]):
       case 166:return [{...a('destroy',['scandinavia']),destroyTypes:['army','navy']} as Effect,a('build_navy',['sea_baltic']),{kind:'extraPlay',seat,from:'hand',mention:'斯堪的纳维亚',allowSkip:true,label:'可额外打出涉及斯堪的纳维亚的手牌'}];
       case 179:return [points(seat,3)];
       case 180:return [points(seat,2*count('air',near(s,c,'western_china'))),top('united_states',2)];
-      case 258:return [{kind:'choose',seat,min:1,max:1,label:'先进技术迭代：选择一张状态卡打出',options:(['drawPile','discardPile'] as const).flatMap(from=>s.decks[seat][from].filter(v=>specialCard(v.definitionId,v.balance)?.type==='状态').map(v=>({id:v.id,label:v.definitionId,effects:[{kind:'extraPlay' as const,seat,from,selectedCardId:v.id,onlyCardIds:[v.id],label:'打出所选状态卡'}]})))},balanceEffect(seat,'shuffle-deck')];
+      case 258:return [{kind:'choose',seat,min:1,max:1,label:'先进技术迭代：选择一张状态卡打出',options:(['drawPile','discardPile'] as const).flatMap(from=>s.decks[seat][from].filter(v=>specialCard(v.definitionId,v.balance)?.type==='状态').map(v=>({id:v.id,label:v.definitionId,effects:[{kind:'extraPlay' as const,seat,from,selectedCardId:v.id,onlyCardIds:[v.id],label:'打出所选状态卡'}]})))}];
       case 252:return [{kind:'cards',seat,from:'hand',to:'discardPile',min:3,max:3,fee:true,label:'弃置3张手牌'},act('germany','recruit_army',['western_europe']),act('germany','recruit_army',['italy'])];
       case 253:return [{...a('destroy',['sea_north_sea']),destroyTypes:['navy']} as Effect];
     }
@@ -96,10 +96,10 @@ export function fullCardEffects(s:ReadState,card:CardInstance,targets:string[]):
     case 112:return [top('japan',2*own.filter(u=>u.type==='army'||u.type==='air').length)];
     case 152:return [a('build_navy',['sea_north_sea']),a('land_battle',['british_isles'])];
     case 150:return [{...top(seat,1),fee:true},a('recruit_army',['eastern_europe']),{kind:'extraPlay',seat,from:'hand',label:'额外打出一张手牌'}];
-    case 151:return [{kind:'extraPlay',seat,from:'drawPile',filter:'状态',shuffle:true,label:'从牌库选择一张状态牌打出，之后洗牌'}];
+    case 151:return [{kind:'extraPlay',seat,from:'drawPile',filter:'状态',label:'从牌库选择一张状态牌打出'}];
     case 154:return s.units.some(u=>u.type==='army'&&['germany','soviet_union'].includes(u.country)&&u.regionId==='ross_region')?[a('build_navy',['sea_baltic']),a('recruit_army',['scandinavia']),{kind:'extraPlay',seat,from:'hand',mention:'斯堪的纳维亚',label:'额外打出正文明确涉及斯堪的纳维亚的牌'}]:[];
     case 155:return [a('build_navy',['sea_black']),a('recruit_army',['middle_east'])];
-    case 153:if(s.rules?.balanceEnabled)return [{kind:'cards',seat,from:'drawPile',to:'hand',min:Math.min(2,s.decks[seat].drawPile.length),max:2,shuffle:true,label:'从牌库检索2张牌加入手牌并洗混牌库'},balanceEffect(seat,'discard-to-seven')];return [{kind:'cards',seat,from:'drawPile',to:'hand',min:0,max:2,label:'选择至多两张牌加入手牌（可不选）'},{kind:'cards',seat,from:'hand',to:'discardPile',min:1,max:1,shuffle:true,fee:true,deferredFee:true,label:'弃置一张手牌并洗牌'}];
+    case 153:if(s.rules?.balanceEnabled)return [{kind:'cards',seat,from:'drawPile',to:'hand',min:Math.min(2,s.decks[seat].drawPile.length),max:2,label:'从牌库检索2张牌加入手牌'},balanceEffect(seat,'discard-to-seven')];return [{kind:'cards',seat,from:'drawPile',to:'hand',min:0,max:2,label:'选择至多两张牌加入手牌（可不选）'},{kind:'cards',seat,from:'hand',to:'discardPile',min:1,max:1,fee:true,deferredFee:true,label:'弃置一张手牌'}];
     case 157:case 237:return [points(seat,own.filter(u=>u.type!=='air'&&u.regionId!==(id===157?'germany':'italy')).length)];
     case 159:return [act('italy','recruit_army',['balkans']),a('destroy',['ukraine'])];
     case 160:return [choose(['build_army','build_navy','land_battle','sea_battle'].map(action=>a(action as 'build_army')))];

@@ -77,7 +77,7 @@ export function historyEffects(s:ReadState,card:CardInstance):Effect[]{
  }}
  switch(id){
  case 'DE-13':return [a('recruit_army',['italy'])];case 'DE-14':case 'UK-11':return [a('recruit_army',['eastern_europe'])];
- case 'DE-15':return [score(own.filter(u=>u.type!=='air').length)];case 'DE-16':return [preludeEffect(seat,'arm-from-deck',2),preludeEffect(seat,'shuffle')];
+ case 'DE-15':return [score(own.filter(u=>u.type!=='air').length)];case 'DE-16':return [preludeEffect(seat,'arm-from-deck',2)];
  case 'DE-17':case 'US-11':return [a('build_navy')];
  case 'DE-18':return (['united_kingdom','soviet_union','united_states'] as SeatId[]).map(v=>top(v,3));
  case 'DE-19':case 'US-09':return [preludeEffect(seat,'inspect-status'),preludeEffect(seat,'shuffle-normal')];

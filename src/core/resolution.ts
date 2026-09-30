@@ -1,3 +1,4 @@
+import {sortCardChoices} from './cardChoiceOrder';
 import {fact} from './factObserver';
 import {publicCostIds} from './cardCosts';
 import {ACTION_NAMES} from './effectNames';
@@ -7,7 +8,7 @@ import {copiedStatusRules} from './copiedStatus';
 import {checkNeutralitySupply,checkNeutralityAttack,mayReallocate} from './neutrality';
 import {applyPreludeEffect} from './prelude';
 import {declarePublicCard,recordPublicEffect,revealPublic,concealPublic,publicRecord} from './publicHistory';
-import { COUNTRY_NAMES, shuffle, canReallocateCard, reallocationCards, seatOf } from './basic';
+import { COUNTRY_NAMES, shuffle, insertRandom, canReallocateCard, reallocationCards, seatOf } from './basic';
 import { boardOptions, applyBoardEffect } from './boardEffects';
 import { airDestinations } from './actions';
 import { realTriggers } from './specialCards';
@@ -34,7 +35,7 @@ function record(s:GameState,code:string,text:string) {
 }
 function ask(s:GameState, value:Omit<ChoiceRequest,'id'>) {
   const r=engine(s);
-  r.choice={...value,id:uid(r,'choice')}; s.operatorSeat=value.seat;
+  r.choice={...value,options:sortCardChoices(value.options),id:uid(r,'choice')}; s.operatorSeat=value.seat;
   if(s.settings.ignoreOtherPlayerInterrupts)s.viewSeat=value.seat;
   for (const task of r.stack) if (task.kind==='frame') frameById(r,task.id).status=value.kind==='TRIGGER' ? 'WAITING_RESPONSE' : 'WAITING_CHOICE';
   fact(s,'decision_opened',value.prompt,{seat:value.seat});
@@ -251,13 +252,13 @@ function finishFrame(s:GameState,f:ResolutionFrame) {
       const cards=deck.resolving.splice(index,1);
       if(s.rules?.balanceEnabled&&cards[0]?.definitionId==='special_251'&&f.finalZone==='discardPile')f.finalZone='removed';
       if(s.prelude?.historyDiscard&&f.finalZone==='discardPile'&&cards.every(c=>c.definitionId.startsWith('prelude_')&&specialCard(c.definitionId,c.balance)?.type==='历史'))s.prelude.decks[f.owner].discardPile.push(...cards);
+      else if(f.finalZone==='drawPile')for(const card of cards)insertRandom(deck.drawPile,card,s);
       else deck[f.finalZone].push(...cards);
-      if(f.finalZone==='drawPile') shuffle(deck.drawPile,s);
     }
   }
   f.status='COMPLETE'; engine(s).stack.pop();
   checkNeutralitySupply(s);
-  record(s,'FINISH_CARD_RESOLUTION',`【${f.source}】及其子结算完成${f.cardId?`；最终去向：${({discardPile:'弃牌堆',active:'持续生效区',hand:'手牌',drawPile:'牌库并洗混',removed:'移出游戏',faceDown:'暗置区'})[f.finalZone]}`:''}。`);
+  record(s,'FINISH_CARD_RESOLUTION',`【${f.source}】及其子结算完成${f.cardId?`；最终去向：${({discardPile:'弃牌堆',active:'持续生效区',hand:'手牌',drawPile:'牌库随机位置',removed:'移出游戏',faceDown:'暗置区'})[f.finalZone]}`:''}。`);
 }
 function paymentBranch(e:Effect){
  if(e.kind!=='choose'||e.min!==0||e.max!==1||e.options.length!==1)return;
@@ -272,7 +273,8 @@ function selectionRequest(s:GameState,f:ResolutionFrame,e:Effect):boolean {
  }
  if(e.kind==='choose'){
   const options=e.options.filter(o=>canExecuteEffects(s,o.effects));
-  ask(s,{kind:'SELECT',preselect:true,seat:e.seat,prompt:e.label,min:e.min,max:Math.min(e.max,options.length),options:options.map(o=>({id:o.id,label:o.label})),frameId:f.id,canSkip:e.min===0||!!e.optional&&!e.accepted});return true;
+  if(e.autoSingle&&e.min===1&&options.length===1){e.selectedIds=[options[0].id];e.accepted=true;return false;}
+  ask(s,{kind:'SELECT',preselect:true,seat:e.seat,prompt:e.label,min:e.min,max:Math.min(e.max,options.length),options:options.map(o=>({id:o.id,label:o.label})),frameId:f.id,canSkip:e.min===0||e.seat===f.owner&&!!e.optional&&!e.accepted});return true;
  }
  return false;
 }
@@ -314,6 +316,7 @@ function apply(s:GameState,f:ResolutionFrame,e:Effect):boolean {
   else if(e.kind==='choose') {
     if(e.selectedIds){const payment=paymentBranch(e);const options=payment?e.options:e.options.filter(o=>e.selectedIds!.includes(o.id));if(options.some(o=>!canExecuteEffects(s,o.effects))){delete e.selectedIds;selectionRequest(s,f,e);return false;}const effects=structuredClone(options.flatMap(o=>o.effects));if(payment&&effects[0]?.kind==='cards')effects[0].selectedIds=[...e.selectedIds];f.effects.splice(f.nextEffectIndex+1,0,...effects);event.applied=true;event.outcome='succeeded';r.trace.push(e.label);return true;}
     const options=e.options.filter(o=>canExecuteEffects(s,o.effects));
+    if(e.autoSingle&&e.min===1&&options.length===1){f.effects.splice(f.nextEffectIndex+1,0,...structuredClone(options[0].effects));fact(s,'automatic_choice',e.label,{seat:e.seat,selected:[options[0].id],reason:'only_legal_option'});event.applied=true;event.outcome='succeeded';r.trace.push(e.label);return true;}
     ask(s,{kind:'SELECT',seat:e.seat,prompt:e.label,min:e.min,max:Math.min(e.max,options.length),options:options.map(o=>({id:o.id,label:o.label})),frameId:f.id});return false;
   } else if(e.kind==='randomReturn') {
     const deck=s.decks[e.seat],random=[...deck.discardPile];shuffle(random,s);
@@ -709,7 +712,7 @@ export function resolveChoice(s:GameState,seat:SeatId,choiceId:string,ids:string
     const index=source.findIndex(card=>card.id===ids[0] && canReallocateCard(card));
     if(index<0)return false;
     publicRecord(s,e.seat,COUNTRY_NAMES[e.seat]+'执行资源重整。');
-    deck.hand.push(...source.splice(index,1));shuffle(deck.drawPile,s);s.redistributed=true;
+    deck.hand.push(...source.splice(index,1));s.redistributed=true;
     Object.assign(r.events.find(event=>event.id===f.currentEventId)!,{applied:true,outcome:'succeeded'});
     r.trace.push(e.label);f.stage='After';r.choice=null;
   } else if(c.kind==='EFFECTS') {

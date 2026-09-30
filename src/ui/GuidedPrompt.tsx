@@ -1,3 +1,4 @@
+import {sortCardChoices} from '../core/cardChoiceOrder';
 import {DraggableWindow} from './DraggableWindow';
 import {coversCost} from '../core/cardCosts';
 import { useState } from 'react';
@@ -56,9 +57,9 @@ export function GuidedPrompt({state,selected,toggle,focusCard,playCardId,playTar
  const name=source?cardName(source):'';
  const prompt=c.kind==='TRIGGER'?<>{context.before}{context.card&&link(context.card)}{context.after}</>:source&&plain.includes(name)?<>{plain.slice(0,plain.indexOf(name))}{link(source)}{plain.slice(plain.indexOf(name)+name.length)}</>:plain;
  const alternatives=focusCard?(projection.cards[focusCard]??[]):[];
- if(c.kind==='SELECT'&&c.prompt==='选择弃置一张明置响应，或随机弃一张未公开响应')return <DraggableWindow className="guided-sort-window" role="dialog" aria-label="选择弃置响应"><p>{c.prompt}</p><div className="card-grid">{c.options.filter(o=>o.id!=='hidden').map(o=>{const card=choiceCard(state,o);return <button key={o.id} className="hand-card" disabled={busy} onClick={()=>choose([o.id])}>{card?<CardFace card={card}/>:o.label}</button>;})}</div>{c.options.some(o=>o.id==='hidden')&&<button disabled={busy} onClick={()=>choose(['hidden'])}>随机弃置一张未公开响应</button>}</DraggableWindow>;
+ if(c.kind==='SELECT'&&c.prompt==='选择弃置一张明置响应，或随机弃一张未公开响应')return <DraggableWindow className="guided-sort-window" role="dialog" aria-label="选择弃置响应"><p>{c.prompt}</p><div className="card-grid">{sortCardChoices(c.options).filter(o=>o.id!=='hidden').map(o=>{const card=choiceCard(state,o);return <button key={o.id} className="hand-card" disabled={busy} onClick={()=>choose([o.id])}>{card?<CardFace card={card}/>:o.label}</button>;})}</div>{c.options.some(o=>o.id==='hidden')&&<button disabled={busy} onClick={()=>choose(['hidden'])}>随机弃置一张未公开响应</button>}</DraggableWindow>;
  if(c.batchResponse){
-  return <div className="guided-prompt" role="dialog" aria-label="计分状态批量响应"><p>{c.batchResponse==='before'?'以下计分状态即将生效，选择要响应的卡牌':'以下计分状态已结算，选择要响应的卡牌'}</p><div className="guided-options">{c.options.map(o=><button key={o.id} disabled={busy} onClick={()=>choose([o.id])}>{o.label}</button>)}</div><button disabled={busy} onClick={()=>choose([])}>全部跳过</button></div>;
+  return <div className="guided-prompt" role="dialog" aria-label="计分状态批量响应"><p>{c.batchResponse==='before'?'以下计分状态即将生效，选择要响应的卡牌':'以下计分状态已结算，选择要响应的卡牌'}</p><div className="guided-options">{sortCardChoices(c.options).map(o=><button key={o.id} disabled={busy} onClick={()=>choose([o.id])}>{o.label}</button>)}</div><button disabled={busy} onClick={()=>choose([])}>全部跳过</button></div>;
  }
  if(c.kind==='EXTRA_CARD'&&feeEffect?.kind==='extraPlay'&&feeEffect.returnOnSkip&&c.options.length===1){
   const option=c.options[0],card=choiceCard(state,option);
@@ -71,7 +72,7 @@ export function GuidedPrompt({state,selected,toggle,focusCard,playCardId,playTar
    {c.max>1&&<small>已选 {selected.length}/{c.max}</small>}
    {!['AIR_DEFENSE','AIR_INTERCEPT'].includes(c.kind)&&<div><button disabled={busy||!feeValid||!immediate&&(selected.length<required||selected.length>c.max)} onClick={()=>choose(immediate?['execute']:selected)}>确认</button>{canSkip&&<button disabled={busy} onClick={()=>choose([])}>跳过</button>}</div>}
   </div>
-  {(projection.ordered||preludeChoices)&&<DraggableWindow className="guided-sort-window" aria-label={statusSearch?'选择状态牌':preludeChoices?'序章卡牌选择':'候选卡牌选择'}><div className="card-grid">{c.options.map(o=>{const card=choiceCard(state,o);return card?<button className={`hand-card${selected.includes(o.id)?' selected':''}`} key={o.id} disabled={busy} onClick={()=>toggle(o.id)}><CardFace card={card} hint={selected.includes(o.id)?`第 ${selected.indexOf(o.id)+1} 张`:feeEffect?.kind==='cards'&&feeEffect.order?'点击排序':'点击选择'}/></button>:null;})}</div></DraggableWindow>}
+  {(projection.ordered||preludeChoices)&&<DraggableWindow className="guided-sort-window" aria-label={statusSearch?'选择状态牌':preludeChoices?'序章卡牌选择':'候选卡牌选择'}><div className="card-grid">{sortCardChoices(c.options).map(o=>{const card=choiceCard(state,o);return card?<button className={`hand-card${selected.includes(o.id)?' selected':''}`} key={o.id} disabled={busy} onClick={()=>toggle(o.id)}><CardFace card={card} hint={selected.includes(o.id)?`第 ${selected.indexOf(o.id)+1} 张`:feeEffect?.kind==='cards'&&feeEffect.order?'点击排序':'点击选择'}/></button>:null;})}</div></DraggableWindow>}
   {indexWindow}
  </>;
 }

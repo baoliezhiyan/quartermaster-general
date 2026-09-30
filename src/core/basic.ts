@@ -53,6 +53,20 @@ export function shuffle<T>(items: T[], state: Pick<GameState, 'randomState'>): v
   }
   if(recordingFacts())randomFact(state,before,input,structuredClone(items));
 }
+/** Insert at one uniformly selected slot; preserve all existing relative order.
+ * The replay permutation hook records/injects the result without rerunning randomness. */
+export function insertRandom<T>(items:T[],item:T,state:Pick<GameState,'randomState'>):void {
+  items.push(item);
+  if(injectReplayShuffle(items,state))return;
+  const before=state.randomState,input=recordingFacts()?structuredClone(items):[];
+  if(items.length>1){
+    state.randomState=(state.randomState+0x6d2b79f5)>>>0;
+    let n=state.randomState;n=Math.imul(n^n>>>15,n|1);n^=n+Math.imul(n^n>>>7,n|61);
+    const index=Math.floor(((n^n>>>14)>>>0)/4294967296*items.length);
+    items.pop();items.splice(index,0,item);
+  }
+  if(recordingFacts())randomFact(state,before,input,structuredClone(items));
+}
 export function makeDecks(state: Pick<GameState, 'randomState'>, mode:GameState['mode']='BASIC_DEBUG',balance=false,neutrality=false,initialize=true): Record<SeatId, DeckState> {
   return Object.fromEntries<DeckState>(SEATS.map(seat => {
     const cards: CardInstance[] = [];
