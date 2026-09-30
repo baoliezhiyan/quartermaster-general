@@ -1,4 +1,5 @@
 import {randomFact,recordingFacts} from './factObserver';
+import {injectReplayShuffle} from './replayHooks';
 import { SPECIAL_CARDS, regularCatalog, specialCard } from './cardCatalog';
 import { SEATS } from './types';
 import { hasStatus } from './modifiers';
@@ -40,6 +41,7 @@ export const cardName = (card: { definitionId: string; balance?:boolean }) => BA
 
 /** Explicit serializable PRNG state; seed zero is valid. */
 export function shuffle<T>(items: T[], state: Pick<GameState, 'randomState'>): void {
+  if(injectReplayShuffle(items,state))return;
   const before=state.randomState,input=recordingFacts()?structuredClone(items):[];
   for (let i = items.length - 1; i > 0; i--) {
     state.randomState = (state.randomState + 0x6d2b79f5) >>> 0;

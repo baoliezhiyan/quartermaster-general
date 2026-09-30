@@ -1,4 +1,5 @@
 import {fact} from './factObserver';
+import {nextUnitId} from './replayHooks';
 import { airMoveOptions, airPowerOptions, battleOptions } from './actions';
 import type { BasicOption } from './actions';
 import { placementPlans } from './placement';
@@ -33,7 +34,7 @@ export function applyBoardEffect(s:GameState,e:BoardEffect,queueRemoval?:(id:str
   e.option=o;
   if(o.replacement)e.action=o.replacement;
   const eliminate=(id:string)=>queueRemoval?queueRemoval(id):remove(s,id);
-  const newId=()=>`unit:${s.revision}:${++s.resolution!.serial}`;
+  const newId=()=>nextUnitId(s);
   if(o.mode==='build') {
     if(o.recycleId) remove(s,o.recycleId);
     const old=s.units.find(u=>u.country===e.country && u.type===o.unitType && u.regionId===o.regionId);

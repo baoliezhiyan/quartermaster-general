@@ -1,6 +1,11 @@
-import {parseMatchLog} from '../src/matchLog/codec';
-import {replayNode} from '../src/matchLog/view';
-import {GAME_VERSION} from '../src/matchLog/normalize';
+import {parseReplay} from '../src/actionReplay/codec';
+import {Player} from '../src/actionReplay/player';
+import {actions} from '../src/actionReplay/recorder';
+import type {Archive} from '../src/actionReplay/codec';
+const lastState=(a:Archive)=>new Player(a).seek(a.groups.at(-1)?.root.actionId??null,true);
+
+
+
 import {describe,it,expect} from 'vitest';
 import {Room} from '../src/network/Room';
 import type {Identity,RoomSnapshot,RoomRequest} from '../src/network/protocol';
@@ -83,7 +88,7 @@ describe('multiplayer room',()=>{
   for(const peer of [gm,su,observer,watch]){expect(peer.snapshot.state!.neutrality!.united_states.neutral).toBe(false);expect(peer.snapshot.state!.neutralityNotices).toHaveLength(1);expect(peer.snapshot.state!.scores.united_states).toBe(4);}
   expect(watch.snapshot.state!.decks.soviet_union.hand.every(c=>c.definitionId==='hidden')).toBe(true);
   const save=await gm.call('exportSave');await gm.call('importSave',save);expect(gm.snapshot.state!.scores.united_states).toBe(4);expect(await gm.call('checkReplay')).toBe(true);
-  const archive=await parseMatchLog(await gm.call('exportReplay') as string,GAME_VERSION);expect(archive.frames.at(-1)!.state.scores.bySeat.united_states).toBe(4);await expect(gm.call('importReplay',await gm.call('exportReplay'))).rejects.toThrow('只读');
+  const archive=await parseReplay(await gm.call('exportReplay') as string);expect((await lastState(archive)).scores.united_states).toBe(4);await expect(gm.call('importReplay',await gm.call('exportReplay'))).rejects.toThrow('只读');
   expect(gm.snapshot.info.replayMode).toBe(false);expect(gm.snapshot.state!.neutrality!.united_states.neutral).toBe(false);expect(gm.snapshot.state!.scores.united_states).toBe(4);
  });
  it('six prelude seats keep private hands, fixed views, and recoverable replay nodes',async()=>{
@@ -94,7 +99,7 @@ describe('multiplayer room',()=>{
   const de=players[0];let s=de.snapshot.state!;await de.call('dispatch',{type:'DISCARD_PRELUDE_TOP',seat:'germany',expectedRevision:s.revision});s=de.snapshot.state!;
   await de.call('dispatch',{type:'PLAY_PRELUDE',seat:'germany',expectedRevision:s.revision,cardId:s.prelude!.decks.germany.hand[0].id});
   expect(de.snapshot.state!.viewSeat).toBe('germany');expect(gm.snapshot.state!.viewSeat).toBe('united_kingdom');expect(players[1].snapshot.state!.activeSeat).toBe('united_kingdom');
-  expect(await gm.call('checkReplay')).toBe(true);const archive=await parseMatchLog(await gm.call('exportReplay') as string,GAME_VERSION);expect(archive.frames.at(-1)!.state.prelude?.active).toBe(true);const own=replayNode(archive,archive.frames.at(-1)!.seq,false,'germany').state;expect(own.areas.find(a=>a.areaId==='united_kingdom/prelude_hand')!.cardIds).toEqual([]);expect(gm.snapshot.info.replayMode).toBe(false);
+  expect(await gm.call('checkReplay')).toBe(true);const archive=await parseReplay(await gm.call('exportReplay') as string);expect((await lastState(archive)).prelude?.active).toBe(true);const own=projectState(await lastState(archive),{kind:'observer',seat:'germany'},'germany')!;expect(own.prelude!.decks.united_kingdom.hand.every(c=>c.definitionId==='hidden')).toBe(true);expect(gm.snapshot.info.replayMode).toBe(false);
  });
  it('sends a hidden response only to its country then reveals it after activation',async()=>{
   const f=await fixture(),gm=await f.join('GM'),de=await f.join('德国'),uk=await f.join('英国'),watch=await f.join('观察者');
@@ -105,7 +110,7 @@ describe('multiplayer room',()=>{
   const c=uk.snapshot.state!.resolution!.choice!;expect(c.seat).toBe('united_kingdom');expect(de.snapshot.state!.resolution!.choice).toBeNull();expect(watch.snapshot.state!.resolution!.choice).toBeNull();
   expect(JSON.stringify(watch.snapshot.state)).not.toContain('反潜战术');expect(JSON.stringify(watch.snapshot.state)).not.toContain('rollback');
   await uk.call('dispatch',{type:'RESOLVE_ENGINE_CHOICE',seat:'united_kingdom',expectedRevision:uk.snapshot.state!.revision,choiceId:c.id,ids:[c.options.find(o=>o.label.includes('反潜战术'))!.id]});
-  expect(watch.snapshot.state!.publicLog!.some(l=>l.text.includes('反潜战术'))).toBe(true);expect(de.snapshot.state!.viewSeat).toBe('germany');expect(uk.snapshot.state!.viewSeat).toBe('united_kingdom');expect(await gm.call('checkReplay')).toBe(true);const archive=await parseMatchLog(await gm.call('exportReplay') as string,GAME_VERSION);expect(archive.frames.some(f=>f.events.some(e=>e.eventType==='window_opened'))).toBe(true);expect(archive.frames.some(f=>'action'in f&&f.action?.actorSeat==='united_kingdom')).toBe(true);
+  expect(watch.snapshot.state!.publicLog!.some(l=>l.text.includes('反潜战术'))).toBe(true);expect(de.snapshot.state!.viewSeat).toBe('germany');expect(uk.snapshot.state!.viewSeat).toBe('united_kingdom');expect(await gm.call('checkReplay')).toBe(true);const archive=await parseReplay(await gm.call('exportReplay') as string);expect(archive.groups.some(g=>actions(g.root).some(a=>a.kind==='response'&&a.decisionSeat==='united_kingdom'))).toBe(true);expect((await lastState(archive)).scores).toEqual(gm.snapshot.state!.scores);
  });
  it('accepts simultaneous reveal acknowledgements and replays the result barrier deterministically',async()=>{
   const f=await fixture(),gm=await f.join('GM');await gm.call('seat',{kind:'gm'});
@@ -124,13 +129,13 @@ describe('multiplayer room',()=>{
   }
   expect(gm.snapshot.state!.resolution!.choice!.seat).toBe('germany');expect(players[2].snapshot.state!.resolution!.waiting).toBe(true);expect(players[2].snapshot.state!.resolution).not.toHaveProperty('waitingFor');expect(gm.snapshot.state!.resolution!.choice!.seat).toBe('germany');
   expect(await gm.call('checkReplay')).toBe(true);
-  const archive=await parseMatchLog(await gm.call('exportReplay') as string,GAME_VERSION);expect(archive.frames.filter(f=>'action'in f&&f.action?.selection&&JSON.stringify(f.action.selection).includes('ACK_RESPONSE_NOTICE'))).toHaveLength(6);expect(archive.frames.at(-1)!.state.pendingDecisions.some(d=>d.decisionSeat==='germany')).toBe(true);
+  const archive=await parseReplay(await gm.call('exportReplay') as string);expect(JSON.stringify(archive.groups)).not.toContain('ACK_RESPONSE_NOTICE');expect((await lastState(archive)).resolution!.choice!.seat).toBe('germany');
  });
  it('upgrades an imported legacy snapshot while retaining a replayable legacy history',async()=>{
   const f=await fixture(),gm=await f.join('GM');await gm.call('seat',{kind:'gm'});
   const save=responsePreset('anti-submarine','legacy-save');delete save.state.resolutionVersion;save.replayBase=structuredClone(save.state);save.rounds=[];save.nations=[];
   await gm.call('importSave',JSON.stringify(save));expect(gm.snapshot.state!.resolutionVersion).toBe(3);expect(await gm.call('checkReplay')).toBe(true);
-  const file=await parseMatchLog(await gm.call('exportReplay') as string,GAME_VERSION);expect(file.header.origin.kind).toBe('snapshot');expect(file.start.state.phase).toBe(gm.snapshot.state!.phase);
+  const file=await parseReplay(await gm.call('exportReplay') as string);expect(file.header.origin).toBe('snapshot');expect(file.start.state.ruleState.phase).toBe(gm.snapshot.state!.phase);
  });
  it('starts empty, supports exclusive seats, unlimited observers and any vacant GM',async()=>{
   const f=await fixture(),a=await f.join('甲'),b=await f.join('乙');expect(a.snapshot.state).toBeNull();expect(a.snapshot.room.access.kind).toBe('public');
@@ -171,7 +176,7 @@ describe('multiplayer room',()=>{
  });
  it('replay stays independent and cannot replace the room; server restart stays empty',async()=>{
   const f=await fixture(),gm=await f.join('GM'),p=await f.join('P');await gm.call('seat',{kind:'gm'});await p.call('seat',{kind:'player',seat:'germany'});await gm.call('dispatch',{type:'CREATE_GAME',gameId:'r',seed:1});
-  const replay=await gm.call('exportReplay');const archive=await parseMatchLog(replay as string,GAME_VERSION);const previous=structuredClone(gm.snapshot.state);replayNode(archive,1);await expect(gm.call('importReplay',replay)).rejects.toThrow('只读');expect(gm.snapshot.state).toEqual(previous);expect(p.snapshot.room.access.kind).toBe('player');
+  const replay=await gm.call('exportReplay');const archive=await parseReplay(replay as string);const previous=structuredClone(gm.snapshot.state);await lastState(archive);await expect(gm.call('importReplay',replay)).rejects.toThrow('只读');expect(gm.snapshot.state).toEqual(previous);expect(p.snapshot.room.access.kind).toBe('player');
   const restarted=new Room(f.store,f.ids,async()=>{},async()=>JSON.stringify(f.saved));let snap:RoomSnapshot|undefined;await restarted.connect(gm.identity.token,'new',v=>{if(!('replaced'in v))snap=v;});expect(snap!.state).toBeNull();expect(snap!.room.access.kind).toBe('public');expect(snap!.room.recoveryAvailable).toBe(true);
  });
 });

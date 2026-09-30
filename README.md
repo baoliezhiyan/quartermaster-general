@@ -11,7 +11,7 @@
 - [文档与规则导航](docs/README.md)
 - [原版牌表](docs/cards/standard.md) / [平衡补丁牌表](docs/cards/balanced.md)
 - [贡献、Bug与平衡讨论](CONTRIBUTING.md)
-- [回放说明](docs/match-log-guide.md) / [回放规范](docs/match-log-spec-v1.1.md)
+- [回放说明](docs/match-log-guide.md) / [回放规范](docs/match-log-spec-v2.0.md)
 - [PPO训练方案](docs/training/战场军需官PPO第一步实施方案-v0.3.md) / [下一步并行优化要求](docs/training/parallel-plan.md)
 - [素材与许可状态](ASSETS.md)
 
@@ -54,7 +54,7 @@ node scripts/export-public-card-catalog.mjs
 | --- | --- |
 | src/core、src/data | 正式规则、结算、卡表和地图 |
 | src/ui、src/controller、src/network | 界面、控制和联机 |
-| src/matchLog | 共享回放协议、校验与展示 |
+| src/actionReplay（现行）、src/matchLog（历史） | 共享回放协议、校验与展示 |
 | src/training、scripts/ppo* | 训练竞技场与PPO |
 | tests | 游戏/训练回归测试 |
 | docs | 规则、设计、验收、生成牌表及协作资料 |

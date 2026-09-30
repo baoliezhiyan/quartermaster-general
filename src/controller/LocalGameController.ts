@@ -1,8 +1,6 @@
-import {observeFacts} from '../core/factObserver';
-import {factCapture,recordTransaction,restoreRecording,recordControllers} from '../matchLog/recorder';
-import type {Capture} from '../matchLog/recorder';
-import {localControllers,GAME_VERSION} from '../matchLog/normalize';
-import {sealMatchLog,validateRecords} from '../matchLog/codec';
+import {captureTransition,recordCommand,restoreRecording} from '../actionReplay/recorder';
+import type {Capture} from '../actionReplay/recorder';
+import {seal,validateRecords} from '../actionReplay/codec';
 import {endNeutrality} from '../core/neutrality';
 import {measure,measureAsync} from './performanceProbe';
 import {specialCard} from '../core/cardCatalog';
@@ -33,10 +31,8 @@ function copySession(s:SaveSession):SaveSession {
 }
 
 export class LocalGameController implements GameController {
-  private factControllers=localControllers();
-  private factParticipants:import('../matchLog/contract').Controller[]=[{controllerId:'local',kind:'human',displayName:'本地操作者'}];
-  setFactControllers=(controllers:import('../matchLog/contract').ControllerMap,participants:import('../matchLog/contract').Controller[])=>{this.factControllers=structuredClone(controllers);this.factParticipants=structuredClone(participants);};
-  recordControllerChange=()=>this.enqueue(async()=>{if(!this.session?.matchRecording)return;const recording=recordControllers(this.session.matchRecording,this.factControllers,this.factParticipants);if(recording===this.session.matchRecording)return;const session=copySession(this.session);session.matchRecording=recording;await this.commit(session);});
+  setFactControllers=(_controllers:import('../matchLog/contract').ControllerMap,_participants:import('../matchLog/contract').Controller[])=>{};
+  recordControllerChange=async()=>{};
   private playback:{file:ReplayFile;cursor:number;entries:ReplayEntry[]}|null=null;
   private access:RoomAccess={kind:'gm'};
   setRoomAccess=(access:RoomAccess)=>{if(this.playback&&access.kind==='player')return;this.access=structuredClone(access);};
@@ -116,15 +112,7 @@ export class LocalGameController implements GameController {
         }
       }
       const captures:Capture[]=[];
-      const turns=(this.session?.matchRecording?.records.at(-1) as import('../matchLog/contract').Start|undefined)?.state.completedCountryTurns??0;
-      const result=measure('engine_transition',()=>observeFacts(
-        (state,boundary)=>captures.push(factCapture(
-          state,boundary,this.factControllers,
-          turns+(base&&base.status==='PLAYING'&&(base.activeSeat!==state.activeSeat||base.round!==state.round)?1:0),
-          captures.at(-1)?.state??(this.session?.matchRecording?.records.at(-1) as import('../matchLog/contract').Start|undefined)?.state
-        )),
-        ()=>transition(base,input)
-      ));
+      const result=measure('engine_transition',()=>captureTransition(captures,()=>transition(base,input)));
       if(!result.ok){this.failures.push({command:input,error:result.error});this.failures=this.failures.slice(-20);return result;}
       if(result.state===this.state)return {ok:true};
       const next=result.state,old=base;
@@ -143,7 +131,8 @@ export class LocalGameController implements GameController {
         } else if(input.type!=='SET_VIEW'&&input.type!=='ACK_RESPONSE_NOTICE'&&input.type!=='SET_CARD_RESPONSE'&&old.phase!=='SETUP'&&(!old.prelude?.active||next.prelude?.active&&old.activeSeat===next.activeSeat&&old.prelude.turn===next.prelude.turn))session.undo.push(old);
       }
       session.state=next;
-      if(input.type!=='SET_VIEW')session.matchRecording=await recordTransaction(this.session?.matchRecording,base,next,input,captures,this.factControllers,this.factParticipants);
+      delete session.matchRecording;
+      if(input.type!=='SET_VIEW')session.actionRecording=await recordCommand(this.session?.actionRecording,base,next,input,captures);
       await this.commit(session,input.type==='CREATE_GAME');return {ok:true};
     });
   };
@@ -170,7 +159,7 @@ export class LocalGameController implements GameController {
     if(this.readOnly)throw new Error('观察者或回放模式不能操作对局。');
     if(!this.session?.undo.length)throw new Error('已到达本国本次行动开始，不能继续回退。');
     const session=copySession(this.session),previous=session.undo.pop()!;
-    session.matchRecording=await restoreRecording(session.matchRecording,previous);
+    session.actionRecording=await restoreRecording(session.actionRecording,previous);delete session.matchRecording;
     this.restore(session,previous,'回退一步');await this.commit(session);
   });
   loadCheckpoint=(id:string)=>this.enqueue(async()=>{
@@ -178,14 +167,14 @@ export class LocalGameController implements GameController {
     const session=copySession(this.session),checkpoint=[...session.rounds,...session.nations].find(c=>c.id===id);
     if(!checkpoint)throw new Error('存档不存在。');
     if(this.playback){this.playback=null;delete session.playback;this.access={kind:'gm'};}
-    session.matchRecording=await restoreRecording(session.matchRecording,checkpoint.state);
+    session.actionRecording=await restoreRecording(session.actionRecording,checkpoint.state);delete session.matchRecording;
     session.undo=[];this.restore(session,checkpoint.state,'读取行动起点');await this.commit(session);
   });
-  exportSave=()=>{if(this.playback)throw new Error('回放模式请使用导出当前对局为存档。');if(!this.session)throw new Error('没有可导出的对局。');return JSON.stringify({...this.session,matchRecording:undefined},null,2);};
+  exportSave=()=>{if(this.playback)throw new Error('回放模式请使用导出当前对局为存档。');if(!this.session)throw new Error('没有可导出的对局。');return JSON.stringify({...this.session,matchRecording:undefined,actionRecording:undefined},null,2);};
   exportReplay=()=>this.enqueue(async()=>{
     if(!this.session)throw new Error('没有可导出的对局。');
-    const recording=this.session.matchRecording??await restoreRecording(undefined,this.session.state);
-    return sealMatchLog(recording.records);
+    const recording=this.session.actionRecording??await restoreRecording(undefined,this.session.state);
+    return seal(recording.records,this.session.state.status==='FINISHED',this.session.state.winner??undefined);
   });
   importReplay=async(_json:string):Promise<void>=>{throw new Error('请使用独立只读回放界面导入新格式记录；不会替换当前对局。');};
   private async showReplay(index:number,viewSeat:GameState['viewSeat'],replaceExisting=false){
@@ -209,10 +198,10 @@ export class LocalGameController implements GameController {
   /** Trusted journal recovery retains the host archive; browser saves never supply it. */
   restoreHostSession=(text:string)=>this.enqueue(async()=>{
     const session=validateSession(JSON.parse(text));
-    if(session.matchRecording)validateRecords(session.matchRecording.records,GAME_VERSION,false);
+    if(session.actionRecording)await validateRecords(session.actionRecording.records,false);
     this.persistedVersions.set(session.state.gameId,session.updatedAt);
     this.restore(session,session.state,'恢复主机保存的对局');
-    if(!session.matchRecording)session.matchRecording=await restoreRecording(undefined,session.state);
+    if(!session.actionRecording)session.actionRecording=await restoreRecording(undefined,session.state);delete session.matchRecording;
     await this.commit(session);
   });
   importSave=(json:string)=>this.enqueue(async()=>{
@@ -223,7 +212,7 @@ export class LocalGameController implements GameController {
       const existing=await this.store?.read(session.state.gameId);
       if(existing&&typeof existing==='object'&&'updatedAt' in existing&&typeof existing.updatedAt==='string')this.persistedVersions.set(session.state.gameId,existing.updatedAt);
     } catch { /* Import remains usable in memory; commit reports the storage failure. */ }
-    session.matchRecording=await restoreRecording(this.session?.matchRecording,session.state);
+    session.actionRecording=await restoreRecording(this.session?.actionRecording,session.state);delete session.matchRecording;
     this.playback=null;this.access={kind:'gm'};this.restore(session,session.state);await this.commit(session,true);
   });
   checkReplay=()=>!!this.session&&verifyReplay(this.session);
@@ -257,7 +246,7 @@ export class LocalGameController implements GameController {
       if(options?.endPrelude)finishPrelude(next);
       validateState(next);
       const session=measure('clone_session',()=>copySession(this.session!));session.undo.push(structuredClone(this.state));
-      session.matchRecording=await restoreRecording(session.matchRecording,next,true);
+      session.actionRecording=await restoreRecording(session.actionRecording,next,true);delete session.matchRecording;
       this.restore(session,next,'GM 编辑局面');await this.commit(session);
     });
   };

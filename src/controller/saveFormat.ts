@@ -17,6 +17,7 @@ export function recoverRecord(record:RecoveryRecord):GameState {
 }
 export interface Checkpoint { id:string; round:number; seat:SeatId; createdAt:string; state:GameState; stage?:'prelude' }
 export interface SaveSession {
+  actionRecording?:import('../actionReplay/recorder').Recording;
   matchRecording?:import('../matchLog/recorder').Recording;
   format:'quartermaster-save'; version:1; updatedAt:string;
   state:GameState; rounds:Checkpoint[]; nations:Checkpoint[]; undo:GameState[];
@@ -69,6 +70,7 @@ export function validateState(value:unknown,depth=0):asserts value is GameState 
   if(s.publicCardIds!==undefined)demand(Array.isArray(s.publicCardIds)&&s.publicCardIds.every((id:unknown)=>typeof id==='string'));
   if(s.faceUpResponseIds!==undefined)demand(strings(s.faceUpResponseIds)&&new Set(s.faceUpResponseIds).size===s.faceUpResponseIds.length);
   if(s.balanceResolutionSerial!==undefined)demand(integer(s.balanceResolutionSerial)&&Number(s.balanceResolutionSerial)>=0);
+  if(s.unitSerial!==undefined)demand(integer(s.unitSerial)&&Number(s.unitSerial)>=0);
   if(s.balanceFirstAttacks!==undefined)demand(object(s.balanceFirstAttacks)&&Object.values(s.balanceFirstAttacks).every(v=>typeof v==='string'));
   if(s.roundUses!==undefined)demand(object(s.roundUses)&&Object.values(s.roundUses).every(v=>integer(v)&&Number(v)>=0));
   if(s.airAction!==undefined)demand(['move','deploy','supremacy'].includes(String(s.airAction)));

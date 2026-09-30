@@ -171,7 +171,6 @@ export class Room {
  }));}
 }
 
-export {parseMatchLog,validateRecords,validateFacts,sealMatchLog} from '../matchLog/codec';
-export {replayNode,projectFacts} from '../matchLog/view';
-
-export {GAME_VERSION as MATCH_LOG_GAME_VERSION} from '../matchLog/normalize';
+export {parseReplay,validateRecords,seal} from '../actionReplay/codec';
+export {Player as ReplayPlayer} from '../actionReplay/player';
+export {VERSION as MATCH_LOG_GAME_VERSION} from '../actionReplay/state';
