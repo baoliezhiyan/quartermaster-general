@@ -170,7 +170,7 @@ def complete_round(mode: str, number: int, args) -> None:
         return
     if finished < target:
         state_dir.mkdir(parents=True, exist_ok=True)
-        print(f"{mode} 第 {number} 轮：执行 {target - finished} 次更新，10 个环境共享模型。",
+        print(f"{mode} 第 {number} 轮：执行 {target - finished} 次更新，{args.workers} 个环境共享模型。",
               flush=True)
         run_training(mode, target - finished, finished > 0, args.workers,
                      args.seed, checkpoint, report)
