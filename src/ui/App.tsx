@@ -1,5 +1,5 @@
-import {parseReplay} from '../actionReplay/codec';
-import {ReplayController} from '../actionReplay/ReplayController';
+import {openReplay} from '../actionReplay/openReplay';
+import type {ReplayView} from '../actionReplay/ReplayController';
 import {ReplayRecord} from '../actionReplay/ReplayRecord';
 import {RoomRecord} from './RoomRecord';
 import {VERSION as GAME_VERSION} from '../actionReplay/state';
@@ -40,8 +40,9 @@ import './turn.css';
 
 export function App({ controller: liveController }: { controller: GameController }) {
   const previousAccess=useRef<RoomAccess|null>(null);
-  const [factReplay,setFactReplay]=useState<ReplayController|null>(null);
-  useEffect(()=>{const open=(event:Event)=>{void parseReplay((event as CustomEvent<string>).detail).then(a=>{previousAccess.current=liveController.getSessionInfo().room?.access??{kind:'gm'};setFactReplay(new ReplayController(a));setAccess({kind:'gm'});setRecordOpen(true);}).catch(e=>setError(String(e)));};window.addEventListener('qm-open-replay',open);return()=>window.removeEventListener('qm-open-replay',open);},[]);
+  const [factReplay,setFactReplay]=useState<ReplayView|null>(null);
+  const [replayError,setReplayError]=useState('');
+  useEffect(()=>{const open=(event:Event)=>{setReplayError('');void openReplay((event as CustomEvent<string>).detail).then(a=>{previousAccess.current=liveController.getSessionInfo().room?.access??{kind:'gm'};setFactReplay(a);setAccess({kind:'gm'});setRecordOpen(true);}).catch(e=>setReplayError(String(e)));};window.addEventListener('qm-open-replay',open);return()=>window.removeEventListener('qm-open-replay',open);},[]);
   const controller:GameController=factReplay??liveController;
   const state = useSyncExternalStore(controller.subscribe,controller.getSnapshot);
   const sessionInfo=useSyncExternalStore(controller.subscribe,controller.getSessionInfo);
@@ -167,6 +168,7 @@ export function App({ controller: liveController }: { controller: GameController
 
     <header className="topbar"><div className="brand"><img className="brand-logo" src="/assets/brand-logo.png" alt="战场军需官" width="627" height="210" /></div><button hidden={!!room&&!isGM} disabled={readOnly} className="topbar-new-game secondary" onClick={()=>{setNewGameOpen(true);requestAnimationFrame(()=>document.getElementById("new-game-form")?.scrollIntoView({block:"center",behavior:"smooth"}));}}>新建对局</button><div className="build-label"><span className="status-dot" />{replayMode?'回放模式 · 只读':room?'多人联机 · 同一房间':'本地单人 · 六国操作'}<span className="version">v{GAME_VERSION}</span></div></header>
     <main>
+      {replayError&&<p role="alert" className="error">{replayError}</p>}
       <div className="workspace">
         <div ref={mapRef} className="map-workspace"><GameMap onStandardView={()=>setRecordOpen(true)} legalUnitIds={legalUnitIds} selectedUnitIds={activeMapAction?.customPrompt?activeMapAction.selectedUnitIds??[]:choosingBarbarossa?playTargets:mapSelectedIds} onChooseUnit={selectUnit} scoreboard={totals && <div className="map-scoreboard" aria-label="阵营总分"><span>轴心国 <strong>{totals.axis}</strong></span><span>同盟国 <strong>{totals.allies}</strong></span></div>} alliance={seat?.alliance ?? 'axis'} game={state} legalRegions={legalRegions} selectedRegion={activeMapAction?.customPrompt?activeMapAction.selectedRegion??null:multiMapChoice?null:pickedRegion} selectedRegions={multiMapChoice?mapTargets.filter(o=>mapSelectedIds.includes(o.id)).map(o=>o.regionId):[]} onChooseRegion={chooseMapRegion} targeting={mapTargets.length>0} footer={state?<PhasePanel record={<button aria-pressed={recordOpen} onClick={()=>setRecordOpen(v=>!v)}>对局记录</button>} panels={<div className="map-panel-buttons">{visibleMapPanels(state,isPublic,!!factReplay).filter(([id])=>id!=='record').map(([id])=><button key={id} className={(projection.panels.has(id)||(id==='hand'&&state.decks[state.viewSeat].hand.some(c=>playableCard(state,c)))||(id==='active'&&state.decks[state.viewSeat].active.some(c=>usableStatus(state,c))))?"panel-available":""} aria-pressed={leftPanel===id} onClick={()=>{setReplayOpen(false);setLeftPanel(p=>p===id?null:id);}}>{panelLabel(state,id)}</button>)}{replayMode&&!factReplay&&isGM&&<><button aria-pressed={replayOpen} onClick={()=>setReplayOpen(v=>!v)}>详细回放记录</button><button disabled={busy} onClick={()=>{setBusy(true);void saveReplay(`军需官-回放节点${sessionInfo.replayCursor}-存档.json`,controller.exportReplayNodeSave()).catch(e=>setError(String(e))).finally(()=>setBusy(false));}}>导出当前对局为存档</button></>}</div>} state={state} busy={busy} readOnly={readOnly} dispatch={dispatch} undo={!readOnly&&<UndoButton controller={controller} busy={busy} setBusy={setBusy} />} />:undefined}>
     {room?.sceneLocked&&<div role="status" style={{position:'absolute',top:8,left:8,zIndex:100,background:'#fff9de',padding:12}}>GM已锁定场景，正在编辑。{isGM?'完成后请解锁。':'请稍候。'}</div>}<NeutralityNotice state={state} identity={room?.userId??'local'} replay={replayMode}/>

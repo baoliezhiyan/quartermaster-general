@@ -13,18 +13,19 @@ export function choiceCard(state: ReadState, option: { id: string; label: string
 }
 
 function CardFaceContent({ card, hint }: { card: Pick<CardInstance, 'definitionId' | 'country' | 'balance'>; hint?: string }) {
+  const recorded=(card as typeof card & {__replayCard?:{name:string;text:string;type:string}}).__replayCard;
   const definition = specialCard(card.definitionId,card.balance);
   const art=cardArt(card),prelude=card.definitionId.startsWith('prelude_')?specialCard(card.definitionId,card.balance):undefined;
   return <span className="card-face" data-country={specialCard(card.definitionId,card.balance)?.country??card.country}>
-    {art.src&&<CardArtImage src={art.src} basic={art.basic}/>}
+    {!recorded&&art.src&&<CardArtImage src={art.src} basic={art.basic}/>}
     <span className="card-body">
-      <strong className="card-name">{cardName(card)}</strong>
+      <strong className="card-name">{recorded?.name??cardName(card)}</strong>
       {prelude?.type==='历史'&&<span className="card-tension">紧张度 {(prelude.tension??0)>=0?'+':''}{prelude.tension}</span>}
-      {definition && <span className="card-effect">{definition.text}</span>}
+      {(recorded||definition) && <span className="card-effect">{recorded?.text??definition?.text}</span>}
     </span>
     {hint && <span className="card-hint">{hint}</span>}
   </span>;
 }
 
 // Only these four values affect the static face; selection hints still update.
-export const CardFace=memo(CardFaceContent,(a,b)=>a.card.definitionId===b.card.definitionId&&a.card.country===b.card.country&&a.card.balance===b.card.balance&&a.hint===b.hint);
+export const CardFace=memo(CardFaceContent,(a,b)=>a.card.definitionId===b.card.definitionId&&a.card.country===b.card.country&&a.card.balance===b.card.balance&&a.hint===b.hint&&(a.card as any).__replayCard===(b.card as any).__replayCard);
