@@ -57,13 +57,15 @@ export function TableHand({state,busy,dispatch,choiceCards,chosenCards,onChoiceC
   else if(step==='destination')prompt=<><p>请选择调度目的地（可原地调度）</p><button disabled={!destination} onClick={()=>{setSelected([]);setStep('fee');}}>确认</button><button onClick={()=>{setStep('source');setDestination(null);}}>返回</button></>;
   else prompt=<><p>请选择弃置 1 张手牌，确认调度</p><button disabled={selected.length!==1||!movable.some(u=>u.id===airId)} onClick={()=>{const option=moves.find(o=>o.airId===airId&&o.regionId===destination);if(option)dispatch({type:'MOVE_AIR',...common,cardId:selected[0],optionId:option.id});}}>确认</button><button onClick={()=>{setSelected([]);setStep('destination');}}>返回</button></>;
  }
+ const training=(state as ReadState&{trainingReplay?:{available:string[]}}).trainingReplay;
+ if(training&&!training.available.includes(seat+':hand'))return <section ref={ref} className="table-hand" aria-label="回合与手牌"><p>手牌未提供或在当前视角下不可见。</p></section>;
  return <section ref={ref} className="table-hand" aria-label="回合与手牌">
-  <div className="card-grid" style={{'--hand-columns':Math.min(7,Math.max(1,deck.hand.length))} as CSSProperties}>{handOrder.ordered.map((card,index)=>{
+  <div className="card-grid" style={{'--hand-columns':Math.min(7,Math.max(1,deck.hand.length))} as CSSProperties}>{(training?deck.hand:handOrder.ordered).map((card,index)=>{
    const offered=!!choiceCards[card.id],selecting=setup||discard||air&&step==='fee';
    const usable=playable.has(card.id)&&(!air||state.airAction==='deploy'||state.airAction==='supremacy');
    const available=!readOnly&&(offered||free&&(selecting||usable));
    const picked=offered?chosenCards.includes(card.id):selecting?selected.includes(card.id):playCardId===card.id;
-   return <div className="card-shell" {...handOrder.props(card.id)} key={card.id} style={(setup||state.prelude?.active)&&deck.hand.length===12?{gridRow:index<5?1:2,gridColumn:index<5?index+2:index-4}:undefined}><button className={`hand-card${available?' available-card':''}${picked?' selected':''}`} aria-label={`${cardName(card)}，${card.id}`} aria-pressed={picked} disabled={!available||busy} onClick={()=>offered?onChoiceCard(card.id):selecting?toggle(card.id,setup?7:air?1:deck.hand.length):onPlayCard(card.id)}><CardFace card={card} hint={picked?'✓ 已选择':undefined}/></button>{!readOnly&&<CardResponseToggle state={state} card={card} dispatch={dispatch} busy={busy}/>}</div>;
+   return <div className="card-shell" {...(training?{}:handOrder.props(card.id))} key={card.id} style={(setup||state.prelude?.active)&&deck.hand.length===12?{gridRow:index<5?1:2,gridColumn:index<5?index+2:index-4}:undefined}><button className={`hand-card${available?' available-card':''}${picked?' selected':''}`} aria-label={`${cardName(card)}，${card.id}`} aria-pressed={picked} disabled={!available||busy} onClick={()=>offered?onChoiceCard(card.id):selecting?toggle(card.id,setup?7:air?1:deck.hand.length):onPlayCard(card.id)}><CardFace card={card} hint={picked?'✓ 已选择':undefined}/></button>{!readOnly&&<CardResponseToggle state={state} card={card} dispatch={dispatch} busy={busy}/>}</div>;
   })}</div>
   {portal&&prompt&&createPortal(<fieldset disabled={busy} style={{border:0,margin:0}} className="guided-prompt hand-phase-prompt" aria-label="手牌阶段操作">{prompt}</fieldset>,portal)}
  </section>;

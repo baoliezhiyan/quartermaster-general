@@ -11,3 +11,5 @@ resourcePool 固定为六个 SeatId 到 CardInstance[] 的映射，标准对局�
 文件只保留 start、formal_start 和 round_end 完整检查点。回放引擎短暂停在核心钩子处，再用 CONTINUE_BOUNDARY 恢复；界面子效果通过重演时的结构化事实边界临时定位，不逐效果存盘。播放器最多缓存三个已完成动作组，当前选中节点单独显示。
 
 GM 编辑当前采用新 snapshot 会话；未实现任意 GM 修改的通用编辑增量。导入拒绝旧协议、未知适配器、训练模式、错误版本/指纹和损坏摘要。原 src/matchLog 只供历史测试及资料参考。
+
+新增训练适配器 `quartermaster-training-scene/1.0.0` 与此正式适配器独立。资源池模式、显式牌区变更和场面能力见 [训练端输出规范](training-replay-output-v1.md)。本文中对训练的拒绝仅指禁止将训练记录输入正式适配器。

@@ -174,3 +174,10 @@ export class Room {
 export {parseReplay,validateRecords,seal} from '../actionReplay/codec';
 export {Player as ReplayPlayer} from '../actionReplay/player';
 export {VERSION as MATCH_LOG_GAME_VERSION} from '../actionReplay/state';
+
+export {parseTrainingReplay,sealTraining} from '../actionReplay/trainingCodec';
+export {TrainingController} from '../actionReplay/TrainingController';
+export {createTrainingScene,applyScene,trainingSceneHash} from '../actionReplay/trainingScene';
+export {TRAINING_CAPABILITIES} from '../actionReplay/trainingContract';
+export {applyResource} from '../actionReplay/resources';
+export {ENGINE as SCENE_ENGINE_FINGERPRINT} from '../actionReplay/state';
