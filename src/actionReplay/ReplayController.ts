@@ -1,3 +1,7 @@
+import {Narrative} from './narrative';
+import type {Phrase} from './narrative';
+import {playGroup} from './player';
+import type {Shuffle} from './contract';
 import type {GameController,RoomAccess,SessionInfo,DispatchResult} from '../controller/GameController';
 import type {GameState,Command,SeatId} from '../core/types';
 import {projectState} from '../network/project';
@@ -6,6 +10,9 @@ import {Player,entries} from './player';
 import {restore} from './state';
 const readonly=async():Promise<never>=>{throw Error('回放是只读的，不会提交游戏操作。');};
 export class ReplayController implements GameController {
+ readonly narratives=new Map<string,Phrase[]>();
+ private describing=false;
+ async describe(){if(this.describing)return;this.describing=true;let state=restore(this.archive.start.state);for(const g of this.archive.groups){const n=new Narrative(state);state=(await playGroup(state,g,this.archive.records.filter((r):r is Shuffle=>r.type==='shuffle'&&r.groupId===g.groupId).sort((a,b)=>a.order-b.order),undefined,[],n)).state;for(const [id,p] of n.phrases)this.narratives.set(id,p);this.info={...this.info};this.listeners.forEach(f=>f());await new Promise(r=>setTimeout(r,0));}}
  readonly player:Player;readonly entries;private raw:GameState;private view:GameState;private listeners=new Set<()=>void>();
  private access:RoomAccess={kind:'gm'};private seat:SeatId='germany';private generation=0;
  selectedId:string|null=null;after=false;

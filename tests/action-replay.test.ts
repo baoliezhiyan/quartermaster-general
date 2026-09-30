@@ -1,3 +1,5 @@
+import {ReplayController} from '../src/actionReplay/ReplayController';
+import {cardName} from '../src/core/basic';
 import {it,expect} from 'vitest';
 // @ts-expect-error Node-only fixture output.
 import {mkdir,writeFile} from 'node:fs/promises';
@@ -80,4 +82,33 @@ it('rejects corrupted, truncated, incompatible and incomplete mandatory historie
  for(const change of [{gameVersion:'other'},{engineFingerprint:'other'},{mode:'resource_pool'},{commandSchemaVersion:'999'}]){const r=structuredClone(a.records.slice(0,-1)) as any;r[0]={...r[0],...change};await expect(parseReplay(await seal(r))).rejects.toThrow();}
  const bad=structuredClone(a.records.slice(0,-1)) as any;bad.find((r:any)=>r.type==='action_group').root.input.cardIds=[];const corrupt=await parseReplay(await seal(bad));await expect(new Player(corrupt).seek(corrupt.groups[0].root.actionId,true)).rejects.toThrow();
  await expect(parseReplay(file.replace('validation','tamperedxx'))).rejects.toThrow();
+});
+
+it('describes the precise prelude top discard and hidden response without changing groups',async()=>{
+ const s=createGame('narrative-prelude',1940,'FULL',true,false,true);s.activeSeat='japan';s.operatorSeat='japan';s.viewSeat='japan';
+ const d=s.prelude!.decks.japan;const top=d.drawPile[0];
+ const c=new LocalGameController();await load(c,s);await send(c,{type:'DISCARD_PRELUDE_TOP'});
+ let archive=await replayEquals(c),view=new ReplayController(archive);await view.describe();
+ expect([...view.narratives.values()].flat().some(p=>p.text.includes('弃置序章牌库顶的【'+cardName(top)+'】'))).toBe(true);
+ const state=structuredClone(c.getSnapshot()!);const cards=Object.values(state.prelude!.decks.japan).flat();const dragon=cards.find(c=>c.definitionId==='prelude_JP-12')!;
+ for(const key of ['drawPile','hand','discardPile'] as const)state.prelude!.decks.japan[key]=state.prelude!.decks.japan[key].filter(c=>c.id!==dragon.id);
+ state.prelude!.decks.japan.hand.push(dragon);state.prelude!.discarded=0;
+ const regular=state.decks.japan;regular.drawPile.push(...regular.hand);regular.hand=[];
+ const response=regular.drawPile.splice(regular.drawPile.findIndex(c=>specialCard(c.definitionId,c.balance)?.type==='响应'),1)[0];regular.hand.push(response);
+ await load(c,state);await send(c,{type:'PLAY_PRELUDE',cardId:dragon.id});await settled(c);
+ archive=await replayEquals(c);view=new ReplayController(archive);await view.describe();
+ const phrases=[...view.narratives.values()].flat();const installed=phrases.find(p=>p.text.includes('暗置【'+cardName(response)+'】'));
+ expect(installed).toBeTruthy();expect(installed!.public).toBe(false);expect(installed!.owner).toBe('japan');
+ expect(phrases.some(p=>p.text.includes('洗混'))).toBe(false);
+});
+it.each([false,true])('describes actual Ardennes attack and only successful construction (remaining enemy=%s)',async(remaining)=>{
+ const s=createGame('narrative-attack',1940,'FULL',false,false,false);s.status='PLAYING';s.round=1;s.phase='PLAY';s.setupCompleted=[...SEATS];
+ s.units=s.units.filter(u=>u.regionId!=='western_europe');s.units.push({id:'france-west',country:'france',type:'army',regionId:'western_europe'});
+ if(remaining)s.units.push({id:'uk-west',country:'united_kingdom',type:'army',regionId:'western_europe'});
+ const d=s.decks.germany;d.drawPile.push(...d.hand);d.hand=[];const card=d.drawPile.splice(d.drawPile.findIndex(c=>c.definitionId==='special_158'),1)[0];d.hand.push(card);
+ const c=new LocalGameController();await load(c,s);await send(c,{type:'PLAY_CARD',cardId:card.id,targetIds:[],effectIndices:cardEffects(s,card).map((_,i)=>i)});await settled(c);
+ const archive=await replayEquals(c),view=new ReplayController(archive);await view.describe();
+ const text=[...view.narratives.values()].flat().map(p=>p.text).join('；');
+ expect(text).toContain('攻击位于<西欧>的法国陆军');
+ expect(text.includes('在<西欧>建设陆军')).toBe(!remaining);
 });

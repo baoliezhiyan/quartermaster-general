@@ -8,6 +8,7 @@ const artHashes=Object.fromEntries(Object.values(images).map(src=>[src,createHas
 
 export default defineConfig({
   base: './',
+  plugins:[{name:'versioned-page-title',transformIndexHtml(html){const pkg=JSON.parse(readFileSync('package.json','utf8'));return html.replace('%GAME_VERSION%',pkg.displayVersion??pkg.version);}}],
   // Historical comparisons require separately supplied, untracked baseline sources.
   test:{exclude:[...configDefaults.exclude,...[['global','global-performance'],['room','room-optimization'],['view','view-performance']].filter(([,folder])=>!existsSync('outputs/'+folder+'/baseline/src')).map(([name])=>'tests/'+name+'-optimization.test.ts')]},
   define:{__CARD_ART_HASHES__:JSON.stringify(artHashes)},

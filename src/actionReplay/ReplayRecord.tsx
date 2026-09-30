@@ -1,3 +1,9 @@
+import {createPortal} from 'react-dom';
+import {CardFace} from '../ui/CardFace';
+import {logCard} from '../ui/PublicGameLog';
+import {splitCardReferences} from '../ui/cardText';
+import {cardName} from '../core/basic';
+import type {CardInstance} from '../core/types';
 import {useEffect,useState} from 'react';
 import type {ReplayController} from './ReplayController';
 import type {RoomAccess} from '../controller/GameController';
@@ -6,6 +12,9 @@ import {SEATS} from '../core/types';
 import {displayOption} from './player';
 export function ReplayRecord({controller,exit,choose,access}:{controller:ReplayController;exit:()=>void;choose:(a:RoomAccess)=>void;access:RoomAccess}){
  const [busy,setBusy]=useState(false),[error,setError]=useState(''),[playing,setPlaying]=useState(false);
+ const [preview,setPreview]=useState<Pick<CardInstance,'definitionId'|'country'|'balance'>|null>(null);
+ useEffect(()=>{void controller.describe().catch(e=>setError(String(e)));},[controller]);
+ useEffect(()=>setPreview(null),[access]);
  const index=controller.entries.findIndex(e=>e.id===controller.selectedId?.split('@')[0]);
  const full=access.kind==='gm',own='seat'in access?access.seat:null;
  const prompt=controller.getSnapshot().resolution?.choice;
@@ -21,6 +30,7 @@ export function ReplayRecord({controller,exit,choose,access}:{controller:ReplayC
   {controller.getSnapshot().resolution?.choice&&<p className="replay-historical-prompt">历史选择：{controller.getSnapshot().resolution!.choice!.prompt}</p>}
   {prompt&&<details><summary>当时的可选项（只读）</summary><ul>{prompt.options.map(o=><li key={o.id}>{displayOption(o.label)}</li>)}</ul></details>}
   {full&&controller.player.details.length>0&&<details><summary>本动作的选择与子效果</summary>{controller.player.details.map(d=><button key={d.id} disabled={busy} onClick={()=>void seek(d.id)}>{d.label}</button>)}</details>}
-  {controller.entries.map(e=><button className="replay-entry" key={e.id} aria-current={controller.selectedId===e.id?'step':undefined} disabled={busy} onClick={()=>{setPlaying(false);void seek(e.id);}}><small>{e.stage==='prelude'?'序章':`第 ${e.round} 轮`} · {COUNTRY_NAMES[e.seat]}</small><br/>{full||own===e.seat?e.summary:`${COUNTRY_NAMES[e.seat]}的${e.kind==='response'?'响应':'操作'}`}</button>)}
+  {controller.entries.map(e=>{const phrases=(controller.narratives.get(e.id)??[]).filter(p=>full||p.public||p.owner===own);const title=full||own===e.seat?e.summary:`${COUNTRY_NAMES[e.seat]}的${e.kind==='response'?'响应':'操作'}`;const text=[title,...phrases.map(p=>p.text)].join('；');const cards=phrases.flatMap(p=>p.cards);return <div role="button" tabIndex={busy?-1:0} className="replay-entry" key={e.id} aria-current={controller.selectedId===e.id?'step':undefined} onKeyDown={event=>{if(event.target===event.currentTarget&&['Enter',' '].includes(event.key)){event.preventDefault();if(!busy)void seek(e.id);}}} onClick={()=>{if(!busy){setPlaying(false);void seek(e.id);}}}><small>{e.stage==='prelude'?'序章':`第 ${e.round} 轮`} · {COUNTRY_NAMES[e.seat]}</small><br/>{splitCardReferences(text).map((part,i)=>{const c=part.startsWith('【')?(cards.find(c=>'【'+cardName(c)+'】'===part)??logCard(part.slice(1,-1),e.seat,e.stage==='prelude'?0:e.round,text,!!controller.getSnapshot().rules?.balanceEnabled)):undefined;return c?<button key={i} className="card-index-link" onClick={event=>{event.stopPropagation();setPlaying(false);setPreview(c);}}>{part}</button>:<span key={i}>{part}</span>;})}</div>;})}
+  {preview&&createPortal(<div className="card-index-window log-card-dialog" role="dialog" aria-label="卡牌索引"><button className="card-index-close" aria-label="关闭卡牌索引" onClick={()=>setPreview(null)}>×</button><div className="hand-card"><CardFace card={preview}/></div></div>,document.fullscreenElement??document.body)}
  </div>;
 }
