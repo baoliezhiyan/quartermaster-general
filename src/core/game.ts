@@ -407,9 +407,9 @@ function transitionInternal(state: GameState | null, command: Command): Transiti
       if (!card || !canReallocateCard(card)) return illegal;
       if (!payDiscardCost(next,command.seat,3,command.cardIds)) return illegal;
       if (!deck.drawPile.some(c=>c.id===card.id)) return illegal;
-      deck.drawPile = deck.drawPile.filter(c => c.id !== card.id); deck.hand.push(card); shuffle(deck.drawPile,next);
+      deck.drawPile = deck.drawPile.filter(c => c.id !== card.id); deck.hand.push(card);
       next.redistributed = true;
-      log(next,'RESOURCES_REDISTRIBUTED',`${COUNTRY_NAMES[command.seat]}支付 3 张弃牌费用，取得【${cardName(card)}】并洗牌。`);
+      log(next,'RESOURCES_REDISTRIBUTED',`${COUNTRY_NAMES[command.seat]}支付 3 张弃牌费用，取得【${cardName(card)}】。`);
       break;
     }
     case 'ADVANCE_PHASE': {

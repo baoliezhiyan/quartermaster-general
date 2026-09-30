@@ -1,6 +1,6 @@
 import type {GameState,ReadState,SeatId} from './types';
 import {isPrelude} from './prelude';
-import {shuffle} from './basic';
+import {insertRandom} from './basic';
 
 const zones=['hand','drawPile','discardPile','active','faceDown','removed'] as const;
 export type SceneZone=typeof zones[number];
@@ -27,6 +27,6 @@ export function moveSceneCard(s:GameState,seat:SeatId,prelude:boolean,id:string,
  const target=scenePile(s,seat,prelude,zone);
  if(destination==='drawBottom')target.push(card);
  else if(destination==='drawPile'){
-  const slots=Array.from({length:target.length+1},(_,i)=>i);shuffle(slots,s);target.splice(slots[0],0,card);
+  insertRandom(target,card,s);
  }else target.unshift(card);
 }

@@ -90,11 +90,12 @@ describe('turn phases and card choices', () => {
       expect(next.events.filter(e=>e.type==='RULE_EVENT'&&e.code==='DISCARD_PHASE_POINT_LOSS')).toHaveLength(0);
     }
   });
-  it('pays three for reallocation, takes only from draw pile, shuffles deterministically and stays in start window', () => {
+  it('pays three for reallocation, takes only from draw pile, preserves remaining order and stays in start window', () => {
     const s=started(), d=s.decks.germany;
     const target=d.drawPile.find(canReallocateCard)!;
     const command={type:'REDISTRIBUTE',cardIds:d.hand.slice(0,3).map(c=>c.id),takeCardId:target.id};
     const n=send(s,command); expect(n).toEqual(send(s,command)); expect(n.phase).toBe('TURN_START_WINDOW');
+    expect(n.decks.germany.drawPile).toEqual(d.drawPile.filter(c=>c.id!==target.id));expect(n.randomState).toBe(s.randomState);
     expect(n.decks.germany.hand).toHaveLength(5); expect(n.redistributed).toBe(true);
     expect(n.decks.germany.hand.some(c=>c.id===target.id)).toBe(true);
     expect(transition(n,{...command,type:'REDISTRIBUTE',seat:'germany',expectedRevision:n.revision}).ok).toBe(false);

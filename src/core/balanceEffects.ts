@@ -8,7 +8,7 @@ import {shuffle} from './basic';
 import {specialCard} from './cardCatalog';
 import {endNeutrality} from './neutrality';
 import {revealPublic,revealDiscardedCards} from './publicHistory';
-const labels:Record<string,string>={'shuffle-deck':'洗混牌库','armament-rebuild':'按军备费用执行陆军建设','italian-ambition':'意大利雄心：选择打出手牌状态，或从牌库打出得分状态','italian-ambition-deck':'从牌库打出最靠顶的得分状态并洗混牌库','discard-to-seven':'弃置手牌直至不超过7张','draw-to-seven':'抽牌直至手牌达到7张','draw-bottomed':'抽回等量手牌','end-neutrality':'结束中立','return-source':'将本牌洗入牌库','scry':'检视并排列牌库顶四张牌','scry-top':'排列剩余顶牌','exile-government':'打出流亡政府','relocate-industry':'战时工业东迁','inspect-response':'检视牌库顶十张并暗置响应','inspect-take':'选择剩余检视牌','reveal-response':'公开并选择弃置响应','build-battle-region':'在刚才战斗的地区建设陆军','two-basic-plays':'本回合可标准打出至多两张基本牌','bomber-economy':'选择额外打出的经济战并支付费用'};
+const labels:Record<string,string>={'shuffle-deck':'洗混牌库','armament-rebuild':'按军备费用执行陆军建设','italian-ambition':'意大利雄心：选择打出手牌状态，或从牌库打出得分状态','italian-ambition-deck':'从牌库打出最靠顶的得分状态','discard-to-seven':'弃置手牌直至不超过7张','draw-to-seven':'抽牌直至手牌达到7张','draw-bottomed':'抽回等量手牌','end-neutrality':'结束中立','return-source':'将本牌洗入牌库','scry':'检视并排列牌库顶四张牌','scry-top':'排列剩余顶牌','exile-government':'打出流亡政府','relocate-industry':'战时工业东迁','inspect-response':'检视牌库顶十张并暗置响应','inspect-take':'选择剩余检视牌','reveal-response':'公开并选择弃置响应','build-battle-region':'在刚才战斗的地区建设陆军','two-basic-plays':'本回合可标准打出至多两张基本牌','bomber-economy':'选择额外打出的经济战并支付费用'};
 export const balanceEffect=(seat:SeatId,op:string,cardId?:string):Effect=>({kind:'balance',seat,op,cardId,label:labels[op]??op});
 /** Dynamic choices expand into the ordinary effect queue; they never bypass response windows. */
 export function applyBalanceEffect(s:GameState,f:ResolutionFrame,e:Extract<Effect,{kind:'balance'}>){
@@ -29,8 +29,8 @@ export function applyBalanceEffect(s:GameState,f:ResolutionFrame,e:Extract<Effec
   {id:'deck',label:'从牌库打出最靠近牌库顶的得分状态',effects:[next('italian-ambition-deck')]}
  ]}]);break;
  case 'italian-ambition-deck':{const card=deck.drawPile.find(c=>{const d=specialCard(c.definitionId,c.balance);return d?.type==='状态'&&d.country==='italy'&&!['special_215','special_210','special_211','special_257'].includes(c.definitionId);});
-  if(card)insert([{kind:'extraPlay',seat:e.seat,from:'drawPile',selectedCardId:card.id,onlyCardIds:[card.id],indices:[0],shuffle:true,label:`意大利雄心：打出【${specialCard(card.definitionId,card.balance)!.name}】并洗混牌库`}]);
-  else {shuffle(deck.drawPile,s);publicRecord(s,e.seat,'意大利雄心：牌库中没有符合条件的得分状态牌，洗混牌库。');}break;}
+  if(card)insert([{kind:'extraPlay',seat:e.seat,from:'drawPile',selectedCardId:card.id,onlyCardIds:[card.id],indices:[0],label:`意大利雄心：打出【${specialCard(card.definitionId,card.balance)!.name}】`}]);
+  else {publicRecord(s,e.seat,'意大利雄心：牌库中没有符合条件的得分状态牌。');}break;}
  case 'discard-to-seven':{const count=Math.max(0,deck.hand.length-7);if(count)insert([{kind:'cards',seat:e.seat,from:'hand',to:'discardPile',min:count,max:count,label:`弃置${count}张手牌，使手牌不超过7张`}]);break;}
  case 'draw-to-seven':insert([{kind:'draw',seat:e.seat,count:Math.max(0,7-deck.hand.length),label:'抽牌直至手牌达到7张'}]);break;
  case 'build-battle-region':{const battle=f.effects.find(v=>v.kind==='action'&&v.bindAs==='xiangxi-battle');if(battle?.kind==='action'&&battle.option?.regionId&&s.resolution?.events.some(v=>v.frameId===f.id&&v.applied&&!v.cancelled&&v.effect?.kind==='action'&&v.effect.bindAs==='xiangxi-battle'))insert([{kind:'action',country:'china',action:'build_army',regions:[battle.option.regionId],label:'在战斗地区建设中国陆军'}]);break;}
@@ -44,7 +44,7 @@ export function applyBalanceEffect(s:GameState,f:ResolutionFrame,e:Extract<Effec
  case 'exile-government':case 'relocate-industry':{
   const definitionId=e.op==='exile-government'?'special_5':'special_42';
   const hand=deck.hand.find(c=>c.definitionId===definitionId),draw=deck.drawPile.find(c=>c.definitionId===definitionId),effects:Effect[]=[];
-  if(hand||draw)effects.push({kind:'extraPlay',seat:e.seat,from:hand?'hand':'drawPile',onlyCardIds:[(hand??draw)!.id],shuffle:!hand,label:'打出指定状态牌'});
+  if(hand||draw)effects.push({kind:'extraPlay',seat:e.seat,from:hand?'hand':'drawPile',onlyCardIds:[(hand??draw)!.id],label:'打出指定状态牌'});
   if(e.op==='relocate-industry'||hand)effects.push(action(e.op==='exile-government'?'france':'soviet_union',e.op==='exile-government'?'british_isles':'siberia'));
   insert(effects);break;
  }
