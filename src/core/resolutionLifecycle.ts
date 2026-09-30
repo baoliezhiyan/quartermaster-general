@@ -13,5 +13,5 @@ export function isBatchScore(rule:TriggerRule,effect?:Effect) {
  return effect?.kind==='signal'&&['PHASE:SCORE','PHASE:SCORE_STATUS'].includes(effect.tag)&&rule.source==='active'&&rule.mandatory&&!rule.cost&&!rule.minHand&&rule.effects.length>0&&rule.effects.every(e=>e.kind==='score'&&!e.fee&&!e.optional);
 }
 export function closeWindow(window:TriggerWindow,reason:NonNullable<TriggerWindow['closeReason']>='exhausted') {
- window.closed=true;window.closeReason=reason;
+ window.closed=true;window.closeReason??=reason;
 }

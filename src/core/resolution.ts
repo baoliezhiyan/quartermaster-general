@@ -163,6 +163,13 @@ function pushFrame(s:GameState, source:string, owner:SeatId,effects:Effect[],car
 }
 function fire(s:GameState,w:TriggerWindow,rule:TriggerRule,rollback?:GameState) {
   const r=engine(s);
+  // An ancestor activation leaves the descendant branch. Delay closure until fire()
+  // so merged target selection and payment both retain their original window context.
+  const selectedIndex=r.stack.findIndex(task=>task.kind==='window'&&task.id===w.id);
+  if(selectedIndex>=0)for(const task of r.stack.slice(selectedIndex+1))if(task.kind==='window') {
+    const child=windowById(r,task.id);
+    if(!child.closed){closeWindow(child,'branch-left');fact(s,'window_closed','切换触发分支，关闭子窗口',{windowId:child.id});}
+  }
   w.remaining=w.remaining.filter(id=>id!==rule.id);
   r.fired.push(`${w.originEventId}:${rule.id}`);
   const scope=`${s.round}:${s.activeSeat}:${rule.sourceInstanceId}:${rule.scopeId??rule.id}`;
@@ -751,7 +758,7 @@ export function resolveChoice(s:GameState,seat:SeatId,choiceId:string,ids:string
       const selected=c.options.find(o=>o.id===ids[0])!, w=windowById(r,selected.windowId!);
       const rule=remaining(s,w).find(rule=>`${w.id}/${rule.id}`===ids[0]);
       if(!rule || rule.mandatory || rule.owner!==seat) return false;
-      // Modern scheduling preserves independent opportunities; cancellation is checked against its own event.
+      // Validate the selected window; fire() closes the abandoned descendant branch.
       const index=r.stack.findIndex(t=>t.kind==='window' && t.id===w.id);
       if(index<0) return false;
       if(!r.schedulerVersion)for(const task of r.stack.slice(index+1))if(task.kind==='window')closeWindow(windowById(r,task.id),'legacy-branch');
