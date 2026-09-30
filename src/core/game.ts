@@ -1,4 +1,5 @@
 import {fact} from './factObserver';
+import {nextUnitId,replayBoundary} from './replayHooks';
 import {airActionOptions,hasStandardPlay} from './phaseAvailability';
 import {initializePrelude,finishPreludeTurn,takePreludeCard,preludeCardEffects} from './prelude';
 import {neutralityDiscardPenalty,initializeNeutrality,checkNeutralitySupply,checkNeutralityTurn,checkNeutralityAttack,neutralityIndiaPenalty,mayReallocate} from './neutrality';
@@ -144,11 +145,12 @@ function resolveCard(state:GameState,cardId:string,effects:Effect[],guided=false
   if(!startResolution(state,d?.name??cardName(card),state.activeSeat,[...effects,...standard,{kind:'signal',tag:'CARD_PLAYED',label:`打出【${cardName(card)}】后`}],[],card.id,d?.type==='状态'?'active':d?.type==='响应'?'faceDown':'discardPile',guided,rollback))return false;
   settleResolution(state);return true;
 }
-function nextTurn(state: GameState) {
+function nextTurn(state: GameState,skipReplayBoundary=false) {
   if(state.prelude&&state.activeSeat==='italy'&&state.round===1){const d=state.decks.united_kingdom;const expired=d.active.filter(c=>c.definitionId==='prelude_UK-17');d.active=d.active.filter(c=>c.definitionId!=='prelude_UK-17');d.removed.push(...expired);}
   const index = SEATS.indexOf(state.activeSeat);
-  if(index===5){const totals=allianceScores(state);if(Math.abs(totals.axis-totals.allies)>=30){finish(state,totals.axis>totals.allies?'AXIS_LEAD':'ALLIES_LEAD');return;}}
-  if (index === 5 && state.round === 20) { finish(state,'TWENTY_ROUNDS'); return; }
+  if(index===5){const totals=allianceScores(state);if(Math.abs(totals.axis-totals.allies)>=30){finish(state,totals.axis>totals.allies?'AXIS_LEAD':'ALLIES_LEAD');replayBoundary(state,'round_end',state.round);return;}}
+  if (index === 5 && state.round === 20) { finish(state,'TWENTY_ROUNDS'); replayBoundary(state,'round_end',state.round);return; }
+  if(index===5&&!skipReplayBoundary&&replayBoundary(state,'round_end',state.round))return;
   if (index === 5) state.round++;
   state.activeSeat = SEATS[(index+1)%6];
   state.operatorSeat = state.viewSeat = state.activeSeat;
@@ -156,6 +158,13 @@ function nextTurn(state: GameState) {
   delete state.basicPlaysRemaining;
   state.turnFlags=undefined;
   enterPhase(state,'TURN_START_WINDOW');
+}
+/** Resume only the stable boundary emitted by replayBoundary; no UI command. */
+export function resumeReplayBoundary(state:GameState,boundary:'formal_start'|'round_end') {
+ if(state.status==='FINISHED')return;
+ if(boundary==='formal_start')enterPhase(state,'TURN_START_WINDOW');
+  else nextTurn(state,true);
+ checkNeutralitySupply(state);
 }
 function removeUnit(state: GameState, id: string) {
   const unit = state.units.find(u => u.id === id);
@@ -185,7 +194,7 @@ function applyOption(state: GameState, option: BasicOption, country = state.acti
     if (option.recycleId) removeUnit(state,option.recycleId);
     const type = option.mode === 'deploy' ? 'air' : option.unitType!;
     if (!state.units.some(u => u.country === country && u.type === type && u.regionId === option.regionId)) {
-      state.units.push({ id:`unit:${state.revision}`, country, type, regionId:option.regionId });
+      state.units.push({ id:nextUnitId(state), country, type, regionId:option.regionId });
     }
   } else if (option.mode === 'move') {
     state.units.find(u => u.id === option.airId)!.regionId = option.regionId;
@@ -208,7 +217,7 @@ function applyOption(state: GameState, option: BasicOption, country = state.acti
 
 function applyPlacement(state: GameState, plan: PlacementPlan) {
   if (plan.recycleId) removeUnit(state,plan.recycleId);
-  const unitId = plan.existingId ?? `unit:${state.revision}`;
+  const unitId = plan.existingId ?? nextUnitId(state);
   if (!plan.existingId) state.units.push({ id:unitId, country:plan.country, type:plan.unitType, regionId:plan.regionId });
   state.events.push({ type:'UNIT_PLACED', revision:state.revision, mode:plan.mode, country:plan.country, unitId, regionId:plan.regionId, repeated:!!plan.existingId });
   log(state,plan.mode === 'build' ? 'UNIT_BUILT' : 'UNIT_RECRUITED',`${COUNTRY_NAMES[plan.country]}${plan.mode === 'build' ? '建设' : '征召'}：${plan.label}。`);
@@ -290,6 +299,7 @@ function transitionInternal(state: GameState | null, command: Command): Transiti
     if (waiting) next.operatorSeat = next.viewSeat = waiting;
     else {
       next.status = 'PLAYING'; next.round = 1; next.operatorSeat = next.viewSeat = 'germany';
+      if(replayBoundary(next,'formal_start',0))return {ok:true,state:next};
       enterPhase(next,'TURN_START_WINDOW');
     }
     return { ok:true,state:next };

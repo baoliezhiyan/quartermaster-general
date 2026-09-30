@@ -318,7 +318,7 @@ function apply(s:GameState,f:ResolutionFrame,e:Effect):boolean {
         const random=[...s.decks[seat].discardPile];shuffle(random,s);const card=random[0];
         const d=card&&specialCard(card.definitionId,card.balance);
         const play:Effect={kind:'extraPlay',seat,from:'discardPile',onlyCardIds:card?[card.id]:[],label:e.label};
-        const requestId=uid(r,`reveal-request:${s.revision}`),resultId=uid(r,`reveal-result:${s.revision}`);
+        const requestId=uid(r,`reveal-request:${s.balanceResolutionSerial??0}`),resultId=uid(r,`reveal-result:${s.balanceResolutionSerial??0}`);
         (s.responseNotices??=[]).push({id:requestId,recipients:[seat],readBy:[],title:'确认翻牌',text:`意大利打出了【${f.source}】，请确认随机翻开本国弃牌堆的一张牌。`,cards:[]});
         return {seat,requestId,resultId,card,playable:!!card&&(!d||['状态','经济战'].includes(d.type))&&extraCandidates(s,play).some(c=>c.id===card.id)};
       })};

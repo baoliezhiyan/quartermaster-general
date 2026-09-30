@@ -20,8 +20,8 @@
 
 ## 回放与联机
 
-- [回放规范v1.1](match-log-spec-v1.1.md)、[使用说明](match-log-guide.md)、[实现验收边界](match-log-validation.md)。协议formatVersion=2，文档版本v1.1。
-- 实现字段契约位于 `src/matchLog/contract.ts`；训练记录应按同一协议生产。
+- [回放规范v2.0](match-log-spec-v2.0.md)、[使用说明](match-log-guide.md)、[实现验收边界](match-log-validation.md)。协议formatVersion=3，文档版本v2.0。
+- 实现字段契约位于 `src/actionReplay/contract.ts`；本次暂不接纳训练记录，训练端需另行提供匹配适配器与真实样例。
 - [本地资源客户端](local-client.md)、[联机架构历史说明](v3-local-multiplayer.md)、[Cloudflare测试说明](cloudflare-testing.md)、[cpolar说明](cpolar-start.md)。第三方隧道工具/账户配置不上传仓库。
 
 ## 训练文档

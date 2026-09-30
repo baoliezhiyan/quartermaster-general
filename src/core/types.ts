@@ -35,6 +35,7 @@ export interface PreludeState {
   installed:Record<string,number>; installedWar?:Record<string,number>; installedEvent?:Record<string,number>; wars:{revision:number;attacker:SeatId;defender:SeatId}[];
 }
 export interface GameState {
+  unitSerial?:number;
   /** Isolated PPO curriculum data; absent in ordinary games. */
   trainingCourse?: {
     version: 'ppo-events-v1'; mode: 'A' | 'B';
