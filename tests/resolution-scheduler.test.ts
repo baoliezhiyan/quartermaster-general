@@ -134,11 +134,11 @@ it('guided merged activation can decline the fee and restore a usable target cho
  expect(s.resolution!.choice!.triggerTargets).toBeDefined();expect(s.decks.germany.drawPile.length).toBe(count);validateState(s);
  choose(s,'balkans');expect(s.resolution!.choice!.kind).toBe('EFFECT_DECISION');choose(s,'execute');settle(s);expect(s.units.some(u=>u.country==='germany'&&u.regionId==='balkans')).toBe(true);expect(s.decks.germany.drawPile.length).toBe(count-1);
 });
-it('selecting an older after-event opportunity does not close a still-valid descendant window',()=>{
+it('selecting a sibling closes the abandoned descendant window',()=>{
  const s=game();const rule=(id:string,on:string,label:string):TriggerRule=>({id,label:id,sourceInstanceId:id,owner:'germany',timing:'After',on,mandatory:false,source:'system',effects:[{kind:'trace',label}]});
  startResolution(s,'root','germany',[{kind:'trace',label:'A'}],[rule('B','A','B-effect'),rule('C','A','C-effect'),rule('D','B-effect','D-effect')]);
- choose(s,'B');expect(s.resolution!.choice!.options.map(o=>o.label).sort()).toEqual(['C','D']);choose(s,'C');expect(s.resolution!.choice!.options.map(o=>o.label)).toContain('D');choose(s,'D');settle(s);
- expect(s.resolution!.trace.filter(x=>x.endsWith('-effect'))).toEqual(['B-effect','C-effect','D-effect']);
+ choose(s,'B');expect(s.resolution!.choice!.options.map(o=>o.label).sort()).toEqual(['C','D']);choose(s,'C');settle(s);
+ expect(s.resolution!.trace.filter(x=>x.endsWith('-effect'))).toEqual(['B-effect','C-effect']);
 });
 it('declining a child window does not decline the same country in its ancestor window',()=>{
  const s=game();const rule=(id:string,on:string):TriggerRule=>({id,label:id,sourceInstanceId:id,owner:'germany',timing:'After',on,mandatory:false,source:'system',effects:[{kind:'trace',label:id}]});
@@ -154,4 +154,32 @@ it.each(Array.from({length:12},(_,i)=>i))('batch branch %i has unique completion
  expect(Object.values(s.decks).flatMap(d=>Object.values(d).flat()).map(c=>c.id).sort()).toEqual(initial);
  expect(s.scores.germany).toBeGreaterThanOrEqual(1);expect(s.scores.germany).toBeLessThanOrEqual(2);
  for(const f of s.resolution!.frames.filter(f=>f.cardId))expect(s.events.filter(e=>e.type==='RULE_EVENT'&&e.code==='FINISH_CARD_RESOLUTION'&&e.text.startsWith(`【${f.source}】`))).toHaveLength(1);
+});
+
+it.each([false,true])('leaving Blitzkrieg construction for sibling dive bombers closes Synthetic Fuel (guided=%s)',guided=>{
+ const s=game();add(s,'special_130','active');add(s,'special_134','active');add(s,'special_136','active');
+ s.units=[{id:'g',country:'germany',type:'army',regionId:'germany'},{id:'e',country:'germany',type:'army',regionId:'eastern_europe'},{id:'r',country:'soviet_union',type:'army',regionId:'ross_region'},{id:'si',country:'soviet_union',type:'army',regionId:'siberia'}];
+ startResolution(s,'陆攻','germany',[{kind:'action',country:'germany',action:'land_battle',regions:['ross_region'],label:'根攻击'}],[],undefined,undefined,guided);
+ actions(s,'ross_region');choose(s,'闪电战');if(s.resolution?.choice?.kind==='EFFECT_DECISION')choose(s,'execute');actions(s,'ross_region');
+ expect(s.resolution!.choice!.options.some(o=>o.label==='合成燃料')).toBe(true);
+ choose(s,'俯冲式轰炸机');if(s.resolution?.choice?.kind==='EFFECT_DECISION')choose(s,'execute');actions(s,'siberia');
+ expect(s.units.some(u=>u.id==='si')).toBe(false);
+ expect(s.resolution!.choice?.options.some(o=>o.label==='合成燃料')??false).toBe(false);
+ expect(s.resolution!.windows.some(w=>w.closeReason==='branch-left')).toBe(true);
+ settle(s);expect(s.units.some(u=>u.country==='germany'&&u.regionId==='siberia')).toBe(false);
+});
+it('Synthetic Fuel remains usable inside Blitzkrieg construction before selecting a sibling',()=>{
+ const s=game();add(s,'special_130','active');add(s,'special_134','active');add(s,'special_136','active');
+ s.units=[{id:'g',country:'germany',type:'army',regionId:'germany'},{id:'e',country:'germany',type:'army',regionId:'eastern_europe'},{id:'r',country:'soviet_union',type:'army',regionId:'ross_region'}];
+ startResolution(s,'陆攻','germany',[{kind:'action',country:'germany',action:'land_battle',regions:['ross_region'],label:'根攻击'}],[]);
+ actions(s,'ross_region');choose(s,'闪电战');actions(s,'ross_region');choose(s,'合成燃料');actions(s,'siberia');
+ expect(s.units.some(u=>u.country==='germany'&&u.regionId==='siberia')).toBe(true);settle(s);
+});
+
+it('a later printed sea battle cannot reopen the preceding naval construction window',()=>{
+ const s=game('united_states');add(s,'special_84','active');
+ s.units=[{id:'us',country:'united_states',type:'army',regionId:'hawaii'},{id:'n',country:'united_states',type:'navy',regionId:'sea_north_pacific'},{id:'j',country:'japan',type:'navy',regionId:'sea_central_pacific'}];
+ startResolution(s,'先建后攻','united_states',[{kind:'action',country:'united_states',action:'build_navy',regions:['sea_east_pacific'],label:'建设海军'},{kind:'action',country:'united_states',action:'sea_battle',regions:['sea_central_pacific'],label:'后续海战'}],[]);
+ actions(s,'sea_east_pacific');expect(s.resolution!.choice!.options.some(o=>o.label==='先进造船厂')).toBe(true);choose(s);actions(s,'sea_central_pacific');
+ expect(s.resolution!.choice?.options.some(o=>o.label==='先进造船厂')??false).toBe(false);settle(s);
 });

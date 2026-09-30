@@ -1,3 +1,4 @@
+import {seatAirMoveOptions,airPowerOptions} from '../src/core/actions';
 import {expect,it} from 'vitest';
 import {createGame,transition,SEATS} from '../src/core';
 import type {GameState,Command,SeatId} from '../src/core';
@@ -55,4 +56,17 @@ it('automatic scoring keeps the opponent counter window and counts territorial s
  let s=game('italy');add(s,'special_212','active');const calm=add(s,'special_37');s.decks.united_kingdom.hand=s.decks.united_kingdom.hand.filter(c=>c.id!==calm.id);s.decks.united_kingdom.faceDown.push(calm);s.decks.united_kingdom.hand.push(...s.decks.united_kingdom.drawPile.splice(0,1));s.units.push({id:'it-west',country:'italy',type:'army',regionId:'western_europe'});
  s.phase='SUPPLY';s=send(s,{type:'ADVANCE_PHASE'});expect(s.phase).toBe('SCORE');expect(s.resolution!.choice!.seat).toBe('united_kingdom');expect(s.publicLog?.some(e=>e.text.startsWith('意大利计分阶段获得'))??false).toBe(false);
  s=complete(s);expect(s.phase).toBe('DISCARD');expect(s.publicLog!.filter(e=>e.text.startsWith('意大利计分阶段获得'))).toHaveLength(1);
+});
+
+it.each([['united_kingdom','france','western_europe','north_africa'],['united_states','china','eastern_china','western_china']] as const)('%s may move %s air but basic Air Power cannot deploy or use it for supremacy', (seat,minor,from,to)=>{
+ let s=game(seat);s.phase='AIR';const d=s.decks[seat],fee=d.drawPile.splice(d.drawPile.findIndex(c=>c.definitionId==='air_power'),1)[0];d.hand.push(fee);
+ // Supply flags keep this focused on ownership rather than overseas supply routes.
+ s.units=[{id:'base',country:minor,type:'army',regionId:from},{id:'dest',country:minor,type:'army',regionId:to},{id:'minor-air',country:minor,type:'air',regionId:from}];
+ s.turnFlags={protected:[],battleProtected:[],supplied:['base','dest'],supplyCountries:[],supplyRegions:[],suppressed:[],noAirDefense:false};
+ const options=seatAirMoveOptions(s,seat);expect(options.some(o=>o.airId==='minor-air')).toBe(true);
+ expect(airPowerOptions(s,seat)).toEqual([]);expect(airActionOptions(s).map(o=>o.enabled)).toEqual([true,false,false]);
+ const option=options.find(o=>o.regionId===to)!;expect(option).toBeTruthy();
+ s=send(s,{type:'SELECT_AIR_ACTION',action:'move'});s=send(s,{type:'MOVE_AIR',cardId:fee.id,optionId:option.id});
+ s=complete(s);expect(s.units.find(u=>u.id==='minor-air')).toMatchObject({country:minor,regionId:to});
+ expect(s.decks[seat].discardPile.some(c=>c.id===fee.id)).toBe(true);
 });

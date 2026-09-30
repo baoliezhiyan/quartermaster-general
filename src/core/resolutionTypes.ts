@@ -72,7 +72,7 @@ export interface ResolutionFrame {
 export interface TriggerWindow {
   lane?:'immediate'|'followup';
   batchId?:string;
-  closeReason?:'exhausted'|'cancelled'|'legacy-branch';
+  closeReason?:'exhausted'|'cancelled'|'legacy-branch'|'branch-left';
   opportunities?:Record<string,'available'|'temporarily-illegal'|'declined'|'fired'>;
   id:string; originEventId:string; parentWindowId:string | null; depth:number;
   timing:'Before' | 'After'; initialCandidates:string[]; remaining:string[];

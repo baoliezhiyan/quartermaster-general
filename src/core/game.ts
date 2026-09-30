@@ -19,7 +19,7 @@ import type { Command, GameState, Phase, SeatId, Transition } from './types';
 import { REGIONS, REGION_BY_ID } from './map';
 import { COUNTRY_NAMES, allianceOf, canReallocateCard, cardName, makeDecks, phaseCountries, seatOf, shuffle } from './basic';
 import { allianceScores, countryScore, unsuppliedForPhase } from './supply';
-import { airDestinations, airMoveOptions, cardOptions } from './actions';
+import { airDestinations, seatAirMoveOptions, cardOptions } from './actions';
 import type { BasicOption } from './actions';
 
 export const PHASE_NAMES: Record<Phase,string> = {
@@ -436,14 +436,14 @@ function transitionInternal(state: GameState | null, command: Command): Transiti
     case 'PLAY_BASIC': case 'MOVE_AIR': {
       const card = state.decks[command.seat].hand.find(c => c.id === command.cardId);
       if (!card || command.type === 'MOVE_AIR' && (state.phase !== 'AIR'||state.airAction&&state.airAction!=='move')) return illegal;
-      const options = command.type === 'PLAY_BASIC' ? cardOptions(state,card.id) : airMoveOptions(state,command.seat);
+      const options = command.type === 'PLAY_BASIC' ? cardOptions(state,card.id) : seatAirMoveOptions(state,command.seat);
       const option = options.find(o => o.id === command.optionId);
       if (!option) return illegal;
       if(state.mode!=='BASIC_DEBUG') {
         if(command.type==='MOVE_AIR') {
           if(!payDiscardCost(next,command.seat,1,[card.id]))return illegal;
           next.resolutionResume={phase:'SUPPLY',apply:false};
-          startResolution(next,'主动空军调度',command.seat,[{kind:'action',action:'air_move',country:command.seat,option,label:'主动空军调度'}],[]);settleResolution(next);
+          startResolution(next,'主动空军调度',command.seat,[{kind:'action',action:'air_move',country:state.units.find(u=>u.id===option.airId)!.country,option,label:'主动空军调度'}],[]);settleResolution(next);
         } else {
           let effect=cardEffects(state,card)[0];
           if(state.phase==='AIR'&&state.airAction){if(state.airAction==='move'||option.mode!==state.airAction)return illegal;if(effect?.kind==='action')effect={...effect,airMode:state.airAction};}

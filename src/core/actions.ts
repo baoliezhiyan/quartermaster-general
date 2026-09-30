@@ -3,7 +3,7 @@ import {mayAttack,mayPlace} from './neutrality';
 import { REGIONS, REGION_BY_ID } from './map';
 import { adjacent, suppliedUnits } from './supply';
 import { allianceOf, COUNTRY_NAMES, reserve } from './basic';
-import type { CountryId, ReadState, Unit } from './types';
+import type { CountryId, ReadState, SeatId, Unit } from './types';
 
 export interface BasicOption {
   id: string;
@@ -53,6 +53,11 @@ export function airMoveOptions(state: ReadState, country: CountryId): BasicOptio
   return state.units.filter(u => u.country === country && u.type === 'air').flatMap(air => airDestinations(state,air.id,true).map(regionId => ({
     id:`move:${air.id}:${regionId}`, regionId, mode:'move' as const, airId:air.id, label:`${regionName(air.regionId)} → ${regionName(regionId)}`,
   })));
+}
+/** Standard movement includes the minor ally; card effects remain country-specific. */
+export function seatAirMoveOptions(state: ReadState, seat: SeatId): BasicOption[] {
+  const countries:CountryId[]=seat==='united_kingdom'?[seat,'france']:seat==='united_states'?[seat,'china']:[seat];
+  return countries.flatMap(country=>airMoveOptions(state,country).map(option=>({...option,label:`${COUNTRY_NAMES[country]}空军 · ${option.label}`})));
 }
 export function airPowerOptions(state: ReadState, country: CountryId): BasicOption[] {
   const supplied = suppliedUnits(state), options: BasicOption[] = [];
