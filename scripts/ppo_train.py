@@ -84,10 +84,15 @@ def onehot(value, names):
 
 
 class ArenaClient:
-    def __init__(self, log_path=None, bundle_path=None, entry_path=None):
+    def __init__(self, log_path=None, bundle_path=None, entry_path=None,
+                 log_snapshots=False):
         command = ["node", "scripts/ppo-arena-server.mjs"]
         if log_path:
             command += ["--log", str(log_path)]
+        if log_snapshots:
+            if not log_path:
+                raise ValueError("Snapshot logging needs a log path")
+            command += ["--log-snapshots"]
         if bundle_path:
             command += ["--bundle", str(bundle_path)]
         if entry_path:
@@ -554,9 +559,10 @@ def weighted_baseline(observation, rng):
 
 
 def play_episode(client, encoder, model, device, mode, seed, max_decisions, trace="none",
-                 baseline_side=None, rng=None, card_set="events"):
+                 baseline_side=None, rng=None, card_set="events", record_metadata=None):
     rng = rng or random.Random(seed)
-    response = client.request(op="reset", seed=seed, mode=mode, cardSet=card_set, trace=trace)
+    response = client.request(op="reset", seed=seed, mode=mode, cardSet=card_set,
+                              trace=trace, recordMetadata=record_metadata)
     observation = response["observation"]
     samples, rewards, elapsed = [], [], []
     choices, sources, submitted, resolved = (defaultdict(int) for _ in range(4))
