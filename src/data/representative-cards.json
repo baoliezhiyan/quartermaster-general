@@ -1,0 +1,245 @@
+[
+  {
+    "id": "special_13",
+    "sourceIndex": 13,
+    "deckOwner": "united_kingdom",
+    "country": "united_kingdom",
+    "type": "响应",
+    "name": "配给",
+    "text": "在你的出牌阶段标准打出一张牌后触发：将刚打出的那张牌洗入牌库。若为状态或响应牌，则不生效。"
+  },
+  {
+    "id": "special_23",
+    "sourceIndex": 23,
+    "deckOwner": "united_kingdom",
+    "country": "united_kingdom",
+    "type": "事件",
+    "name": "新加坡要塞化",
+    "text": "在<东南亚>征召陆军；在<南海>征召海军。"
+  },
+  {
+    "id": "special_25",
+    "sourceIndex": 25,
+    "deckOwner": "united_kingdom",
+    "country": "united_kingdom",
+    "type": "经济战",
+    "name": "轰炸机军团",
+    "text": "选择德国或意大利，其须弃置牌库顶的4张牌。"
+  },
+  {
+    "id": "special_36",
+    "sourceIndex": 36,
+    "deckOwner": "united_kingdom",
+    "country": "united_kingdom",
+    "type": "增强",
+    "name": "华沙起义",
+    "text": "在你的计分阶段开始时打出：弃置2张手牌，在<东欧>征召陆军。"
+  },
+  {
+    "id": "special_41",
+    "sourceIndex": 41,
+    "deckOwner": "united_kingdom",
+    "country": "france",
+    "type": "增强",
+    "name": "法国空军",
+    "text": "你的空军阶段开始时打出：部署法国空军。"
+  },
+  {
+    "id": "special_51",
+    "sourceIndex": 51,
+    "deckOwner": "soviet_union",
+    "country": "soviet_union",
+    "type": "状态",
+    "name": "喀秋莎",
+    "text": "每回合限1次，你发起陆战后：可弃置1张手牌，在相同的地区发起陆战。"
+  },
+  {
+    "id": "special_59",
+    "sourceIndex": 59,
+    "deckOwner": "soviet_union",
+    "country": "soviet_union",
+    "type": "响应",
+    "name": "保卫祖国",
+    "text": "在你的回合开始时触发：在<莫斯科>或其相邻地区征召陆军；在<莫斯科>消灭一支轴心国陆军。"
+  },
+  {
+    "id": "special_65",
+    "sourceIndex": 65,
+    "deckOwner": "soviet_union",
+    "country": "soviet_union",
+    "type": "事件",
+    "name": "苏德友好条约",
+    "text": "在<罗斯地区>征召陆军；在<东欧>征召陆军。"
+  },
+  {
+    "id": "special_77",
+    "sourceIndex": 77,
+    "deckOwner": "soviet_union",
+    "country": "china",
+    "type": "增强",
+    "name": "Z计划",
+    "text": "在你的空军阶段开始时打出：部署中国空军，或使中国空军夺取制空权。"
+  },
+  {
+    "id": "special_83",
+    "sourceIndex": 83,
+    "deckOwner": "united_states",
+    "country": "united_states",
+    "type": "状态",
+    "name": "战时生产",
+    "text": "每回合限1次，当你建设陆军时：可弃置牌库顶的1张牌，额外建设1支陆军。"
+  },
+  {
+    "id": "special_90",
+    "sourceIndex": 90,
+    "deckOwner": "united_states",
+    "country": "china",
+    "type": "状态",
+    "name": "抗日义勇军",
+    "text": "每当建设或征召中国陆军，或中国陆军被发起战斗时：日本须弃置1张手牌。"
+  },
+  {
+    "id": "special_104",
+    "sourceIndex": 104,
+    "deckOwner": "united_states",
+    "country": "united_states",
+    "type": "经济战",
+    "name": "轰炸东京",
+    "text": "若距离<日本>3 个区域内有处于补给状态的美国海军，日本须弃置其牌库顶的1张牌。美国获得3分。"
+  },
+  {
+    "id": "special_114",
+    "sourceIndex": 114,
+    "deckOwner": "united_states",
+    "country": "china",
+    "type": "事件",
+    "name": "美国人民同情中国",
+    "text": "建设1支中国陆军。"
+  },
+  {
+    "id": "special_125",
+    "sourceIndex": 125,
+    "deckOwner": "united_states",
+    "country": "china",
+    "type": "增强",
+    "name": "飞虎队",
+    "text": "在你的空军阶段开始时打出：部署1支中国空军，或使中国空军夺取制空权。"
+  },
+  {
+    "id": "special_129",
+    "sourceIndex": 129,
+    "deckOwner": "germany",
+    "country": "germany",
+    "type": "状态",
+    "name": "人民冲锋队",
+    "text": "每回合限一次，在你的回合开始时：可弃置牌库顶的1张牌，在<日耳曼>征召陆军。（不计入出牌阶段的行动）"
+  },
+  {
+    "id": "special_134",
+    "sourceIndex": 134,
+    "deckOwner": "germany",
+    "country": "germany",
+    "type": "状态",
+    "name": "俯冲式轰炸机",
+    "text": "每回合限一次，当你发起陆战后：可弃置牌库顶的1张牌，在战斗地区或其相邻地区发起陆战。"
+  },
+  {
+    "id": "special_136",
+    "sourceIndex": 136,
+    "deckOwner": "germany",
+    "country": "germany",
+    "type": "状态",
+    "name": "闪电战",
+    "text": "每回合限一次，当你发起陆战后：可弃置牌库顶的1张牌，在战斗地区建设陆军。"
+  },
+  {
+    "id": "special_158",
+    "sourceIndex": 158,
+    "deckOwner": "germany",
+    "country": "germany",
+    "type": "事件",
+    "name": "阿登战役",
+    "text": "在<西欧>发起陆战，在<西欧>建设陆军。"
+  },
+  {
+    "id": "special_162",
+    "sourceIndex": 162,
+    "deckOwner": "germany",
+    "country": "germany",
+    "type": "事件",
+    "name": "巴巴罗萨",
+    "text": "选择在打出该牌时与德国陆军相邻的至多3支苏联陆军，依次对其发起陆战。"
+  },
+  {
+    "id": "special_164",
+    "sourceIndex": 164,
+    "deckOwner": "germany",
+    "country": "germany",
+    "type": "经济战",
+    "name": "电动潜艇",
+    "text": "你选择1个同盟国，其须弃置牌库顶的1 张牌。德国获得2分。"
+  },
+  {
+    "id": "special_171",
+    "sourceIndex": 171,
+    "deckOwner": "japan",
+    "country": "japan",
+    "type": "状态",
+    "name": "绝对国防领域",
+    "text": "在你的计分阶段：若版图上有至少3支日本海军，获得1分。"
+  },
+  {
+    "id": "special_188",
+    "sourceIndex": 188,
+    "deckOwner": "japan",
+    "country": "japan",
+    "type": "响应",
+    "name": "泰国",
+    "text": "在你的出牌阶段开始时触发：在<东南亚>征召陆军。"
+  },
+  {
+    "id": "special_201",
+    "sourceIndex": 201,
+    "deckOwner": "japan",
+    "country": "japan",
+    "type": "响应",
+    "name": "万岁冲锋",
+    "text": "当你发起陆战后触发：在战斗地区或相邻地区发起陆战。"
+  },
+  {
+    "id": "special_213",
+    "sourceIndex": 213,
+    "deckOwner": "italy",
+    "country": "italy",
+    "type": "状态",
+    "name": "海王",
+    "text": "在你的计分阶段：每有一支在版图上的意大利海军，获得1分。"
+  },
+  {
+    "id": "special_224",
+    "sourceIndex": 224,
+    "deckOwner": "italy",
+    "country": "italy",
+    "type": "增强",
+    "name": "索马里兰",
+    "text": "在你的计分阶段打出：在<非洲南部>征召陆军。"
+  },
+  {
+    "id": "special_235",
+    "sourceIndex": 235,
+    "deckOwner": "italy",
+    "country": "italy",
+    "type": "事件",
+    "name": "德国非洲军团",
+    "text": "在<非洲北部>征召德国陆军，在<地中海>征召德国海军。"
+  },
+  {
+    "id": "special_243",
+    "sourceIndex": 243,
+    "deckOwner": "italy",
+    "country": "italy",
+    "type": "经济战",
+    "name": "爱尔兰起义",
+    "text": "英国须弃置牌库顶的2张牌。"
+  }
+]

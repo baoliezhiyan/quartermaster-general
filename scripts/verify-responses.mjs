@@ -1,0 +1,42 @@
+import { join } from 'node:path';
+import { pathToFileURL } from 'node:url';
+import { mkdir } from 'node:fs/promises';
+import assert from 'node:assert/strict';
+const {chromium}=await import(pathToFileURL(join(process.env.USERPROFILE,'.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright-core/index.mjs')).href);
+const browser=await chromium.launch({executablePath:'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe',headless:true});
+const page=await browser.newPage({viewport:{width:1920,height:1080}}), errors=[];
+page.on('pageerror',e=>errors.push(e.message));
+await mkdir('outputs/response-review',{recursive:true});
+try{
+ await page.goto('http://127.0.0.1:4174/');
+ await page.getByText('场景编辑器',{exact:true}).click();
+ await page.getByRole('button',{name:'载入：布莱切利园 · 取消德国增强',exact:true}).click();
+ const dock=page.locator('.map-interaction');
+
+ await dock.getByRole('button').filter({hasText:'云量'}).click();
+ await page.getByRole('heading',{name:'等待其他玩家回应中'}).waitFor();
+ await page.locator('.map-workspace').scrollIntoViewIfNeeded();
+ assert.equal(await dock.getByRole('button',{name:'切换到英国',exact:true}).count(),0);
+ assert(!((await dock.innerText()).includes('英国')));
+ await page.screenshot({path:'outputs/response-review/germany-waiting.png'});
+ await page.reload();
+ await page.getByRole('heading',{name:'等待其他玩家回应中'}).waitFor();
+ await page.getByText('六国操作与结算查看',{exact:true}).evaluate(e=>e.parentElement.open=true);
+ var britain=page.locator('details').filter({has:page.getByText('六国操作与结算查看',{exact:true})}).getByRole('button',{name:'英国',exact:true});
+ if(await britain.isEnabled())await britain.click();
+ await dock.getByRole('button',{name:'不响应',exact:true}).waitFor();
+ await page.screenshot({path:'outputs/response-review/britain-response.png'});
+ await dock.getByRole('button').filter({hasText:'布莱切利园'}).click();
+ await dock.locator('.hand-card').first().click();
+ await dock.getByRole('button',{name:'确认选择',exact:true}).click();
+ await page.locator('.map-interaction .engine-choice').waitFor({state:'detached'});
+ assert.equal(await page.getByRole('heading',{name:'等待其他玩家回应中'}).count(),0);
+ await page.locator('details').filter({has:page.getByText('六国操作与结算查看',{exact:true})}).getByRole('button',{name:'德国',exact:true}).click();
+ await page.getByRole('button',{name:'回退一步',exact:true}).click();
+ await page.getByText('六国操作与结算查看',{exact:true}).evaluate(e=>e.parentElement.open=true);
+ var britain=page.locator('details').filter({has:page.getByText('六国操作与结算查看',{exact:true})}).getByRole('button',{name:'英国',exact:true});
+ if(await britain.isEnabled())await britain.click();
+ await dock.getByRole('button',{name:'确认选择',exact:true}).waitFor();
+ assert.deepEqual(errors,[]);
+ console.log('PASS: preset load, Germany waits, reload preserves choice, UK response/payment, return view, undo response payment; no page errors.');
+}finally{await browser.close();}

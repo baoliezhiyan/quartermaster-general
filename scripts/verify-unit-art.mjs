@@ -1,0 +1,10 @@
+import {join} from 'node:path';import {pathToFileURL} from 'node:url';import assert from 'node:assert/strict';import {mkdir} from 'node:fs/promises';
+const {chromium}=await import(pathToFileURL(join(process.env.USERPROFILE,'.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright-core/index.mjs')).href);
+const browser=await chromium.launch({executablePath:'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe',headless:true});const page=await browser.newPage({viewport:{width:1920,height:1080}}),errors=[];page.on('pageerror',e=>errors.push(e.message));
+try{
+ await page.goto('http://127.0.0.1:4174/');await page.getByRole('button',{name:'创建新游戏 →',exact:true}).click();await page.locator('.unit-token').first().waitFor();assert.equal(await page.locator('.unit-token .unit-art').count(),8);assert.equal(await page.locator('.unit-token > text').count(),0);
+ await page.locator('.map-phase-panel').getByRole('button',{name:'兵模储备栏',exact:true}).click();const rows=page.locator('.reserve-unit-row');for(const row of await rows.all()){const count=Number((await row.getAttribute('aria-label')).split(' ').at(-1));assert.equal(await row.locator('.unit-art').count(),count);}
+ assert.equal(await page.locator('.reserve-art').innerText(),'');await page.getByRole('button',{name:'全屏',exact:true}).click();await mkdir('outputs/unit-art-review',{recursive:true});await page.screenshot({path:'outputs/unit-art-review/map-reserve.png'});await page.getByRole('button',{name:'退出全屏',exact:true}).click();
+ await page.getByText('场景编辑器',{exact:true}).click();await page.getByRole('button',{name:'载入：地图交互 · 双方空军',exact:true}).click();const stack=page.locator('[data-unit-ids*="test:de-air"]');assert((await stack.locator('image').getAttribute('href')).endsWith('germany-air.png'));assert((await stack.getAttribute('data-unit-ids')).includes(','));
+ assert.deepEqual(errors,[]);console.log('PASS: map artwork, hidden printed labels, reserve counts, air stack keeps its single top token.');
+}finally{await browser.close();}

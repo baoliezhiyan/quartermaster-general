@@ -1,0 +1,21 @@
+name: 规则或平衡提案
+description: 讨论具体规则裁定、牌面或平衡调整
+body:
+  - type: input
+    id: scope
+    attributes:
+      label: 适用版本、规则开关及卡牌ID
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: 当前问题和建议修改
+      description: 区分卡面描述修正与实际结算改动
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: 对局证据、预期影响及训练影响
+      description: 样本数量、打法、分阵营表现；不要将个人判断写成已采纳规则

@@ -1,0 +1,36 @@
+{
+  "name": "quartermaster-general-local",
+  "private": true,
+  "version": "1.7.0",
+  "type": "module",
+  "packageManager": "pnpm@11.19.0",
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "scripts": {
+    "dev": "vite --host 127.0.0.1",
+    "start": "vite --host 127.0.0.1 --open",
+    "typecheck": "tsc --noEmit",
+    "build": "node scripts/generate-build-identity.mjs && tsc --noEmit && vite build && vite build --ssr src/network/Room.ts --outDir dist-server",
+    "multiplayer": "node scripts/multiplayer-server.mjs --open",
+    "training:basic": "node scripts/run-basic-training.mjs",
+    "preview": "vite preview --host 127.0.0.1",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "check": "pnpm typecheck && pnpm test && pnpm build",
+    "release": "pnpm check && node scripts/build-multiplayer.mjs"
+  },
+  "dependencies": {
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8",
+    "ws": "^8.21.3"
+  },
+  "devDependencies": {
+    "@types/react": "^19.2.0",
+    "@types/react-dom": "^19.2.0",
+    "typescript": "~5.9.3",
+    "vite": "^8.2.2",
+    "vitest": "^5.0.0"
+  },
+  "displayVersion": "1.7.0"
+}

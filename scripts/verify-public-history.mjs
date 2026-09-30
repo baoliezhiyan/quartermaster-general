@@ -1,0 +1,13 @@
+import {join} from 'node:path';import {pathToFileURL} from 'node:url';import assert from 'node:assert/strict';import {mkdir} from 'node:fs/promises';
+const {chromium}=await import(pathToFileURL(join(process.env.USERPROFILE,'.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright-core/index.mjs')).href);
+const browser=await chromium.launch({executablePath:'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe',headless:true});const page=await browser.newPage({viewport:{width:1920,height:1080}});const errors=[];page.on('pageerror',e=>errors.push(e.message));
+try{
+ await page.goto('http://127.0.0.1:4174/');assert.equal(await page.getByLabel('牌组模式',{exact:true}).count(),0);
+ await page.getByText('场景编辑器',{exact:true}).click();await page.getByRole('button',{name:'载入：布莱切利园 · 取消德国增强',exact:true}).click();
+ await page.locator('.table-hand .hand-card').filter({hasText:'云量'}).click();await page.locator('.guided-prompt').getByRole('button',{name:'确认',exact:true}).click();
+ await page.locator('.map-phase-panel').getByRole('button',{name:'对局记录栏',exact:true}).click();const log=page.locator('.public-game-log');assert((await log.innerText()).includes('德国打出增强【云量】'));assert(!(await log.innerText()).includes('布莱切利园'));
+ const countries=page.getByLabel('六国公开信息',{exact:true});assert.equal(await countries.getByRole('button').count(),6);assert.equal(await page.locator('.map-phase-panel .public-country-buttons').count(),0);const positions=await countries.getByRole('button').evaluateAll(es=>es.map(e=>({x:e.getBoundingClientRect().x,y:e.getBoundingClientRect().y})));assert(positions.every(p=>p.x===positions[0].x));assert(positions.every((p,i)=>i===0||p.y>positions[i-1].y));await countries.getByRole('button',{name:'英国',exact:true}).click();const info=page.getByRole('dialog',{name:'英国公开信息',exact:true});await info.waitFor();assert(!(await info.innerText()).includes('布莱切利园'));assert((await info.innerText()).includes('手牌 3 张'));assert((await page.locator('.guided-prompt').innerText()).includes('等待其他玩家回应中'));
+ await page.getByRole('button',{name:'全屏',exact:true}).click();await mkdir('outputs/public-history-review',{recursive:true});await page.screenshot({path:'outputs/public-history-review/record-and-info.png'});
+ await info.getByRole('button',{name:'关闭公开信息',exact:true}).click();await page.reload();await page.locator('.map-phase-panel').getByRole('button',{name:'对局记录栏',exact:true}).click();assert((await log.innerText()).includes('云量'));
+ assert.deepEqual(errors,[]);console.log('PASS: full-only creation, public-only log, six country buttons, public counts without hidden hand identities, same viewpoint, fullscreen dialog, saved log.');
+}finally{await browser.close();}

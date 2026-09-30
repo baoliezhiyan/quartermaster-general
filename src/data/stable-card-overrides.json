@@ -1,0 +1,155 @@
+[
+  {
+    "id": "prelude_UK-02",
+    "sourceIndex": 0,
+    "deckOwner": "united_kingdom",
+    "country": "france",
+    "type": "军备",
+    "name": "斯通尼战役",
+    "text": "轴心国在<西欧>建设或征召陆军后触发：立刻消灭此陆军。发动此军备时，须弃置的手牌必须为【发起陆战】。"
+  },
+  {
+    "id": "prelude_JP-19",
+    "sourceIndex": -100,
+    "country": "japan",
+    "deckOwner": "japan",
+    "type": "历史",
+    "name": "伪满洲国",
+    "text": "在<中国东部>或<海参崴>征召一支日本陆军。",
+    "tension": 1
+  },
+  {
+    "id": "special_251",
+    "sourceIndex": 251,
+    "country": "italy",
+    "deckOwner": "italy",
+    "type": "状态",
+    "name": "维希法国",
+    "text": "在你的计分阶段：如果<西欧>无人占领，获得2分；如果<西欧>被轴心国占领，获得1分。在你的回合开始时，若<西欧>被两种不同国家的同盟国陆军占领，弃置此状态卡。此牌被弃置后移出本局游戏。"
+  },
+  {
+    "id": "prelude_IT-08",
+    "sourceIndex": 0,
+    "deckOwner": "italy",
+    "country": "italy",
+    "type": "历史",
+    "name": "反共产国际协定",
+    "text": "苏联弃置其序章牌库顶的3张牌。获得2分。",
+    "tension": 1
+  },
+  {
+    "id": "prelude_IT-09",
+    "sourceIndex": 0,
+    "deckOwner": "italy",
+    "country": "italy",
+    "type": "历史",
+    "name": "空军军团",
+    "text": "所有同盟国各弃置其序章牌库顶的1张牌。",
+    "tension": 0
+  },
+  {
+    "id": "special_86",
+    "sourceIndex": 86,
+    "deckOwner": "united_states",
+    "country": "united_states",
+    "type": "状态",
+    "name": "雷达",
+    "text": "每轮限一次，当处于补给状态的美国海军被攻击时：可弃置牌库顶的2张牌，本次攻击中被攻击的海军不会被移除。"
+  },
+  {
+    "id": "neutrality_united_states_status",
+    "sourceIndex": -100,
+    "country": "united_states",
+    "deckOwner": "united_states",
+    "type": "状态",
+    "name": "孤立主义",
+    "text": "开局放置在场上。美国不能在<莫斯科>及其相邻地区、<西欧>、<不列颠群岛>建设或征召部队。结束中立时，弃置此状态卡，获得3分。"
+  },
+  {
+    "id": "prelude_US-10",
+    "sourceIndex": 0,
+    "deckOwner": "united_states",
+    "country": "united_states",
+    "type": "历史",
+    "name": "海德公园的野餐",
+    "text": "英国可弃置一张序章手牌，以打出另一张序章手牌。美国打出一张序章手牌或序章牌库顶的牌。",
+    "tension": 0
+  },
+  {
+    "id": "special_87",
+    "sourceIndex": 87,
+    "deckOwner": "united_states",
+    "country": "united_states",
+    "type": "状态",
+    "name": "空中堡垒",
+    "text": "每回合限一次，在你的弃牌阶段开始时：可弃置一张手牌及牌库顶的2张牌，打出一张手牌中的经济战卡。"
+  },
+  {
+    "id": "prelude_US-14",
+    "sourceIndex": 0,
+    "deckOwner": "united_states",
+    "country": "united_states",
+    "type": "历史",
+    "name": "阿姆托尔格贸易公司",
+    "text": "苏联可从其序章弃牌堆中选择1张【军备卡】并暗置。",
+    "tension": 0
+  },
+  {
+    "id": "prelude_SU-02",
+    "sourceIndex": 0,
+    "deckOwner": "soviet_union",
+    "country": "soviet_union",
+    "type": "历史",
+    "name": "大清洗",
+    "text": "从你的序章牌库顶依次弃置最多2张牌，每弃一张，获得2分。",
+    "tension": -1
+  },
+  {
+    "id": "prelude_SU-06",
+    "sourceIndex": 0,
+    "deckOwner": "soviet_union",
+    "country": "soviet_union",
+    "type": "军备",
+    "name": "红海军保卫港口",
+    "text": "在你的陆军被发动陆战时触发：若其与你的海军相邻，本回合这支陆军不会被移除。",
+    "tension": 0
+  },
+  {
+    "id": "prelude_SU-17",
+    "sourceIndex": 0,
+    "deckOwner": "soviet_union",
+    "country": "china",
+    "type": "历史",
+    "name": "长征",
+    "text": "在<中国东部>或<中国西部>征召一支苏联或中国陆军；该地区必须没有任何国家的陆军。",
+    "tension": 0
+  },
+  {
+    "id": "prelude_SU-09",
+    "sourceIndex": 0,
+    "deckOwner": "soviet_union",
+    "country": "soviet_union",
+    "type": "历史",
+    "name": "苏联支持盛世才",
+    "text": "在<哈萨克斯坦>征召一支苏联陆军。",
+    "tension": 0
+  },
+  {
+    "id": "special_153",
+    "sourceIndex": 153,
+    "deckOwner": "germany",
+    "country": "germany",
+    "type": "事件",
+    "name": "战略规划",
+    "text": "从摸牌库挑选至多2张牌置入手牌，弃置1张手牌，重洗摸牌库。"
+  },
+  {
+    "id": "special_55",
+    "sourceIndex": 55,
+    "deckOwner": "soviet_union",
+    "country": "soviet_union",
+    "type": "响应",
+    "name": "无休止的扩大",
+    "text": "在任意时机触发：在此回合中，<西伯利亚>和<哈萨克斯坦>的苏联陆军不会被移除。"
+  }
+]

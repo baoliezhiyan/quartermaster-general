@@ -1,0 +1,30 @@
+import {join} from 'node:path';import {pathToFileURL} from 'node:url';import {mkdir,writeFile} from 'node:fs/promises';import assert from 'node:assert/strict';
+const {chromium}=await import(pathToFileURL(join(process.env.USERPROFILE,'.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright-core/index.mjs')).href);
+const browser=await chromium.launch({executablePath:'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe',headless:true});const context=await browser.newContext({viewport:{width:1600,height:1000}}),errors=[];context.setDefaultTimeout(15000);await mkdir('outputs/playtest-review',{recursive:true});
+async function joinUser(name,seat){const p=await context.newPage();p.on('pageerror',e=>errors.push(e.message));await p.goto('http://127.0.0.1:4188/');await p.getByLabel('用户名').fill(name);await p.getByRole('button',{name:'创建用户并进入'}).click();await p.getByRole('button',{name:new RegExp('0[1-7].*'+seat+'.*空位')}).click();return p;}
+try{
+ const gm=await joinUser('GM测试','GM'),de=await joinUser('德国测试','德国'),uk=await joinUser('英国测试','英国');
+ await gm.getByText('存档、读档与备份',{exact:true}).click();await gm.getByLabel('导入 JSON 存档',{exact:true}).setInputFiles('outputs/resource-ui-fixture.json');
+ const confirm=()=>de.locator('.guided-prompt').getByRole('button',{name:'确认',exact:true}).click();
+ await de.locator('.guided-prompt').getByRole('button',{name:'资源重整',exact:true}).click();await confirm();
+ const fees=de.locator('.table-hand .hand-card.available-card');await fees.first().waitFor();const count=await fees.count();for(let i=0;i<count;i++)await fees.nth(i).click();await confirm();
+ await de.locator('.map-panel-buttons button[aria-pressed="true"]').filter({hasText:/^牌库$/}).waitFor();
+ assert.equal(await de.locator('.map-panel-buttons').getByRole('button',{name:'牌库',exact:true}).getAttribute('aria-pressed'),'true');
+ await de.locator('.map-hand-dock .card-grid button.available-card:visible').first().click();await confirm();await de.locator('.map-panel-buttons button[aria-pressed="true"]').filter({hasText:'手牌'}).waitFor();await de.screenshot({path:'outputs/playtest-review/resource-hand.png'});
+ for(const [panel,label] of [['deck','牌库'],['discard','弃牌堆']]){
+ await de.locator('.map-panel-buttons').getByRole('button',{name:label,exact:true}).click();
+ const content=de.locator('section[aria-label="'+label+'"]');await content.waitFor();
+ const counter=content.locator('span').filter({hasText:new RegExp('^'+label+' [0-9]+ 张$')});await counter.waitFor();
+ const count=Number((await counter.innerText()).match(/[0-9]+/)[0]);assert.equal(await content.locator('.card-shell').count(),count);await de.screenshot({path:'outputs/playtest-review/'+panel+'-count.png'});
+}
+await de.locator('.map-panel-buttons').getByRole('button',{name:'对局记录',exact:true}).click();
+await de.getByLabel('六国公开信息').getByRole('button',{name:'德国',exact:true}).click();
+await de.getByRole('dialog',{name:'德国公开信息',exact:true}).waitFor();assert.match(await de.getByRole('dialog',{name:'德国公开信息',exact:true}).innerText(),/牌库 [0-9]+ 张 · 弃牌堆 [0-9]+ 张/);
+await de.screenshot({path:'outputs/playtest-review/country-count.png'});await de.getByRole('button',{name:'关闭公开信息',exact:true}).click();await de.locator('.map-panel-buttons').getByRole('button',{name:'手牌',exact:true}).click();
+for(let i=0;i<5;i++)await de.getByRole('button',{name:'放大地图',exact:true}).click();const viewport=de.locator('.map-viewport'),sheet=de.locator('.map-sheet');assert.equal(await viewport.getAttribute('data-zoom'),'150');
+ await de.getByRole('button',{name:'中心视图',exact:true}).click();const centered=await sheet.getAttribute('style');const box=await viewport.boundingBox();await de.mouse.move(box.x+box.width*.8,box.y+box.height*.7);await de.mouse.down({button:'right'});await de.mouse.move(box.x+box.width*.6,box.y+box.height*.6,{steps:8});await de.mouse.up({button:'right'});assert.notEqual(await sheet.getAttribute('style'),centered);await de.getByRole('button',{name:'中心视图',exact:true}).click();assert.equal(await viewport.getAttribute('data-zoom'),'150');assert.equal(await sheet.getAttribute('style'),centered);
+ await gm.getByLabel('导入 JSON 存档',{exact:true}).setInputFiles('outputs/response-ui-fixture.json');await de.locator('.table-hand .hand-card').filter({hasText:'潜艇袭击无防备运输船'}).click();await confirm();
+ await de.getByText('等待其他玩家响应中',{exact:true}).waitFor();assert.equal(await de.getByText(/等待其他玩家响应：/).count(),0);assert.equal(await de.getByRole('button',{name:'切换到英国',exact:true}).count(),0);
+ await gm.getByText('等待其他玩家响应：英国',{exact:true}).waitFor();await gm.getByRole('button',{name:'切换到英国',exact:true}).waitFor();await de.screenshot({path:'outputs/playtest-review/player-waiting.png'});
+ assert.deepEqual(errors,[]);await writeFile('outputs/playtest-review/result.json',JSON.stringify({passed:true,checks:['live deck/discard panel counts','public country discard count','reallocation opens hand','centering keeps 150% and resets pan','players see anonymous waiting','GM retains country and shortcut'],errors},null,2));console.log('UI fixes browser checks passed');
+}catch(e){for(const [i,p]of context.pages().entries())await writeFile(`outputs/playtest-review/failure-${i}.txt`,await p.locator('body').innerText());throw e;}finally{await browser.close();}

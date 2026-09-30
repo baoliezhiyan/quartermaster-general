@@ -1,0 +1,2695 @@
+{
+  "Json": {
+    "union": [
+      {
+        "literal": null
+      },
+      {
+        "primitive": "boolean"
+      },
+      {
+        "primitive": "number"
+      },
+      {
+        "primitive": "string"
+      },
+      {
+        "array": {
+          "ref": "Json"
+        }
+      },
+      {
+        "record": {
+          "ref": "Json"
+        }
+      }
+    ]
+  },
+  "Seat": {
+    "union": [
+      {
+        "literal": "germany"
+      },
+      {
+        "literal": "united_kingdom"
+      },
+      {
+        "literal": "japan"
+      },
+      {
+        "literal": "soviet_union"
+      },
+      {
+        "literal": "italy"
+      },
+      {
+        "literal": "united_states"
+      }
+    ]
+  },
+  "Country": {
+    "union": [
+      {
+        "ref": "Seat"
+      },
+      {
+        "literal": "france"
+      },
+      {
+        "literal": "china"
+      }
+    ]
+  },
+  "Alliance": {
+    "union": [
+      {
+        "literal": "axis"
+      },
+      {
+        "literal": "allies"
+      }
+    ]
+  },
+  "Ref": {
+    "primitive": "string"
+  },
+  "Scope": {
+    "properties": {
+      "public": {
+        "primitive": "boolean",
+        "optional": false
+      },
+      "seats": {
+        "array": {
+          "ref": "Seat"
+        },
+        "optional": false
+      }
+    }
+  },
+  "Scores": {
+    "properties": {
+      "bySeat": {
+        "record": {
+          "primitive": "number"
+        },
+        "keys": {
+          "ref": "Seat"
+        },
+        "optional": false
+      },
+      "byAlliance": {
+        "record": {
+          "primitive": "number"
+        },
+        "keys": {
+          "ref": "Alliance"
+        },
+        "optional": false
+      },
+      "adjustments": {
+        "array": {
+          "properties": {
+            "id": {
+              "ref": "Ref",
+              "optional": false
+            },
+            "alliance": {
+              "ref": "Alliance",
+              "optional": false
+            },
+            "amount": {
+              "primitive": "number",
+              "optional": false
+            },
+            "reason": {
+              "primitive": "string",
+              "optional": false
+            }
+          }
+        },
+        "optional": false
+      }
+    }
+  },
+  "Controller": {
+    "properties": {
+      "controllerId": {
+        "ref": "Ref",
+        "optional": false
+      },
+      "kind": {
+        "union": [
+          {
+            "literal": "human"
+          },
+          {
+            "literal": "ai"
+          },
+          {
+            "literal": "system"
+          }
+        ],
+        "optional": false
+      },
+      "displayName": {
+        "primitive": "string",
+        "optional": false
+      }
+    }
+  },
+  "ControllerMap": {
+    "record": {
+      "properties": {
+        "controllerId": {
+          "union": [
+            {
+              "ref": "Ref"
+            },
+            {
+              "literal": null
+            }
+          ],
+          "optional": false
+        },
+        "bound": {
+          "primitive": "boolean",
+          "optional": false
+        }
+      }
+    },
+    "keys": {
+      "ref": "Seat"
+    }
+  },
+  "RulesPackage": {
+    "properties": {
+      "packageId": {
+        "ref": "Ref",
+        "optional": false
+      },
+      "version": {
+        "primitive": "string",
+        "optional": false
+      },
+      "fingerprint": {
+        "primitive": "string",
+        "optional": false
+      },
+      "balancePatch": {
+        "ref": "Json",
+        "optional": false
+      },
+      "preludeEnabled": {
+        "primitive": "boolean",
+        "optional": false
+      },
+      "neutralityEnabled": {
+        "primitive": "boolean",
+        "optional": false
+      },
+      "turnOrder": {
+        "array": {
+          "ref": "Seat"
+        },
+        "optional": false
+      },
+      "scoring": {
+        "ref": "Json",
+        "optional": false
+      },
+      "victory": {
+        "ref": "Json",
+        "optional": false
+      }
+    }
+  },
+  "PolicyDefinition": {
+    "properties": {
+      "kind": {
+        "primitive": "string",
+        "optional": false
+      },
+      "version": {
+        "primitive": "string",
+        "optional": false
+      },
+      "parameters": {
+        "record": {
+          "ref": "Json"
+        },
+        "optional": false
+      }
+    }
+  },
+  "ResourceConfig": {
+    "union": [
+      {
+        "properties": {
+          "mode": {
+            "literal": "standard",
+            "optional": false
+          },
+          "deckComposition": {
+            "record": {
+              "record": {
+                "primitive": "number"
+              },
+              "keys": {
+                "ref": "Ref"
+              }
+            },
+            "keys": {
+              "ref": "Seat"
+            },
+            "optional": false
+          },
+          "openingDraw": {
+            "primitive": "number",
+            "optional": false
+          },
+          "openingKeep": {
+            "primitive": "number",
+            "optional": false
+          },
+          "handLimit": {
+            "union": [
+              {
+                "primitive": "number"
+              },
+              {
+                "literal": null
+              }
+            ],
+            "optional": false
+          },
+          "configuration": {
+            "ref": "Json",
+            "optional": false
+          }
+        }
+      },
+      {
+        "properties": {
+          "mode": {
+            "literal": "resource_pool",
+            "optional": false
+          },
+          "courseId": {
+            "ref": "Ref",
+            "optional": false
+          },
+          "courseVersion": {
+            "primitive": "string",
+            "optional": false
+          },
+          "cardSet": {
+            "union": [
+              {
+                "literal": "basics"
+              },
+              {
+                "literal": "events"
+              },
+              {
+                "literal": "custom"
+              }
+            ],
+            "optional": false
+          },
+          "availabilityMode": {
+            "primitive": "string",
+            "optional": false
+          },
+          "composition": {
+            "record": {
+              "record": {
+                "primitive": "number"
+              },
+              "keys": {
+                "ref": "Ref"
+              }
+            },
+            "keys": {
+              "ref": "Seat"
+            },
+            "optional": false
+          },
+          "whitelist": {
+            "array": {
+              "ref": "Ref"
+            },
+            "optional": false
+          },
+          "openingPolicy": {
+            "ref": "PolicyDefinition",
+            "optional": false
+          },
+          "refreshPolicy": {
+            "ref": "PolicyDefinition",
+            "optional": false
+          },
+          "paymentPolicy": {
+            "ref": "PolicyDefinition",
+            "optional": false
+          },
+          "shortfallPolicy": {
+            "ref": "PolicyDefinition",
+            "optional": false
+          },
+          "overrides": {
+            "array": {
+              "properties": {
+                "definitionId": {
+                  "ref": "Ref",
+                  "optional": false
+                },
+                "description": {
+                  "primitive": "string",
+                  "optional": false
+                },
+                "rule": {
+                  "ref": "Json",
+                  "optional": false
+                }
+              }
+            },
+            "optional": false
+          }
+        }
+      }
+    ]
+  },
+  "CatalogCard": {
+    "properties": {
+      "catalogEntryId": {
+        "ref": "Ref",
+        "optional": false
+      },
+      "definitionId": {
+        "ref": "Ref",
+        "optional": false
+      },
+      "name": {
+        "primitive": "string",
+        "optional": false
+      },
+      "text": {
+        "primitive": "string",
+        "optional": false
+      },
+      "cardType": {
+        "primitive": "string",
+        "optional": false
+      },
+      "printedCountry": {
+        "ref": "Country",
+        "optional": false
+      },
+      "deckOwner": {
+        "ref": "Seat",
+        "optional": false
+      },
+      "instanceCount": {
+        "primitive": "number",
+        "optional": false
+      },
+      "overrides": {
+        "ref": "Json",
+        "optional": false
+      },
+      "art": {
+        "union": [
+          {
+            "properties": {
+              "assetId": {
+                "ref": "Ref",
+                "optional": false
+              },
+              "fingerprint": {
+                "union": [
+                  {
+                    "primitive": "string"
+                  },
+                  {
+                    "literal": null
+                  }
+                ],
+                "optional": false
+              }
+            }
+          },
+          {
+            "literal": null
+          }
+        ],
+        "optional": false
+      },
+      "effectDefinition": {
+        "ref": "Json",
+        "optional": false
+      }
+    }
+  },
+  "Header": {
+    "properties": {
+      "recordType": {
+        "literal": "header",
+        "optional": false
+      },
+      "seq": {
+        "literal": 0,
+        "optional": false
+      },
+      "format": {
+        "literal": "quartermaster-match-log",
+        "optional": false
+      },
+      "formatVersion": {
+        "literal": 2,
+        "optional": false
+      },
+      "recordingId": {
+        "ref": "Ref",
+        "optional": false
+      },
+      "recordingRevision": {
+        "primitive": "number",
+        "optional": false
+      },
+      "historyPolicy": {
+        "literal": "truncate_on_undo",
+        "optional": false
+      },
+      "matchId": {
+        "ref": "Ref",
+        "optional": false
+      },
+      "createdAt": {
+        "primitive": "string",
+        "optional": false
+      },
+      "gameVersion": {
+        "primitive": "string",
+        "optional": false
+      },
+      "compatibility": {
+        "properties": {
+          "policy": {
+            "union": [
+              {
+                "literal": "exact_game_version"
+              },
+              {
+                "literal": "declared_schema"
+              }
+            ],
+            "optional": false
+          },
+          "requiredFeatures": {
+            "array": {
+              "primitive": "string"
+            },
+            "optional": false
+          }
+        },
+        "optional": false
+      },
+      "producer": {
+        "properties": {
+          "name": {
+            "primitive": "string",
+            "optional": false
+          },
+          "version": {
+            "primitive": "string",
+            "optional": false
+          },
+          "buildFingerprint": {
+            "primitive": "string",
+            "optional": false
+          }
+        },
+        "optional": false
+      },
+      "mode": {
+        "union": [
+          {
+            "literal": "standard"
+          },
+          {
+            "literal": "resource_pool"
+          }
+        ],
+        "optional": false
+      },
+      "capture": {
+        "literal": "full_fidelity",
+        "optional": false
+      },
+      "stateSchemaVersion": {
+        "literal": 1,
+        "optional": false
+      },
+      "decisionSchemaVersion": {
+        "literal": 1,
+        "optional": false
+      },
+      "eventSchemaVersion": {
+        "literal": 1,
+        "optional": false
+      },
+      "origin": {
+        "properties": {
+          "kind": {
+            "union": [
+              {
+                "literal": "creation"
+              },
+              {
+                "literal": "snapshot"
+              }
+            ],
+            "optional": false
+          },
+          "description": {
+            "primitive": "string",
+            "optional": false
+          },
+          "parentRecordingId": {
+            "union": [
+              {
+                "ref": "Ref"
+              },
+              {
+                "literal": null
+              }
+            ],
+            "optional": false
+          },
+          "parentRecordingRevision": {
+            "union": [
+              {
+                "primitive": "number"
+              },
+              {
+                "literal": null
+              }
+            ],
+            "optional": false
+          },
+          "parentSeq": {
+            "union": [
+              {
+                "primitive": "number"
+              },
+              {
+                "literal": null
+              }
+            ],
+            "optional": false
+          },
+          "round": {
+            "primitive": "number",
+            "optional": false
+          },
+          "phase": {
+            "primitive": "string",
+            "optional": false
+          }
+        },
+        "optional": false
+      },
+      "rules": {
+        "ref": "RulesPackage",
+        "optional": false
+      },
+      "resourceConfig": {
+        "ref": "ResourceConfig",
+        "optional": false
+      },
+      "participants": {
+        "array": {
+          "ref": "Controller"
+        },
+        "optional": false
+      },
+      "controllers": {
+        "ref": "ControllerMap",
+        "optional": false
+      },
+      "catalog": {
+        "array": {
+          "ref": "CatalogCard"
+        },
+        "optional": false
+      },
+      "map": {
+        "properties": {
+          "version": {
+            "primitive": "string",
+            "optional": false
+          },
+          "fingerprint": {
+            "primitive": "string",
+            "optional": false
+          },
+          "regions": {
+            "array": {
+              "properties": {
+                "regionId": {
+                  "ref": "Ref",
+                  "optional": false
+                },
+                "name": {
+                  "primitive": "string",
+                  "optional": false
+                },
+                "terrain": {
+                  "primitive": "string",
+                  "optional": false
+                },
+                "homeCountry": {
+                  "union": [
+                    {
+                      "ref": "Country"
+                    },
+                    {
+                      "literal": null
+                    }
+                  ],
+                  "optional": false
+                },
+                "baseSupply": {
+                  "ref": "Json",
+                  "optional": false
+                },
+                "displayPosition": {
+                  "union": [
+                    {
+                      "properties": {
+                        "x": {
+                          "primitive": "number",
+                          "optional": false
+                        },
+                        "y": {
+                          "primitive": "number",
+                          "optional": false
+                        }
+                      }
+                    },
+                    {
+                      "literal": null
+                    }
+                  ],
+                  "optional": false
+                }
+              }
+            },
+            "optional": false
+          },
+          "adjacency": {
+            "ref": "Json",
+            "optional": false
+          },
+          "straits": {
+            "ref": "Json",
+            "optional": false
+          },
+          "artAssetId": {
+            "union": [
+              {
+                "ref": "Ref"
+              },
+              {
+                "literal": null
+              }
+            ],
+            "optional": false
+          }
+        },
+        "optional": false
+      },
+      "seed": {
+        "union": [
+          {
+            "primitive": "number"
+          },
+          {
+            "primitive": "string"
+          },
+          {
+            "literal": null
+          }
+        ],
+        "optional": false
+      },
+      "rngDefinitions": {
+        "array": {
+          "properties": {
+            "streamId": {
+              "ref": "Ref",
+              "optional": false
+            },
+            "algorithmId": {
+              "ref": "Ref",
+              "optional": false
+            },
+            "algorithmVersion": {
+              "primitive": "string",
+              "optional": false
+            },
+            "purpose": {
+              "primitive": "string",
+              "optional": false
+            }
+          }
+        },
+        "optional": false
+      },
+      "capabilities": {
+        "properties": {
+          "privateViews": {
+            "literal": true,
+            "optional": false
+          },
+          "nativeVerification": {
+            "primitive": "boolean",
+            "optional": false
+          },
+          "aiDiagnostics": {
+            "primitive": "boolean",
+            "optional": false
+          }
+        },
+        "optional": false
+      }
+    }
+  },
+  "CardInstance": {
+    "properties": {
+      "instanceId": {
+        "ref": "Ref",
+        "optional": false
+      },
+      "definitionId": {
+        "ref": "Ref",
+        "optional": false
+      },
+      "deckOwner": {
+        "ref": "Seat",
+        "optional": false
+      },
+      "printedCountry": {
+        "ref": "Country",
+        "optional": false
+      },
+      "effectiveDefinitionRef": {
+        "ref": "Ref",
+        "optional": false
+      }
+    }
+  },
+  "AreaKind": {
+    "union": [
+      {
+        "literal": "regular_hand"
+      },
+      {
+        "literal": "regular_deck"
+      },
+      {
+        "literal": "regular_discard"
+      },
+      {
+        "literal": "prelude_hand"
+      },
+      {
+        "literal": "prelude_deck"
+      },
+      {
+        "literal": "prelude_discard"
+      },
+      {
+        "literal": "resource_pool"
+      },
+      {
+        "literal": "resource_discard"
+      },
+      {
+        "literal": "active"
+      },
+      {
+        "literal": "face_down_response"
+      },
+      {
+        "literal": "face_down_armament"
+      },
+      {
+        "literal": "resolving"
+      },
+      {
+        "literal": "removed"
+      }
+    ]
+  },
+  "Area": {
+    "properties": {
+      "areaId": {
+        "ref": "Ref",
+        "optional": false
+      },
+      "seat": {
+        "ref": "Seat",
+        "optional": false
+      },
+      "kind": {
+        "ref": "AreaKind",
+        "optional": false
+      },
+      "ordered": {
+        "primitive": "boolean",
+        "optional": false
+      },
+      "cardIds": {
+        "array": {
+          "ref": "Ref"
+        },
+        "optional": false
+      },
+      "displayOrder": {
+        "union": [
+          {
+            "array": {
+              "ref": "Ref"
+            }
+          },
+          {
+            "literal": null
+          }
+        ],
+        "optional": false
+      }
+    }
+  },
+  "EntityRef": {
+    "properties": {
+      "kind": {
+        "union": [
+          {
+            "literal": "card"
+          },
+          {
+            "literal": "unit"
+          },
+          {
+            "literal": "region"
+          },
+          {
+            "literal": "country"
+          },
+          {
+            "literal": "seat"
+          },
+          {
+            "literal": "area"
+          }
+        ],
+        "optional": false
+      },
+      "id": {
+        "ref": "Ref",
+        "optional": false
+      }
+    }
+  },
+  "Cause": {
+    "properties": {
+      "transactionId": {
+        "union": [
+          {
+            "ref": "Ref"
+          },
+          {
+            "literal": null
+          }
+        ],
+        "optional": false
+      },
+      "rootActionId": {
+        "union": [
+          {
+            "ref": "Ref"
+          },
+          {
+            "literal": null
+          }
+        ],
+        "optional": false
+      },
+      "parentEventId": {
+        "union": [
+          {
+            "ref": "Ref"
+          },
+          {
+            "literal": null
+          }
+        ],
+        "optional": false
+      },
+      "resolutionFrameId": {
+        "union": [
+          {
+            "ref": "Ref"
+          },
+          {
+            "literal": null
+          }
+        ],
+        "optional": false
+      },
+      "effectId": {
+        "union": [
+          {
+            "ref": "Ref"
+          },
+          {
+            "literal": null
+          }
+        ],
+        "optional": false
+      },
+      "sourceCardInstanceId": {
+        "union": [
+          {
+            "ref": "Ref"
+          },
+          {
+            "literal": null
+          }
+        ],
+        "optional": false
+      }
+    }
+  },
+  "Option": {
+    "properties": {
+      "optionId": {
+        "ref": "Ref",
+        "optional": false
+      },
+      "label": {
+        "primitive": "string",
+        "optional": false
+      },
+      "semanticType": {
+        "primitive": "string",
+        "optional": false
+      },
+      "entities": {
+        "array": {
+          "ref": "EntityRef"
+        },
+        "optional": false
+      },
+      "payload": {
+        "ref": "Json",
+        "optional": false
+      }
+    }
+  },
+  "Decision": {
+    "properties": {
+      "decisionId": {
+        "ref": "Ref",
+        "optional": false
+      },
+      "activeSeat": {
+        "ref": "Seat",
+        "optional": false
+      },
+      "decisionSeat": {
+        "ref": "Seat",
+        "optional": false
+      },
+      "controllerId": {
+        "union": [
+          {
+            "ref": "Ref"
+          },
+          {
+            "literal": null
+          }
+        ],
+        "optional": false
+      },
+      "sourceSeat": {
+        "union": [
+          {
+            "ref": "Seat"
+          },
+          {
+            "literal": null
+          }
+        ],
+        "optional": false
+      },
+      "unitCountry": {
+        "union": [
+          {
+            "ref": "Country"
+          },
+          {
+            "literal": null
+          }
+        ],
+        "optional": false
+      },
+      "kind": {
+        "union": [
+          {
+            "literal": "play_source"
+          },
+          {
+            "literal": "target"
+          },
+          {
+            "literal": "ordered_targets"
+          },
+          {
+            "literal": "branch"
+          },
+          {
+            "literal": "response"
+          },
+          {
+            "literal": "air_defense"
+          },
+          {
+            "literal": "pay_cost"
+          },
+          {
+            "literal": "discard"
+          },
+          {
+            "literal": "keep_opening"
+          },
+          {
+            "literal": "extra_play"
+          },
+          {
+            "literal": "end_phase"
+          },
+          {
+            "literal": "confirm_effect"
+          }
+        ],
+        "optional": false
+      },
+      "prompt": {
+        "primitive": "string",
+        "optional": false
+      },
+      "cause": {
+        "ref": "Cause",
+        "optional": false
+      },
+      "triggerEventId": {
+        "union": [
+          {
+            "ref": "Ref"
+          },
+          {
+            "literal": null
+          }
+        ],
+        "optional": false
+      },
+      "triggerContext": {
+        "ref": "Json",
+        "optional": false
+      },
+      "visibility": {
+        "ref": "Scope",
+        "optional": false
+      },
+      "options": {
+        "array": {
+          "ref": "Option"
+        },
+        "optional": false
+      },
+      "constraints": {
+        "properties": {
+          "min": {
+            "primitive": "number",
+            "optional": false
+          },
+          "max": {
+            "primitive": "number",
+            "optional": false
+          },
+          "ordered": {
+            "primitive": "boolean",
+            "optional": false
+          },
+          "allowSkip": {
+            "primitive": "boolean",
+            "optional": false
+          },
+          "allowCancel": {
+            "primitive": "boolean",
+            "optional": false
+          },
+          "allowDecline": {
+            "primitive": "boolean",
+            "optional": false
+          },
+          "dependencies": {
+            "ref": "Json",
+            "optional": false
+          }
+        },
+        "optional": false
+      },
+      "selectedSoFar": {
+        "array": {
+          "ref": "Ref"
+        },
+        "optional": false
+      }
+    }
+  },
+  "EffectState": {
+    "properties": {
+      "effectId": {
+        "ref": "Ref",
+        "optional": false
+      },
+      "kind": {
+        "primitive": "string",
+        "optional": false
+      },
+      "definition": {
+        "ref": "Json",
+        "optional": false
+      },
+      "outcome": {
+        "union": [
+          {
+            "literal": "pending"
+          },
+          {
+            "literal": "declared"
+          },
+          {
+            "literal": "applied"
+          },
+          {
+            "literal": "finished"
+          },
+          {
+            "literal": "cancelled"
+          },
+          {
+            "literal": "skipped"
+          }
+        ],
+        "optional": false
+      },
+      "boundEntities": {
+        "record": {
+          "array": {
+            "ref": "EntityRef"
+          }
+        },
+        "keys": {
+          "primitive": "string"
+        },
+        "optional": false
+      },
+      "selectedTargetsOrdered": {
+        "array": {
+          "ref": "EntityRef"
+        },
+        "optional": false
+      },
+      "result": {
+        "ref": "Json",
+        "optional": false
+      },
+      "visibility": {
+        "ref": "Scope",
+        "optional": false
+      }
+    }
+  },
+  "ResolutionFrame": {
+    "properties": {
+      "frameId": {
+        "ref": "Ref",
+        "optional": false
+      },
+      "parentFrameId": {
+        "union": [
+          {
+            "ref": "Ref"
+          },
+          {
+            "literal": null
+          }
+        ],
+        "optional": false
+      },
+      "sourceCardInstanceId": {
+        "union": [
+          {
+            "ref": "Ref"
+          },
+          {
+            "literal": null
+          }
+        ],
+        "optional": false
+      },
+      "sourceSeat": {
+        "union": [
+          {
+            "ref": "Seat"
+          },
+          {
+            "literal": null
+          }
+        ],
+        "optional": false
+      },
+      "currentEffectId": {
+        "union": [
+          {
+            "ref": "Ref"
+          },
+          {
+            "literal": null
+          }
+        ],
+        "optional": false
+      },
+      "effectsOrdered": {
+        "array": {
+          "ref": "EffectState"
+        },
+        "optional": false
+      },
+      "windows": {
+        "array": {
+          "properties": {
+            "windowId": {
+              "ref": "Ref",
+              "optional": false
+            },
+            "triggerEventId": {
+              "ref": "Ref",
+              "optional": false
+            },
+            "status": {
+              "union": [
+                {
+                  "literal": "open"
+                },
+                {
+                  "literal": "closed"
+                }
+              ],
+              "optional": false
+            },
+            "eligibleSeats": {
+              "array": {
+                "ref": "Seat"
+              },
+              "optional": false
+            },
+            "decisions": {
+              "array": {
+                "ref": "Ref"
+              },
+              "optional": false
+            }
+          }
+        },
+        "optional": false
+      }
+    }
+  },
+  "AreaKnowledge": {
+    "properties": {
+      "areaId": {
+        "ref": "Ref",
+        "optional": false
+      },
+      "visibleCount": {
+        "union": [
+          {
+            "primitive": "number"
+          },
+          {
+            "literal": null
+          }
+        ],
+        "optional": false
+      },
+      "knownCards": {
+        "array": {
+          "properties": {
+            "instanceId": {
+              "ref": "Ref",
+              "optional": false
+            },
+            "definitionId": {
+              "ref": "Ref",
+              "optional": false
+            }
+          }
+        },
+        "optional": false
+      },
+      "knownOrder": {
+        "union": [
+          {
+            "array": {
+              "ref": "Ref"
+            }
+          },
+          {
+            "literal": null
+          }
+        ],
+        "optional": false
+      },
+      "knownTopPrefix": {
+        "array": {
+          "ref": "Ref"
+        },
+        "optional": false
+      },
+      "visibleTypeCounts": {
+        "record": {
+          "primitive": "number"
+        },
+        "keys": {
+          "primitive": "string"
+        },
+        "optional": false
+      }
+    }
+  },
+  "KnowledgeView": {
+    "properties": {
+      "areas": {
+        "array": {
+          "ref": "AreaKnowledge"
+        },
+        "optional": false
+      },
+      "visibleDecisionIds": {
+        "array": {
+          "ref": "Ref"
+        },
+        "optional": false
+      },
+      "decisions": {
+        "array": {
+          "ref": "Decision"
+        },
+        "optional": false
+      },
+      "notificationIds": {
+        "array": {
+          "ref": "Ref"
+        },
+        "optional": false
+      },
+      "knownOpenInstanceIds": {
+        "partial": {
+          "record": {
+            "array": {
+              "ref": "Ref"
+            }
+          },
+          "keys": {
+            "ref": "Seat"
+          }
+        },
+        "optional": false
+      },
+      "visibleFlagIds": {
+        "array": {
+          "ref": "Ref"
+        },
+        "optional": false
+      },
+      "visibleEffectIds": {
+        "array": {
+          "ref": "Ref"
+        },
+        "optional": false
+      }
+    }
+  },
+  "State": {
+    "properties": {
+      "stateSchemaVersion": {
+        "literal": 1,
+        "optional": false
+      },
+      "gameStatus": {
+        "union": [
+          {
+            "literal": "setup"
+          },
+          {
+            "literal": "playing"
+          },
+          {
+            "literal": "finished"
+          }
+        ],
+        "optional": false
+      },
+      "result": {
+        "union": [
+          {
+            "literal": null
+          },
+          {
+            "properties": {
+              "winner": {
+                "union": [
+                  {
+                    "ref": "Alliance"
+                  },
+                  {
+                    "literal": null
+                  }
+                ],
+                "optional": false
+              },
+              "victoryReason": {
+                "primitive": "string",
+                "optional": false
+              }
+            }
+          }
+        ],
+        "optional": false
+      },
+      "round": {
+        "primitive": "number",
+        "optional": false
+      },
+      "phase": {
+        "primitive": "string",
+        "optional": false
+      },
+      "activeSeat": {
+        "ref": "Seat",
+        "optional": false
+      },
+      "completedCountryTurns": {
+        "primitive": "number",
+        "optional": false
+      },
+      "scores": {
+        "ref": "Scores",
+        "optional": false
+      },
+      "units": {
+        "array": {
+          "properties": {
+            "unitId": {
+              "ref": "Ref",
+              "optional": false
+            },
+            "country": {
+              "ref": "Country",
+              "optional": false
+            },
+            "type": {
+              "union": [
+                {
+                  "literal": "army"
+                },
+                {
+                  "literal": "navy"
+                },
+                {
+                  "literal": "air"
+                }
+              ],
+              "optional": false
+            },
+            "regionId": {
+              "ref": "Ref",
+              "optional": false
+            },
+            "supplied": {
+              "primitive": "boolean",
+              "optional": false
+            },
+            "properties": {
+              "ref": "Json",
+              "optional": false
+            }
+          }
+        },
+        "optional": false
+      },
+      "reserves": {
+        "record": {
+          "record": {
+            "primitive": "number"
+          },
+          "keys": {
+            "union": [
+              {
+                "literal": "army"
+              },
+              {
+                "literal": "navy"
+              },
+              {
+                "literal": "air"
+              }
+            ]
+          }
+        },
+        "keys": {
+          "ref": "Country"
+        },
+        "optional": false
+      },
+      "regions": {
+        "array": {
+          "properties": {
+            "regionId": {
+              "ref": "Ref",
+              "optional": false
+            },
+            "controllers": {
+              "array": {
+                "ref": "Country"
+              },
+              "optional": false
+            },
+            "effectiveHomeFor": {
+              "array": {
+                "ref": "Country"
+              },
+              "optional": false
+            },
+            "effectiveSupplyFor": {
+              "array": {
+                "ref": "Alliance"
+              },
+              "optional": false
+            },
+            "properties": {
+              "ref": "Json",
+              "optional": false
+            }
+          }
+        },
+        "optional": false
+      },
+      "prelude": {
+        "union": [
+          {
+            "literal": null
+          },
+          {
+            "properties": {
+              "active": {
+                "primitive": "boolean",
+                "optional": false
+              },
+              "round": {
+                "primitive": "number",
+                "optional": false
+              },
+              "turn": {
+                "primitive": "number",
+                "optional": false
+              },
+              "activeSeat": {
+                "ref": "Seat",
+                "optional": false
+              },
+              "tension": {
+                "primitive": "number",
+                "optional": false
+              },
+              "initialization": {
+                "primitive": "string",
+                "optional": false
+              },
+              "cleanup": {
+                "primitive": "string",
+                "optional": false
+              }
+            }
+          }
+        ],
+        "optional": false
+      },
+      "neutrality": {
+        "union": [
+          {
+            "literal": null
+          },
+          {
+            "record": {
+              "properties": {
+                "neutral": {
+                  "primitive": "boolean",
+                  "optional": false
+                },
+                "reason": {
+                  "union": [
+                    {
+                      "primitive": "string"
+                    },
+                    {
+                      "literal": null
+                    }
+                  ],
+                  "optional": false
+                },
+                "eventId": {
+                  "union": [
+                    {
+                      "ref": "Ref"
+                    },
+                    {
+                      "literal": null
+                    }
+                  ],
+                  "optional": false
+                }
+              }
+            },
+            "keys": {
+              "union": [
+                {
+                  "literal": "soviet_union"
+                },
+                {
+                  "literal": "united_states"
+                }
+              ]
+            }
+          }
+        ],
+        "optional": false
+      },
+      "cards": {
+        "record": {
+          "ref": "CardInstance"
+        },
+        "keys": {
+          "ref": "Ref"
+        },
+        "optional": false
+      },
+      "areas": {
+        "array": {
+          "ref": "Area"
+        },
+        "optional": false
+      },
+      "availability": {
+        "union": [
+          {
+            "literal": null
+          },
+          {
+            "record": {
+              "properties": {
+                "cycleId": {
+                  "ref": "Ref",
+                  "optional": false
+                },
+                "refreshAt": {
+                  "primitive": "number",
+                  "optional": false
+                },
+                "openInstanceIds": {
+                  "array": {
+                    "ref": "Ref"
+                  },
+                  "optional": false
+                },
+                "remainingCount": {
+                  "primitive": "number",
+                  "optional": false
+                },
+                "openCount": {
+                  "primitive": "number",
+                  "optional": false
+                }
+              }
+            },
+            "keys": {
+              "ref": "Seat"
+            }
+          }
+        ],
+        "optional": false
+      },
+      "installed": {
+        "array": {
+          "properties": {
+            "instanceId": {
+              "ref": "Ref",
+              "optional": false
+            },
+            "kind": {
+              "primitive": "string",
+              "optional": false
+            },
+            "properties": {
+              "ref": "Json",
+              "optional": false
+            }
+          }
+        },
+        "optional": false
+      },
+      "flags": {
+        "array": {
+          "properties": {
+            "flagId": {
+              "ref": "Ref",
+              "optional": false
+            },
+            "kind": {
+              "primitive": "string",
+              "optional": false
+            },
+            "data": {
+              "ref": "Json",
+              "optional": false
+            },
+            "visibility": {
+              "ref": "Scope",
+              "optional": false
+            }
+          }
+        },
+        "optional": false
+      },
+      "controllers": {
+        "ref": "ControllerMap",
+        "optional": false
+      },
+      "pendingDecisions": {
+        "array": {
+          "ref": "Decision"
+        },
+        "optional": false
+      },
+      "resolution": {
+        "properties": {
+          "frames": {
+            "array": {
+              "ref": "ResolutionFrame"
+            },
+            "optional": false
+          },
+          "executionOrder": {
+            "array": {
+              "ref": "Ref"
+            },
+            "optional": false
+          }
+        },
+        "optional": false
+      },
+      "notifications": {
+        "array": {
+          "properties": {
+            "notificationId": {
+              "ref": "Ref",
+              "optional": false
+            },
+            "eventId": {
+              "ref": "Ref",
+              "optional": false
+            },
+            "recipients": {
+              "array": {
+                "ref": "Seat"
+              },
+              "optional": false
+            },
+            "acknowledgedBy": {
+              "array": {
+                "ref": "Seat"
+              },
+              "optional": false
+            },
+            "title": {
+              "primitive": "string",
+              "optional": false
+            },
+            "text": {
+              "primitive": "string",
+              "optional": false
+            },
+            "entities": {
+              "array": {
+                "ref": "EntityRef"
+              },
+              "optional": false
+            }
+          }
+        },
+        "optional": false
+      },
+      "knowledge": {
+        "properties": {
+          "public": {
+            "ref": "KnowledgeView",
+            "optional": false
+          },
+          "seats": {
+            "record": {
+              "ref": "KnowledgeView"
+            },
+            "keys": {
+              "ref": "Seat"
+            },
+            "optional": false
+          }
+        },
+        "optional": false
+      },
+      "extensions": {
+        "record": {
+          "ref": "Json"
+        },
+        "keys": {
+          "primitive": "string"
+        },
+        "optional": true
+      }
+    }
+  },
+  "NativeCheckpoint": {
+    "properties": {
+      "engineId": {
+        "ref": "Ref",
+        "optional": false
+      },
+      "buildFingerprint": {
+        "primitive": "string",
+        "optional": false
+      },
+      "stateSchemaVersion": {
+        "primitive": "string",
+        "optional": false
+      },
+      "state": {
+        "ref": "Json",
+        "optional": false
+      },
+      "rngState": {
+        "ref": "Json",
+        "optional": false
+      }
+    }
+  },
+  "Start": {
+    "properties": {
+      "recordType": {
+        "literal": "start",
+        "optional": false
+      },
+      "seq": {
+        "literal": 1,
+        "optional": false
+      },
+      "timelineId": {
+        "ref": "Ref",
+        "optional": false
+      },
+      "state": {
+        "ref": "State",
+        "optional": false
+      },
+      "engineCheckpoint": {
+        "ref": "NativeCheckpoint",
+        "optional": true
+      }
+    }
+  },
+  "EventType": {
+    "union": [
+      {
+        "literal": "decision_opened"
+      },
+      {
+        "literal": "decision_submitted"
+      },
+      {
+        "literal": "decision_skipped"
+      },
+      {
+        "literal": "decision_declined"
+      },
+      {
+        "literal": "decision_cancelled"
+      },
+      {
+        "literal": "card_declared"
+      },
+      {
+        "literal": "cost_paid"
+      },
+      {
+        "literal": "card_moved"
+      },
+      {
+        "literal": "card_installed"
+      },
+      {
+        "literal": "card_effects_completed"
+      },
+      {
+        "literal": "card_finalized"
+      },
+      {
+        "literal": "effect_declared"
+      },
+      {
+        "literal": "effect_applied"
+      },
+      {
+        "literal": "effect_finished"
+      },
+      {
+        "literal": "effect_skipped"
+      },
+      {
+        "literal": "effect_cancelled"
+      },
+      {
+        "literal": "window_opened"
+      },
+      {
+        "literal": "window_closed"
+      },
+      {
+        "literal": "battle_declared"
+      },
+      {
+        "literal": "battle_defended"
+      },
+      {
+        "literal": "battle_finished"
+      },
+      {
+        "literal": "unit_built"
+      },
+      {
+        "literal": "unit_recruited"
+      },
+      {
+        "literal": "unit_moved"
+      },
+      {
+        "literal": "unit_removed"
+      },
+      {
+        "literal": "supply_changed"
+      },
+      {
+        "literal": "control_changed"
+      },
+      {
+        "literal": "home_changed"
+      },
+      {
+        "literal": "phase_started"
+      },
+      {
+        "literal": "phase_ended"
+      },
+      {
+        "literal": "turn_started"
+      },
+      {
+        "literal": "turn_ended"
+      },
+      {
+        "literal": "round_started"
+      },
+      {
+        "literal": "round_ended"
+      },
+      {
+        "literal": "prelude_tension_changed"
+      },
+      {
+        "literal": "prelude_ended"
+      },
+      {
+        "literal": "neutrality_ended"
+      },
+      {
+        "literal": "score_changed"
+      },
+      {
+        "literal": "game_finished"
+      },
+      {
+        "literal": "random_resolved"
+      },
+      {
+        "literal": "availability_refreshed"
+      },
+      {
+        "literal": "availability_pruned"
+      },
+      {
+        "literal": "notification_changed"
+      },
+      {
+        "literal": "control_restored"
+      },
+      {
+        "literal": "gm_edited"
+      },
+      {
+        "literal": "controller_changed"
+      }
+    ]
+  },
+  "Event": {
+    "properties": {
+      "eventId": {
+        "ref": "Ref",
+        "optional": false
+      },
+      "eventType": {
+        "ref": "EventType",
+        "optional": false
+      },
+      "actorSeat": {
+        "union": [
+          {
+            "ref": "Seat"
+          },
+          {
+            "literal": null
+          }
+        ],
+        "optional": false
+      },
+      "sourceSeat": {
+        "union": [
+          {
+            "ref": "Seat"
+          },
+          {
+            "literal": null
+          }
+        ],
+        "optional": false
+      },
+      "entities": {
+        "array": {
+          "ref": "EntityRef"
+        },
+        "optional": false
+      },
+      "cause": {
+        "ref": "Cause",
+        "optional": false
+      },
+      "visibility": {
+        "ref": "Scope",
+        "optional": false
+      },
+      "outcome": {
+        "union": [
+          {
+            "literal": "occurred"
+          },
+          {
+            "literal": "cancelled"
+          },
+          {
+            "literal": "skipped"
+          }
+        ],
+        "optional": false
+      },
+      "before": {
+        "ref": "Json",
+        "optional": false
+      },
+      "after": {
+        "ref": "Json",
+        "optional": false
+      },
+      "details": {
+        "ref": "Json",
+        "optional": false
+      },
+      "text": {
+        "primitive": "string",
+        "optional": false
+      }
+    }
+  },
+  "Action": {
+    "properties": {
+      "actionId": {
+        "ref": "Ref",
+        "optional": false
+      },
+      "decisionId": {
+        "ref": "Ref",
+        "optional": false
+      },
+      "actorSeat": {
+        "ref": "Seat",
+        "optional": false
+      },
+      "controllerId": {
+        "union": [
+          {
+            "ref": "Ref"
+          },
+          {
+            "literal": null
+          }
+        ],
+        "optional": false
+      },
+      "optionIdsOrdered": {
+        "array": {
+          "ref": "Ref"
+        },
+        "optional": false
+      },
+      "selection": {
+        "ref": "Json",
+        "optional": false
+      },
+      "disposition": {
+        "union": [
+          {
+            "literal": "submit"
+          },
+          {
+            "literal": "skip"
+          },
+          {
+            "literal": "decline"
+          },
+          {
+            "literal": "cancel"
+          }
+        ],
+        "optional": false
+      },
+      "origin": {
+        "union": [
+          {
+            "literal": "user"
+          },
+          {
+            "literal": "ai"
+          },
+          {
+            "literal": "timeout"
+          },
+          {
+            "literal": "autopolicy"
+          },
+          {
+            "literal": "forced_single_option"
+          }
+        ],
+        "optional": false
+      }
+    }
+  },
+  "RandomResult": {
+    "properties": {
+      "randomId": {
+        "ref": "Ref",
+        "optional": false
+      },
+      "streamId": {
+        "ref": "Ref",
+        "optional": false
+      },
+      "purpose": {
+        "primitive": "string",
+        "optional": false
+      },
+      "effectId": {
+        "union": [
+          {
+            "ref": "Ref"
+          },
+          {
+            "literal": null
+          }
+        ],
+        "optional": false
+      },
+      "decisionId": {
+        "union": [
+          {
+            "ref": "Ref"
+          },
+          {
+            "literal": null
+          }
+        ],
+        "optional": false
+      },
+      "samplingRule": {
+        "ref": "Json",
+        "optional": false
+      },
+      "domain": {
+        "properties": {
+          "stateSeq": {
+            "primitive": "number",
+            "optional": false
+          },
+          "areaId": {
+            "union": [
+              {
+                "ref": "Ref"
+              },
+              {
+                "literal": null
+              }
+            ],
+            "optional": false
+          },
+          "orderedIds": {
+            "union": [
+              {
+                "array": {
+                  "ref": "Ref"
+                }
+              },
+              {
+                "literal": null
+              }
+            ],
+            "optional": false
+          }
+        },
+        "optional": false
+      },
+      "result": {
+        "ref": "Json",
+        "optional": false
+      },
+      "visibility": {
+        "ref": "Scope",
+        "optional": false
+      },
+      "rngBefore": {
+        "ref": "Json",
+        "optional": true
+      },
+      "rngAfter": {
+        "ref": "Json",
+        "optional": true
+      }
+    }
+  },
+  "Control": {
+    "properties": {
+      "kind": {
+        "union": [
+          {
+            "literal": "gm_edit"
+          },
+          {
+            "literal": "controller_change"
+          }
+        ],
+        "optional": false
+      },
+      "reason": {
+        "primitive": "string",
+        "optional": false
+      },
+      "actorControllerId": {
+        "union": [
+          {
+            "ref": "Ref"
+          },
+          {
+            "literal": null
+          }
+        ],
+        "optional": false
+      }
+    }
+  },
+  "FrameBase": {
+    "properties": {
+      "recordType": {
+        "literal": "frame",
+        "optional": false
+      },
+      "seq": {
+        "primitive": "number",
+        "optional": false
+      },
+      "beforeStateSeq": {
+        "primitive": "number",
+        "optional": false
+      },
+      "timelineId": {
+        "ref": "Ref",
+        "optional": false
+      },
+      "cause": {
+        "ref": "Cause",
+        "optional": false
+      },
+      "events": {
+        "array": {
+          "ref": "Event"
+        },
+        "optional": false
+      },
+      "state": {
+        "ref": "State",
+        "optional": false
+      },
+      "nativeCommand": {
+        "properties": {
+          "engineId": {
+            "ref": "Ref",
+            "optional": false
+          },
+          "schemaVersion": {
+            "primitive": "string",
+            "optional": false
+          },
+          "command": {
+            "ref": "Json",
+            "optional": false
+          }
+        },
+        "optional": true
+      },
+      "engineCheckpoint": {
+        "ref": "NativeCheckpoint",
+        "optional": true
+      },
+      "aiDiagnostics": {
+        "properties": {
+          "policyId": {
+            "ref": "Ref",
+            "optional": false
+          },
+          "policyVersion": {
+            "primitive": "string",
+            "optional": false
+          },
+          "decisionId": {
+            "ref": "Ref",
+            "optional": false
+          },
+          "candidates": {
+            "array": {
+              "properties": {
+                "optionIdsOrdered": {
+                  "array": {
+                    "ref": "Ref"
+                  },
+                  "optional": false
+                },
+                "probability": {
+                  "primitive": "number",
+                  "optional": false
+                },
+                "logit": {
+                  "union": [
+                    {
+                      "primitive": "number"
+                    },
+                    {
+                      "literal": null
+                    }
+                  ],
+                  "optional": false
+                }
+              }
+            },
+            "optional": false
+          },
+          "selectedProbability": {
+            "primitive": "number",
+            "optional": false
+          },
+          "value": {
+            "union": [
+              {
+                "primitive": "number"
+              },
+              {
+                "literal": null
+              }
+            ],
+            "optional": false
+          }
+        },
+        "optional": true
+      }
+    }
+  },
+  "Frame": {
+    "intersection": [
+      {
+        "ref": "FrameBase"
+      },
+      {
+        "union": [
+          {
+            "properties": {
+              "kind": {
+                "literal": "decision",
+                "optional": false
+              },
+              "action": {
+                "ref": "Action",
+                "optional": false
+              },
+              "decisionBeforeStateSeq": {
+                "primitive": "number",
+                "optional": false
+              }
+            }
+          },
+          {
+            "properties": {
+              "kind": {
+                "literal": "random",
+                "optional": false
+              },
+              "randomResult": {
+                "ref": "RandomResult",
+                "optional": false
+              }
+            }
+          },
+          {
+            "intersection": [
+              {
+                "properties": {
+                  "kind": {
+                    "literal": "automatic",
+                    "optional": false
+                  },
+                  "automationReason": {
+                    "primitive": "string",
+                    "optional": false
+                  }
+                }
+              },
+              {
+                "union": [
+                  {
+                    "properties": {
+                      "action": {
+                        "ref": "Action",
+                        "optional": false
+                      },
+                      "decisionBeforeStateSeq": {
+                        "primitive": "number",
+                        "optional": false
+                      }
+                    }
+                  },
+                  {
+                    "properties": {
+                      "action": {
+                        "primitive": "never",
+                        "optional": true
+                      },
+                      "decisionBeforeStateSeq": {
+                        "primitive": "never",
+                        "optional": true
+                      }
+                    }
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "properties": {
+              "kind": {
+                "literal": "control",
+                "optional": false
+              },
+              "control": {
+                "ref": "Control",
+                "optional": false
+              }
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "End": {
+    "properties": {
+      "recordType": {
+        "literal": "end",
+        "optional": false
+      },
+      "seq": {
+        "primitive": "number",
+        "optional": false
+      },
+      "lastStateSeq": {
+        "primitive": "number",
+        "optional": false
+      },
+      "recordingStatus": {
+        "union": [
+          {
+            "literal": "complete"
+          },
+          {
+            "literal": "partial"
+          }
+        ],
+        "optional": false
+      },
+      "stopReason": {
+        "union": [
+          {
+            "literal": "natural_game_end"
+          },
+          {
+            "literal": "export_while_playing"
+          },
+          {
+            "literal": "training_truncated"
+          },
+          {
+            "literal": "interrupted"
+          },
+          {
+            "literal": "snapshot_segment"
+          }
+        ],
+        "optional": false
+      },
+      "gameStatus": {
+        "union": [
+          {
+            "literal": "setup"
+          },
+          {
+            "literal": "playing"
+          },
+          {
+            "literal": "finished"
+          }
+        ],
+        "optional": false
+      },
+      "winner": {
+        "union": [
+          {
+            "ref": "Alliance"
+          },
+          {
+            "literal": null
+          }
+        ],
+        "optional": false
+      },
+      "victoryReason": {
+        "union": [
+          {
+            "primitive": "string"
+          },
+          {
+            "literal": null
+          }
+        ],
+        "optional": false
+      },
+      "finalScores": {
+        "ref": "Scores",
+        "optional": false
+      },
+      "frameCount": {
+        "primitive": "number",
+        "optional": false
+      },
+      "decisionCount": {
+        "primitive": "number",
+        "optional": false
+      },
+      "prefixSha256": {
+        "primitive": "string",
+        "optional": false
+      }
+    }
+  },
+  "MatchLogRecord": {
+    "union": [
+      {
+        "ref": "Header"
+      },
+      {
+        "ref": "Start"
+      },
+      {
+        "ref": "Frame"
+      },
+      {
+        "ref": "End"
+      }
+    ]
+  }
+}

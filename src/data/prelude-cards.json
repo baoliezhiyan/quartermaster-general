@@ -1,0 +1,1072 @@
+[
+  {
+    "id": "prelude_DE-01",
+    "sourceIndex": 0,
+    "deckOwner": "germany",
+    "country": "germany",
+    "type": "军备",
+    "name": "88 毫米防空炮",
+    "text": "在你的陆军被攻击时触发：发起战斗的国家须弃置 3 张手牌。",
+    "tension": 0
+  },
+  {
+    "id": "prelude_DE-02",
+    "sourceIndex": 0,
+    "deckOwner": "germany",
+    "country": "germany",
+    "type": "军备",
+    "name": "俾斯麦级战列舰",
+    "text": "在你的计分阶段开始时触发：发起一次海战。",
+    "tension": 0
+  },
+  {
+    "id": "prelude_DE-03",
+    "sourceIndex": 0,
+    "deckOwner": "germany",
+    "country": "germany",
+    "type": "军备",
+    "name": "芙蕾雅雷达",
+    "text": "在你的回合开始时触发：若距离<不列颠群岛>一至两个区域内至少有 2 支德国部队，英国须弃置其常规牌库顶 4 张牌。你获得 1 分。",
+    "tension": 0
+  },
+  {
+    "id": "prelude_DE-04",
+    "sourceIndex": 0,
+    "deckOwner": "germany",
+    "country": "germany",
+    "type": "军备",
+    "name": "轰炸纽约",
+    "text": "在你的回合开始时触发：如果你在<北大西洋>或与其相邻的地方有部队，美国须弃置牌库顶 3 张牌。获得 3 分。",
+    "tension": 0
+  },
+  {
+    "id": "prelude_DE-05",
+    "sourceIndex": 0,
+    "deckOwner": "germany",
+    "country": "germany",
+    "type": "军备",
+    "name": "滑翔机突击",
+    "text": "在你发起陆战后触发：在战斗地区发起一次陆战。",
+    "tension": 0
+  },
+  {
+    "id": "prelude_DE-06",
+    "sourceIndex": 0,
+    "deckOwner": "germany",
+    "country": "germany",
+    "type": "军备",
+    "name": "佩内明德陆军研发中心",
+    "text": "在你的回合开始时触发：若与<北海>相邻的地区有德国陆军，英国须弃置其牌库顶 3 张牌。获得 2 分。",
+    "tension": 0
+  },
+  {
+    "id": "prelude_DE-07",
+    "sourceIndex": 0,
+    "deckOwner": "germany",
+    "country": "germany",
+    "type": "军备",
+    "name": "西墙",
+    "text": "当<日耳曼>的德国陆军被发起战斗时触发：本回合此陆军不会被移除。",
+    "tension": 0
+  },
+  {
+    "id": "prelude_DE-08",
+    "sourceIndex": 0,
+    "deckOwner": "germany",
+    "country": "germany",
+    "type": "军备",
+    "name": "斯洛伐克军事化",
+    "text": "在你的计分阶段开始时触发：在<东欧>建设一支陆军。",
+    "tension": 0
+  },
+  {
+    "id": "prelude_DE-09",
+    "sourceIndex": 0,
+    "deckOwner": "germany",
+    "country": "germany",
+    "type": "军备",
+    "name": "替代物资",
+    "text": "在弃牌堆中状态牌的合法触发时机发动：从你的弃牌堆中选择一张状态牌，并发动一次该牌的效果。",
+    "tension": 0
+  },
+  {
+    "id": "prelude_DE-10",
+    "sourceIndex": 0,
+    "deckOwner": "germany",
+    "country": "germany",
+    "type": "军备",
+    "name": "铀工程",
+    "text": "在你的回合开始时触发：若你在<斯堪的纳维亚>有处于补给状态的陆军，选择一个同盟国，其须弃置牌库顶 2 张牌。获得 3 分。",
+    "tension": 0
+  },
+  {
+    "id": "prelude_DE-11",
+    "sourceIndex": 0,
+    "deckOwner": "germany",
+    "country": "germany",
+    "type": "军备",
+    "name": "注意！坦克！",
+    "text": "在你的计分阶段开始时触发：发起一次陆战。",
+    "tension": 0
+  },
+  {
+    "id": "prelude_DE-12",
+    "sourceIndex": 0,
+    "deckOwner": "germany",
+    "country": "germany",
+    "type": "军备",
+    "name": "装甲掷弹兵",
+    "text": "在你发起陆战后触发：在战斗地区建设一支陆军。",
+    "tension": 0
+  },
+  {
+    "id": "prelude_DE-13",
+    "sourceIndex": 0,
+    "deckOwner": "germany",
+    "country": "germany",
+    "type": "历史",
+    "name": "德奥合并",
+    "text": "在<意大利>征召一支陆军。",
+    "tension": 1
+  },
+  {
+    "id": "prelude_DE-14",
+    "sourceIndex": 0,
+    "deckOwner": "germany",
+    "country": "germany",
+    "type": "历史",
+    "name": "瓜分捷克斯洛伐克",
+    "text": "在<东欧>征召一支陆军。",
+    "tension": 1
+  },
+  {
+    "id": "prelude_DE-15",
+    "sourceIndex": 0,
+    "deckOwner": "germany",
+    "country": "germany",
+    "type": "历史",
+    "name": "国际联盟公投",
+    "text": "每有一支在版图上的德国部队，获得 1 分。",
+    "tension": 1
+  },
+  {
+    "id": "prelude_DE-16",
+    "sourceIndex": 0,
+    "deckOwner": "germany",
+    "country": "germany",
+    "type": "历史",
+    "name": "进军莱茵兰",
+    "text": "从你的序章牌库中选取两张【军备卡】并暗置。洗混你的序章牌库。",
+    "tension": 2
+  },
+  {
+    "id": "prelude_DE-17",
+    "sourceIndex": 0,
+    "deckOwner": "germany",
+    "country": "germany",
+    "type": "历史",
+    "name": "撕毁英德海军协定",
+    "text": "建设一支海军。",
+    "tension": 1
+  },
+  {
+    "id": "prelude_DE-18",
+    "sourceIndex": 0,
+    "deckOwner": "germany",
+    "country": "germany",
+    "type": "历史",
+    "name": "秃鹰军团",
+    "text": "所有同盟国须弃置其序章牌库顶的 3 张牌。",
+    "tension": 1
+  },
+  {
+    "id": "prelude_DE-19",
+    "sourceIndex": 0,
+    "deckOwner": "germany",
+    "country": "germany",
+    "type": "历史",
+    "name": "威廉皇帝学会",
+    "text": "检视你常规牌库顶的 10 张牌，从中选取 1 张【状态卡】并打出。洗混你的常规牌库。",
+    "tension": 1
+  },
+  {
+    "id": "prelude_DE-20",
+    "sourceIndex": 0,
+    "deckOwner": "germany",
+    "country": "germany",
+    "type": "历史",
+    "name": "作战指挥条令",
+    "text": "获得 1 分，或部署一支空军。",
+    "tension": 0
+  },
+  {
+    "id": "prelude_UK-01",
+    "sourceIndex": 0,
+    "deckOwner": "united_kingdom",
+    "country": "united_kingdom",
+    "type": "军备",
+    "name": "Z 舰队",
+    "text": "轴心国在<南海>或<阿拉伯海>建设或征召海军时触发：立刻消灭此海军。",
+    "tension": 0
+  },
+  {
+    "id": "prelude_UK-02",
+    "sourceIndex": 0,
+    "deckOwner": "united_kingdom",
+    "country": "france",
+    "type": "军备",
+    "name": "哈肯贝格堡",
+    "text": "轴心国在<西欧>第一次建设或征召陆军时触发：立刻消灭此陆军。",
+    "tension": 0
+  },
+  {
+    "id": "prelude_UK-03",
+    "sourceIndex": 0,
+    "deckOwner": "united_kingdom",
+    "country": "united_kingdom",
+    "type": "军备",
+    "name": "加拿大自治领进入动员",
+    "text": "在你的计分阶段开始时触发：在<加拿大>建设一支陆军。",
+    "tension": 0
+  },
+  {
+    "id": "prelude_UK-04",
+    "sourceIndex": 0,
+    "deckOwner": "united_kingdom",
+    "country": "united_kingdom",
+    "type": "军备",
+    "name": "秘密情报机构",
+    "text": "当轴心国使用【军备卡】后，发动效果前触发：该【军备卡】无效。",
+    "tension": 0
+  },
+  {
+    "id": "prelude_UK-05",
+    "sourceIndex": 0,
+    "deckOwner": "united_kingdom",
+    "country": "united_kingdom",
+    "type": "军备",
+    "name": "我们绝不投降",
+    "text": "在你的计分阶段开始时触发：立刻消灭位于<不列颠群岛>的一支轴心国陆军。",
+    "tension": 0
+  },
+  {
+    "id": "prelude_UK-06",
+    "sourceIndex": 0,
+    "deckOwner": "united_kingdom",
+    "country": "united_kingdom",
+    "type": "军备",
+    "name": "英镑区",
+    "text": "在你的计分阶段开始时触发：弃置手牌中的 1 张【建设陆军】，在<澳大利亚><印度><非洲南部>其中之一征召陆军。",
+    "tension": 0
+  },
+  {
+    "id": "prelude_UK-07",
+    "sourceIndex": 0,
+    "deckOwner": "united_kingdom",
+    "country": "united_kingdom",
+    "type": "军备",
+    "name": "英联邦空军训练计划",
+    "text": "在正式游戏中你的回合内任意时机触发：获得 1 分，或在<澳大利亚><新西兰><加拿大><非洲南部>其中之一部署一支空军。",
+    "tension": 0
+  },
+  {
+    "id": "prelude_UK-08",
+    "sourceIndex": 0,
+    "deckOwner": "united_kingdom",
+    "country": "united_kingdom",
+    "type": "军备",
+    "name": "英王乔治五世号与威尔士亲王号",
+    "text": "轴心国在<北海>建设海军时触发：立刻消灭此海军。",
+    "tension": 0
+  },
+  {
+    "id": "prelude_UK-09",
+    "sourceIndex": 0,
+    "deckOwner": "united_kingdom",
+    "country": "france",
+    "type": "军备",
+    "name": "越盟",
+    "text": "轴心国在东南亚建设陆军时触发：立刻消灭此陆军。",
+    "tension": 0
+  },
+  {
+    "id": "prelude_UK-10",
+    "sourceIndex": 0,
+    "deckOwner": "united_kingdom",
+    "country": "france",
+    "type": "军备",
+    "name": "自由法国基地",
+    "text": "在你的补给阶段开始时触发：本回合中所有英国与法国部队处于补给状态。",
+    "tension": 0
+  },
+  {
+    "id": "prelude_UK-11",
+    "sourceIndex": 0,
+    "deckOwner": "united_kingdom",
+    "country": "united_kingdom",
+    "type": "历史",
+    "name": "波兰进入动员",
+    "text": "在<东欧>征召一支陆军。",
+    "tension": 1
+  },
+  {
+    "id": "prelude_UK-12",
+    "sourceIndex": 0,
+    "deckOwner": "united_kingdom",
+    "country": "united_kingdom",
+    "type": "历史",
+    "name": "地中海殖民基地",
+    "text": "在<非洲北部>或<中东>征召一支英国或法国陆军。",
+    "tension": 1
+  },
+  {
+    "id": "prelude_UK-13",
+    "sourceIndex": 0,
+    "deckOwner": "united_kingdom",
+    "country": "united_kingdom",
+    "type": "历史",
+    "name": "非洲帝国",
+    "text": "在<非洲南部>征召一支英国或法国陆军。",
+    "tension": 1
+  },
+  {
+    "id": "prelude_UK-14",
+    "sourceIndex": 0,
+    "deckOwner": "united_kingdom",
+    "country": "united_kingdom",
+    "type": "历史",
+    "name": "妇女志愿服务团",
+    "text": "在<不列颠群岛>或与之相邻的地区征召一支海军或部署一支空军。",
+    "tension": 0
+  },
+  {
+    "id": "prelude_UK-15",
+    "sourceIndex": 0,
+    "deckOwner": "united_kingdom",
+    "country": "united_kingdom",
+    "type": "历史",
+    "name": "斯卡帕湾打捞完毕",
+    "text": "在<北海><北大西洋><中大西洋>其中之一征召一支海军。",
+    "tension": 1
+  },
+  {
+    "id": "prelude_UK-16",
+    "sourceIndex": 0,
+    "deckOwner": "united_kingdom",
+    "country": "united_kingdom",
+    "type": "历史",
+    "name": "一代人的和平",
+    "text": "获得 2 分。",
+    "tension": -1
+  },
+  {
+    "id": "prelude_UK-17",
+    "sourceIndex": 0,
+    "deckOwner": "united_kingdom",
+    "country": "united_kingdom",
+    "type": "历史",
+    "name": "意大利煤炭禁运",
+    "text": "正面朝上放置于场上。意大利在其第一正式回合发起战斗时，弃掉此牌，你获得 4 分。",
+    "tension": 1
+  },
+  {
+    "id": "prelude_UK-18",
+    "sourceIndex": 0,
+    "deckOwner": "united_kingdom",
+    "country": "united_kingdom",
+    "type": "历史",
+    "name": "英国远征军就位",
+    "text": "在<西欧>建设一支陆军。",
+    "tension": 1
+  },
+  {
+    "id": "prelude_UK-19",
+    "sourceIndex": 0,
+    "deckOwner": "united_kingdom",
+    "country": "united_kingdom",
+    "type": "历史",
+    "name": "战争迫近",
+    "text": "打出你的序章牌库顶的两张牌。",
+    "tension": 1
+  },
+  {
+    "id": "prelude_UK-20",
+    "sourceIndex": 0,
+    "deckOwner": "united_kingdom",
+    "country": "united_kingdom",
+    "type": "历史",
+    "name": "这就是荣誉",
+    "text": "在<东欧>消灭一支轴心国陆军。",
+    "tension": 1
+  },
+  {
+    "id": "prelude_JP-01",
+    "sourceIndex": 0,
+    "deckOwner": "japan",
+    "country": "japan",
+    "type": "军备",
+    "name": "成功夺取阿留申群岛",
+    "text": "在你的计分阶段开始时触发：如果<北太平洋>有日本海军，你获得 4 分。",
+    "tension": 0
+  },
+  {
+    "id": "prelude_JP-02",
+    "sourceIndex": 0,
+    "deckOwner": "japan",
+    "country": "japan",
+    "type": "军备",
+    "name": "成功夺取珍珠港",
+    "text": "在你的计分阶段开始时触发：如果<夏威夷>有日本陆军，你获得 4 分。",
+    "tension": 0
+  },
+  {
+    "id": "prelude_JP-03",
+    "sourceIndex": 0,
+    "deckOwner": "japan",
+    "country": "japan",
+    "type": "军备",
+    "name": "赤城号航空母舰",
+    "text": "在你的计分阶段开始时触发：建设一支海军。",
+    "tension": 0
+  },
+  {
+    "id": "prelude_JP-04",
+    "sourceIndex": 0,
+    "deckOwner": "japan",
+    "country": "japan",
+    "type": "军备",
+    "name": "丛林战",
+    "text": "当与<东海>相邻的轴心国部队被攻击时触发：本次战斗中，该部队不会被移除。",
+    "tension": 0
+  },
+  {
+    "id": "prelude_JP-05",
+    "sourceIndex": 0,
+    "deckOwner": "japan",
+    "country": "japan",
+    "type": "军备",
+    "name": "帝国海军航空队",
+    "text": "在你发起海战后触发：在战斗地区或相邻地区发起海战。",
+    "tension": 0
+  },
+  {
+    "id": "prelude_JP-06",
+    "sourceIndex": 0,
+    "deckOwner": "japan",
+    "country": "japan",
+    "type": "军备",
+    "name": "国家总动员法",
+    "text": "在你的计分阶段开始时触发：从你的常规手牌中暗置一张【响应卡】。",
+    "tension": 0
+  },
+  {
+    "id": "prelude_JP-07",
+    "sourceIndex": 0,
+    "deckOwner": "japan",
+    "country": "japan",
+    "type": "军备",
+    "name": "海南岛作战",
+    "text": "当同盟国在<中国东部>建设或征召陆军时触发：立刻消灭此陆军。",
+    "tension": 0
+  },
+  {
+    "id": "prelude_JP-08",
+    "sourceIndex": 0,
+    "deckOwner": "japan",
+    "country": "japan",
+    "type": "军备",
+    "name": "联合舰队",
+    "text": "在你建设海军时触发：在建设海军的相邻地区发起海战。",
+    "tension": 0
+  },
+  {
+    "id": "prelude_JP-09",
+    "sourceIndex": 0,
+    "deckOwner": "japan",
+    "country": "japan",
+    "type": "军备",
+    "name": "增援太平洋诸岛",
+    "text": "在你的计分阶段开始时触发：在<硫磺岛>或<新几内亚>征召一支陆军。",
+    "tension": 0
+  },
+  {
+    "id": "prelude_JP-10",
+    "sourceIndex": 0,
+    "deckOwner": "japan",
+    "country": "japan",
+    "type": "历史",
+    "name": "帝国陆军航空队",
+    "text": "你获得 1 分，或在一支日本陆军所处的区域部署空军。",
+    "tension": 0
+  },
+  {
+    "id": "prelude_JP-11",
+    "sourceIndex": 0,
+    "deckOwner": "japan",
+    "country": "japan",
+    "type": "历史",
+    "name": "甘地主导非暴力不合作运动",
+    "text": "英国弃置其序章牌库顶部的 5 张牌。",
+    "tension": 0
+  },
+  {
+    "id": "prelude_JP-12",
+    "sourceIndex": 0,
+    "deckOwner": "japan",
+    "country": "japan",
+    "type": "历史",
+    "name": "黑龙会",
+    "text": "从你常规手牌中选择一张【响应卡】并暗置，然后从常规牌库中摸一张牌。",
+    "tension": 1
+  },
+  {
+    "id": "prelude_JP-13",
+    "sourceIndex": 0,
+    "deckOwner": "japan",
+    "country": "japan",
+    "type": "历史",
+    "name": "九一八事变",
+    "text": "消灭一支位于<中国东部>的同盟国陆军或在<中国东部>征召一支陆军。",
+    "tension": 2
+  },
+  {
+    "id": "prelude_JP-14",
+    "sourceIndex": 0,
+    "deckOwner": "japan",
+    "country": "japan",
+    "type": "历史",
+    "name": "日苏中立条约",
+    "text": "正面放置于场上。苏联第一次向你的部队发起战斗时，弃掉此牌；如果你没有向苏联部队发起过战斗，你获得 2 分。",
+    "tension": -1
+  },
+  {
+    "id": "prelude_JP-15",
+    "sourceIndex": 0,
+    "deckOwner": "japan",
+    "country": "japan",
+    "type": "历史",
+    "name": "撕毁华盛顿海军条约",
+    "text": "在<东海><北太平洋><中太平洋>其中之一征召一支海军。",
+    "tension": 1
+  },
+  {
+    "id": "prelude_JP-16",
+    "sourceIndex": 0,
+    "deckOwner": "japan",
+    "country": "japan",
+    "type": "历史",
+    "name": "天津事变",
+    "text": "美国和英国弃置序章牌库顶部的两张牌。获得 1 分。",
+    "tension": 1
+  },
+  {
+    "id": "prelude_JP-17",
+    "sourceIndex": 0,
+    "deckOwner": "japan",
+    "country": "japan",
+    "type": "历史",
+    "name": "天羽声明",
+    "text": "每有一支在<东海>或与其相邻的日本部队，你获得 1 分。",
+    "tension": 1
+  },
+  {
+    "id": "prelude_JP-18",
+    "sourceIndex": 0,
+    "deckOwner": "japan",
+    "country": "japan",
+    "type": "历史",
+    "name": "血盟会",
+    "text": "选择任意数量的常规手牌，以你选择的顺序置于你的常规牌库底部，然后从常规牌库抽取等量手牌。",
+    "tension": 0
+  },
+  {
+    "id": "prelude_SU-01",
+    "sourceIndex": 0,
+    "deckOwner": "soviet_union",
+    "country": "soviet_union",
+    "type": "军备",
+    "name": "T-34坦克",
+    "text": "在你发动陆战后触发：移除版图上的一支苏联陆军，在战斗地区建设一支苏联陆军。",
+    "tension": 0
+  },
+  {
+    "id": "prelude_SU-02",
+    "sourceIndex": 0,
+    "deckOwner": "soviet_union",
+    "country": "soviet_union",
+    "type": "历史",
+    "name": "大清洗",
+    "text": "从你的序章牌库顶弃置最多 3 张牌，每弃 1 张，获得 1 分。",
+    "tension": -1
+  },
+  {
+    "id": "prelude_SU-03",
+    "sourceIndex": 0,
+    "deckOwner": "soviet_union",
+    "country": "soviet_union",
+    "type": "军备",
+    "name": "大纵深作战思想",
+    "text": "当你的部队被陆战消灭后触发：移除版图上的另一支苏联陆军，在战斗地区建设一支苏联陆军。",
+    "tension": 0
+  },
+  {
+    "id": "prelude_SU-04",
+    "sourceIndex": 0,
+    "deckOwner": "soviet_union",
+    "country": "soviet_union",
+    "type": "军备",
+    "name": "冬季战争",
+    "text": "在你的计分阶段开始时触发：在<斯堪的纳维亚>发起陆战，或在<斯堪的纳维亚>建设一支陆军。",
+    "tension": 0
+  },
+  {
+    "id": "prelude_SU-05",
+    "sourceIndex": 0,
+    "deckOwner": "soviet_union",
+    "country": "soviet_union",
+    "type": "历史",
+    "name": "反法西斯人民阵线",
+    "text": "弃掉你序章牌库顶的一张牌；然后打出序章牌库顶的下一张牌。获得 1 分。",
+    "tension": 1
+  },
+  {
+    "id": "prelude_SU-06",
+    "sourceIndex": 0,
+    "deckOwner": "soviet_union",
+    "country": "soviet_union",
+    "type": "军备",
+    "name": "红海军保卫港口",
+    "text": "在你的陆军被发动陆战时触发：若其与你的海军相邻，本回合这支陆军不会被移除。",
+    "tension": 0
+  },
+  {
+    "id": "prelude_SU-07",
+    "sourceIndex": 0,
+    "deckOwner": "soviet_union",
+    "country": "soviet_union",
+    "type": "军备",
+    "name": "喀秋莎",
+    "text": "在你发起陆战后触发：在相同的地区发起陆战。",
+    "tension": 0
+  },
+  {
+    "id": "prelude_SU-08",
+    "sourceIndex": 0,
+    "deckOwner": "soviet_union",
+    "country": "soviet_union",
+    "type": "历史",
+    "name": "日苏中立条约",
+    "text": "正面朝上放置于场上。日本首次对你的部队发起战斗时，弃掉此牌；如果你未对日本部队发起过战斗，获得 4 分。",
+    "tension": -1
+  },
+  {
+    "id": "prelude_SU-09",
+    "sourceIndex": 0,
+    "deckOwner": "soviet_union",
+    "country": "soviet_union",
+    "type": "历史",
+    "name": "苏联支持盛世才",
+    "text": "在<哈萨克斯坦>征召一支苏联陆军。",
+    "tension": 0
+  },
+  {
+    "id": "prelude_SU-10",
+    "sourceIndex": 0,
+    "deckOwner": "soviet_union",
+    "country": "soviet_union",
+    "type": "历史",
+    "name": "苏德互不侵犯协定",
+    "text": "正面朝上放置于场上。德国首次对你的部队发起战斗时，弃掉此牌；如果你未对德国部队发起过战斗，获得 4 分。",
+    "tension": -1
+  },
+  {
+    "id": "prelude_SU-11",
+    "sourceIndex": 0,
+    "deckOwner": "soviet_union",
+    "country": "soviet_union",
+    "type": "历史",
+    "name": "苏联支援西班牙共和国军",
+    "text": "逐张查看你的序章牌库顶，并决定是否弃置，至多弃置3张。然后意大利弃置其序章牌库顶相同数量的牌。",
+    "tension": 1
+  },
+  {
+    "id": "prelude_SU-12",
+    "sourceIndex": 0,
+    "deckOwner": "soviet_union",
+    "country": "soviet_union",
+    "type": "历史",
+    "name": "吞并波罗的海国家",
+    "text": "在<罗斯地区>征召一支陆军。",
+    "tension": 1
+  },
+  {
+    "id": "prelude_SU-13",
+    "sourceIndex": 0,
+    "deckOwner": "soviet_union",
+    "country": "soviet_union",
+    "type": "历史",
+    "name": "五年计划",
+    "text": "在一个与<莫斯科>相邻的地区征召一支苏联陆军。",
+    "tension": 0
+  },
+  {
+    "id": "prelude_SU-14",
+    "sourceIndex": 0,
+    "deckOwner": "soviet_union",
+    "country": "soviet_union",
+    "type": "历史",
+    "name": "一国建成社会主义",
+    "text": "从你的手牌中选取 1 张【响应卡】并暗置此卡，然后抽 1 张牌。",
+    "tension": 0
+  },
+  {
+    "id": "prelude_SU-15",
+    "sourceIndex": 0,
+    "deckOwner": "soviet_union",
+    "country": "soviet_union",
+    "type": "军备",
+    "name": "张鼓峰战役",
+    "text": "在你被日本发起陆战时触发：本回合中这支陆军不会被移除。",
+    "tension": 0
+  },
+  {
+    "id": "prelude_SU-16",
+    "sourceIndex": 0,
+    "deckOwner": "soviet_union",
+    "country": "soviet_union",
+    "type": "军备",
+    "name": "佐尔格特工警告克里姆林宫",
+    "text": "在德国对你发起战斗后触发：如果你此前没有对德国发起战斗，在<莫斯科>或一个相邻地区征召一支苏联陆军。",
+    "tension": 0
+  },
+  {
+    "id": "prelude_SU-17",
+    "sourceIndex": 0,
+    "deckOwner": "soviet_union",
+    "country": "china",
+    "type": "历史",
+    "name": "长征",
+    "text": "在<中国东部>或<中国西部>征召一支苏联或中国陆军；该地区必须没有任何国家的陆军。",
+    "tension": 0
+  },
+  {
+    "id": "prelude_IT-01",
+    "sourceIndex": 0,
+    "deckOwner": "italy",
+    "country": "italy",
+    "type": "军备",
+    "name": "布雷舰",
+    "text": "当同盟国在<地中海>建设海军时触发：立刻消灭此海军。",
+    "tension": 0
+  },
+  {
+    "id": "prelude_IT-02",
+    "sourceIndex": 0,
+    "deckOwner": "italy",
+    "country": "italy",
+    "type": "军备",
+    "name": "第四海岸",
+    "text": "在你的计分阶段开始时触发：在<非洲北部>征召一支陆军。",
+    "tension": 0
+  },
+  {
+    "id": "prelude_IT-03",
+    "sourceIndex": 0,
+    "deckOwner": "italy",
+    "country": "italy",
+    "type": "军备",
+    "name": "黑衫军",
+    "text": "在你的计分阶段开始时触发：在<意大利>建设一支陆军。",
+    "tension": 0
+  },
+  {
+    "id": "prelude_IT-04",
+    "sourceIndex": 0,
+    "deckOwner": "italy",
+    "country": "italy",
+    "type": "军备",
+    "name": "皇家殖民地部队",
+    "text": "在你的计分阶段开始时触发：在<非洲南部>征召一支陆军。",
+    "tension": 0
+  },
+  {
+    "id": "prelude_IT-05",
+    "sourceIndex": 0,
+    "deckOwner": "italy",
+    "country": "italy",
+    "type": "军备",
+    "name": "罗马尼亚回应苏联吞并比萨拉比亚",
+    "text": "在你的计分阶段开始时触发：在<巴尔干>立刻消灭一支同盟国陆军。",
+    "tension": 0
+  },
+  {
+    "id": "prelude_IT-06",
+    "sourceIndex": 0,
+    "deckOwner": "italy",
+    "country": "italy",
+    "type": "军备",
+    "name": "维托里奥·维内托级战列舰",
+    "text": "在你的计分阶段开始时触发：在<地中海>建设一支海军。",
+    "tension": 0
+  },
+  {
+    "id": "prelude_IT-07",
+    "sourceIndex": 0,
+    "deckOwner": "italy",
+    "country": "italy",
+    "type": "军备",
+    "name": "伊拉克反英独立运动",
+    "text": "在你的计分阶段开始时触发：若<中东>没有同盟国陆军，英国须弃置牌库顶 4 张牌",
+    "tension": 0
+  },
+  {
+    "id": "prelude_IT-08",
+    "sourceIndex": 0,
+    "deckOwner": "italy",
+    "country": "italy",
+    "type": "历史",
+    "name": "反共产国际协定",
+    "text": "苏联弃置其序章牌库顶的 4 张牌。获得 1 分。",
+    "tension": 1
+  },
+  {
+    "id": "prelude_IT-09",
+    "sourceIndex": 0,
+    "deckOwner": "italy",
+    "country": "italy",
+    "type": "历史",
+    "name": "空军军团",
+    "text": "所有同盟国弃置其序章牌库顶的 2 张牌。获得 1 分。",
+    "tension": 1
+  },
+  {
+    "id": "prelude_IT-10",
+    "sourceIndex": 0,
+    "deckOwner": "italy",
+    "country": "italy",
+    "type": "历史",
+    "name": "美国优先委员会",
+    "text": "美国弃置其序章牌库顶部的 1 张牌。获得 1 分。",
+    "tension": -1
+  },
+  {
+    "id": "prelude_IT-11",
+    "sourceIndex": 0,
+    "deckOwner": "italy",
+    "country": "italy",
+    "type": "历史",
+    "name": "入侵阿尔巴尼亚",
+    "text": "弃置你序章牌库顶的 1 张牌，在<巴尔干>建设一支陆军。",
+    "tension": 1
+  },
+  {
+    "id": "prelude_IT-12",
+    "sourceIndex": 0,
+    "deckOwner": "italy",
+    "country": "italy",
+    "type": "历史",
+    "name": "入侵埃塞俄比亚",
+    "text": "在<非洲南部>消灭一支同盟国部队。",
+    "tension": 1
+  },
+  {
+    "id": "prelude_IT-13",
+    "sourceIndex": 0,
+    "deckOwner": "italy",
+    "country": "italy",
+    "type": "历史",
+    "name": "十二群岛基地",
+    "text": "弃置你序章牌库顶的 1 张牌，在<地中海>建设一支海军。",
+    "tension": 1
+  },
+  {
+    "id": "prelude_IT-14",
+    "sourceIndex": 0,
+    "deckOwner": "italy",
+    "country": "italy",
+    "type": "历史",
+    "name": "西班牙政变",
+    "text": "获得 1 分。",
+    "tension": 0
+  },
+  {
+    "id": "prelude_IT-15",
+    "sourceIndex": 0,
+    "deckOwner": "italy",
+    "country": "italy",
+    "type": "历史",
+    "name": "向海洋进军",
+    "text": "每有一支位于<意大利>之外的意大利陆军或海军，获得 1 分。",
+    "tension": 1
+  },
+  {
+    "id": "prelude_IT-16",
+    "sourceIndex": 0,
+    "deckOwner": "italy",
+    "country": "italy",
+    "type": "历史",
+    "name": "意大利支持佛朗哥",
+    "text": "从你的序章牌库顶依次弃置最多 3 张牌，每弃 1 张，获得 1 分。",
+    "tension": 1
+  },
+  {
+    "id": "prelude_US-01",
+    "sourceIndex": 0,
+    "deckOwner": "united_states",
+    "country": "united_states",
+    "type": "军备",
+    "name": "爱因斯坦-西拉德信",
+    "text": "在你的回合开始时，若与某轴心国的大本营相邻的地区存在美国陆军或海军：该轴心国须弃置牌库顶的 4 张牌。获得 2 分。",
+    "tension": 0
+  },
+  {
+    "id": "prelude_US-02",
+    "sourceIndex": 0,
+    "deckOwner": "united_states",
+    "country": "united_states",
+    "type": "军备",
+    "name": "北卡罗来纳级快速战列舰",
+    "text": "在你的计分阶段开始时触发：在<东太平洋>或与其相邻的地区征召一支海军。",
+    "tension": 0
+  },
+  {
+    "id": "prelude_US-03",
+    "sourceIndex": 0,
+    "deckOwner": "united_states",
+    "country": "china",
+    "type": "军备",
+    "name": "国民革命军",
+    "text": "日本在<中国东部>或<中国西部>建设陆军时触发：立刻消灭此陆军。",
+    "tension": 0
+  },
+  {
+    "id": "prelude_US-04",
+    "sourceIndex": 0,
+    "deckOwner": "united_states",
+    "country": "united_states",
+    "type": "军备",
+    "name": "美国陆军航空队",
+    "text": "在正式游戏中你的回合内任意时机触发：获得 1 分，或部署一支空军。",
+    "tension": 0
+  },
+  {
+    "id": "prelude_US-05",
+    "sourceIndex": 0,
+    "deckOwner": "united_states",
+    "country": "united_states",
+    "type": "军备",
+    "name": "生产线调整至战时状态",
+    "text": "在你的回合开始时触发：将任意数量手牌至于牌库底。将手牌摸至 7 张。",
+    "tension": 0
+  },
+  {
+    "id": "prelude_US-06",
+    "sourceIndex": 0,
+    "deckOwner": "united_states",
+    "country": "china",
+    "type": "历史",
+    "name": "第二次国共合作",
+    "text": "在<中国西部>征召一支苏联或中国陆军。",
+    "tension": 0
+  },
+  {
+    "id": "prelude_US-07",
+    "sourceIndex": 0,
+    "deckOwner": "united_states",
+    "country": "united_states",
+    "type": "历史",
+    "name": "蒂泽德代表团",
+    "text": "英国可从其序章弃牌堆选取 1 张【军备卡】并暗置。",
+    "tension": 0
+  },
+  {
+    "id": "prelude_US-08",
+    "sourceIndex": 0,
+    "deckOwner": "united_states",
+    "country": "united_states",
+    "type": "历史",
+    "name": "隔离演说",
+    "text": "所有轴心国须弃置其序章牌库顶的 1 张牌。",
+    "tension": 1
+  },
+  {
+    "id": "prelude_US-09",
+    "sourceIndex": 0,
+    "deckOwner": "united_states",
+    "country": "united_states",
+    "type": "历史",
+    "name": "公共事业振兴署",
+    "text": "检视你常规牌库顶的 10 张牌，从中选取 1 张【状态卡】并打出。洗混你的常规牌库。",
+    "tension": 0
+  },
+  {
+    "id": "prelude_US-10",
+    "sourceIndex": 0,
+    "deckOwner": "united_states",
+    "country": "united_states",
+    "type": "历史",
+    "name": "海德公园的野餐",
+    "text": "英国可打出 1 张序章手牌。",
+    "tension": 1
+  },
+  {
+    "id": "prelude_US-11",
+    "sourceIndex": 0,
+    "deckOwner": "united_states",
+    "country": "united_states",
+    "type": "历史",
+    "name": "海军扩建法案",
+    "text": "建设一支海军。",
+    "tension": 1
+  },
+  {
+    "id": "prelude_US-12",
+    "sourceIndex": 0,
+    "deckOwner": "united_states",
+    "country": "united_states",
+    "type": "历史",
+    "name": "民间资源保护队",
+    "text": "从你的序章弃牌堆中选取 1 张【军备卡】并暗置。",
+    "tension": 0
+  },
+  {
+    "id": "prelude_US-13",
+    "sourceIndex": 0,
+    "deckOwner": "united_states",
+    "country": "china",
+    "type": "历史",
+    "name": "南京保卫战",
+    "text": "日本须弃置其序章牌库顶的 1 张牌。",
+    "tension": 3
+  },
+  {
+    "id": "prelude_US-14",
+    "sourceIndex": 0,
+    "deckOwner": "united_states",
+    "country": "china",
+    "type": "历史",
+    "name": "帕奈号事件",
+    "text": "日本须弃置其序章牌库顶的 2 张牌。",
+    "tension": 1
+  },
+  {
+    "id": "prelude_US-15",
+    "sourceIndex": 0,
+    "deckOwner": "united_states",
+    "country": "united_states",
+    "type": "历史",
+    "name": "中立法案",
+    "text": "获得 2 分。",
+    "tension": -1
+  },
+  {
+    "id": "prelude_US-16",
+    "sourceIndex": 0,
+    "deckOwner": "united_states",
+    "country": "united_states",
+    "type": "军备",
+    "name": "菲律宾侦察兵",
+    "text": "在你的计分阶段开始时触发：在<菲律宾>征召一支陆军。",
+    "tension": 0
+  }
+]

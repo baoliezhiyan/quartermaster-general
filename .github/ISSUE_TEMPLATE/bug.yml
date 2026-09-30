@@ -1,0 +1,22 @@
+name: 游戏或训练 Bug
+description: 提供可复现的版本、场景和预期行为
+body:
+  - type: input
+    id: version
+    attributes:
+      label: 版本或提交
+      description: 游戏版本；训练问题还需课程/构建指纹
+    validations:
+      required: true
+  - type: input
+    id: options
+    attributes:
+      label: 规则开关及卡牌ID
+      description: 平衡补丁、序章、中立、训练A/B，以及涉及的卡牌和地区
+  - type: textarea
+    id: repro
+    attributes:
+      label: 复现步骤、预期和实际结果
+      description: 不要附密钥、连接令牌或未经同意的私密对局资料
+    validations:
+      required: true

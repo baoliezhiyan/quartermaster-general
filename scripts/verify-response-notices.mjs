@@ -1,0 +1,34 @@
+import {join} from 'node:path';
+import {pathToFileURL} from 'node:url';
+import {mkdir} from 'node:fs/promises';
+import assert from 'node:assert/strict';
+const {chromium}=await import(pathToFileURL(join(process.env.USERPROFILE,'.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright-core/index.mjs')).href);
+const browser=await chromium.launch({executablePath:'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe',headless:true});
+const page=await browser.newPage({viewport:{width:1920,height:1080}}),errors=[];page.on('pageerror',e=>errors.push(e.message));
+try {
+ await page.goto('http://127.0.0.1:4174/');
+ await page.getByText('场景编辑器',{exact:true}).click();
+ await page.getByRole('button',{name:'载入：布莱切利园 · 取消德国增强',exact:true}).click();
+ const prompt=page.locator('.guided-prompt'),hand=page.locator('.map-hand-dock');
+ await hand.getByRole('button').filter({hasText:'云量'}).click();await prompt.getByRole('button',{name:'确认',exact:true}).click();
+ await page.getByText('六国操作与结算查看',{exact:true}).click();
+ const views=page.locator('details').filter({has:page.getByText('六国操作与结算查看',{exact:true})});
+ await views.getByRole('button',{name:'英国',exact:true}).click();
+ await hand.getByRole('button').filter({hasText:'布莱切利园'}).click();await prompt.getByRole('button',{name:'确认',exact:true}).click();
+ await hand.locator('.available-card').first().click();await prompt.getByRole('button',{name:'确认',exact:true}).click();
+ const notice=page.getByRole('alertdialog',{name:'响应结果',exact:true});
+ assert.equal(await notice.count(),0);
+ await views.getByRole('button',{name:'德国',exact:true}).click();await notice.waitFor();
+ assert((await notice.innerText()).includes('此增强卡无效'));
+ await page.reload();await notice.waitFor();
+ await page.getByRole('button',{name:'全屏',exact:true}).click();
+ await notice.getByRole('button',{name:'布莱切利园',exact:true}).click();
+ const index=page.getByRole('dialog',{name:'卡牌索引',exact:true});await index.waitFor();
+ assert((await index.innerText()).includes('该【增强卡】无效'));
+ await mkdir('outputs/response-notices-review',{recursive:true});await page.screenshot({path:'outputs/response-notices-review/cancelled-cloud.png'});
+ await index.getByRole('button',{name:'关闭卡牌索引',exact:true}).click();
+ await notice.getByRole('button',{name:'云量',exact:true}).click();await index.waitFor();await index.getByRole('button',{name:'关闭卡牌索引',exact:true}).click();
+ await notice.getByRole('button',{name:'知道了',exact:true}).click();await notice.waitFor({state:'detached'});
+ await page.reload();await page.getByText('战略地图',{exact:true}).waitFor();assert.equal(await notice.count(),0);
+ assert.deepEqual(errors,[]);console.log('PASS: recipient-only notice, retained across switch/reload, both card indexes in fullscreen, acknowledgement persists.');
+} finally {await browser.close();}

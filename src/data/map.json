@@ -1,0 +1,1018 @@
+{
+  "version": "1.2",
+  "source": "战场军需官-地图数据审核表.xlsx",
+  "sourceSha256": "fb4f5e0798c8651a78874a97b9417f8991abd01e1d5daff72cdce8dca4b68529",
+  "regions": [
+    {
+      "id": "canada",
+      "name": "加拿大",
+      "type": "LAND",
+      "supply": false,
+      "homeCountry": null,
+      "initialArmyCountry": null,
+      "notes": ""
+    },
+    {
+      "id": "united_states",
+      "name": "美国",
+      "type": "LAND",
+      "supply": true,
+      "homeCountry": "united_states",
+      "initialArmyCountry": "united_states",
+      "notes": ""
+    },
+    {
+      "id": "latin_america",
+      "name": "拉丁美洲",
+      "type": "LAND",
+      "supply": false,
+      "homeCountry": null,
+      "initialArmyCountry": null,
+      "notes": ""
+    },
+    {
+      "id": "iceland",
+      "name": "冰岛",
+      "type": "LAND",
+      "supply": false,
+      "homeCountry": null,
+      "initialArmyCountry": null,
+      "notes": ""
+    },
+    {
+      "id": "british_isles",
+      "name": "不列颠群岛",
+      "type": "LAND",
+      "supply": true,
+      "homeCountry": "united_kingdom",
+      "initialArmyCountry": "united_kingdom",
+      "notes": ""
+    },
+    {
+      "id": "scandinavia",
+      "name": "斯堪的纳维亚",
+      "type": "LAND",
+      "supply": false,
+      "homeCountry": null,
+      "initialArmyCountry": null,
+      "notes": ""
+    },
+    {
+      "id": "western_europe",
+      "name": "西欧",
+      "type": "LAND",
+      "supply": true,
+      "homeCountry": "france",
+      "initialArmyCountry": "france",
+      "notes": ""
+    },
+    {
+      "id": "germany",
+      "name": "日耳曼",
+      "type": "LAND",
+      "supply": true,
+      "homeCountry": "germany",
+      "initialArmyCountry": "germany",
+      "notes": ""
+    },
+    {
+      "id": "italy",
+      "name": "意大利",
+      "type": "LAND",
+      "supply": true,
+      "homeCountry": "italy",
+      "initialArmyCountry": "italy",
+      "notes": ""
+    },
+    {
+      "id": "balkans",
+      "name": "巴尔干",
+      "type": "LAND",
+      "supply": false,
+      "homeCountry": null,
+      "initialArmyCountry": null,
+      "notes": ""
+    },
+    {
+      "id": "eastern_europe",
+      "name": "东欧",
+      "type": "LAND",
+      "supply": false,
+      "homeCountry": null,
+      "initialArmyCountry": null,
+      "notes": ""
+    },
+    {
+      "id": "ukraine",
+      "name": "乌克兰",
+      "type": "LAND",
+      "supply": true,
+      "homeCountry": null,
+      "initialArmyCountry": null,
+      "notes": ""
+    },
+    {
+      "id": "ross_region",
+      "name": "罗斯地区",
+      "type": "LAND",
+      "supply": false,
+      "homeCountry": null,
+      "initialArmyCountry": null,
+      "notes": ""
+    },
+    {
+      "id": "moscow",
+      "name": "莫斯科",
+      "type": "LAND",
+      "supply": true,
+      "homeCountry": "soviet_union",
+      "initialArmyCountry": "soviet_union",
+      "notes": ""
+    },
+    {
+      "id": "siberia",
+      "name": "西伯利亚",
+      "type": "LAND",
+      "supply": false,
+      "homeCountry": null,
+      "initialArmyCountry": null,
+      "notes": ""
+    },
+    {
+      "id": "kazakhstan",
+      "name": "哈萨克斯坦",
+      "type": "LAND",
+      "supply": false,
+      "homeCountry": null,
+      "initialArmyCountry": null,
+      "notes": ""
+    },
+    {
+      "id": "mongolia",
+      "name": "蒙古地区",
+      "type": "LAND",
+      "supply": false,
+      "homeCountry": null,
+      "initialArmyCountry": null,
+      "notes": ""
+    },
+    {
+      "id": "vladivostok",
+      "name": "海参崴",
+      "type": "LAND",
+      "supply": false,
+      "homeCountry": null,
+      "initialArmyCountry": null,
+      "notes": ""
+    },
+    {
+      "id": "middle_east",
+      "name": "中东",
+      "type": "LAND",
+      "supply": false,
+      "homeCountry": null,
+      "initialArmyCountry": null,
+      "notes": ""
+    },
+    {
+      "id": "india",
+      "name": "印度",
+      "type": "LAND",
+      "supply": true,
+      "homeCountry": null,
+      "initialArmyCountry": null,
+      "notes": ""
+    },
+    {
+      "id": "western_china",
+      "name": "中国西部",
+      "type": "LAND",
+      "supply": false,
+      "homeCountry": null,
+      "initialArmyCountry": null,
+      "notes": ""
+    },
+    {
+      "id": "eastern_china",
+      "name": "中国东部",
+      "type": "LAND",
+      "supply": true,
+      "homeCountry": "china",
+      "initialArmyCountry": "china",
+      "notes": ""
+    },
+    {
+      "id": "southeast_asia",
+      "name": "东南亚",
+      "type": "LAND",
+      "supply": false,
+      "homeCountry": null,
+      "initialArmyCountry": null,
+      "notes": ""
+    },
+    {
+      "id": "japan",
+      "name": "日本",
+      "type": "LAND",
+      "supply": true,
+      "homeCountry": "japan",
+      "initialArmyCountry": "japan",
+      "notes": ""
+    },
+    {
+      "id": "philippines",
+      "name": "菲律宾",
+      "type": "LAND",
+      "supply": false,
+      "homeCountry": null,
+      "initialArmyCountry": null,
+      "notes": ""
+    },
+    {
+      "id": "indonesia",
+      "name": "印度尼西亚",
+      "type": "LAND",
+      "supply": false,
+      "homeCountry": null,
+      "initialArmyCountry": null,
+      "notes": ""
+    },
+    {
+      "id": "new_guinea",
+      "name": "新几内亚",
+      "type": "LAND",
+      "supply": false,
+      "homeCountry": null,
+      "initialArmyCountry": null,
+      "notes": ""
+    },
+    {
+      "id": "iwo_jima",
+      "name": "硫磺岛",
+      "type": "LAND",
+      "supply": false,
+      "homeCountry": null,
+      "initialArmyCountry": null,
+      "notes": ""
+    },
+    {
+      "id": "hawaii",
+      "name": "夏威夷",
+      "type": "LAND",
+      "supply": true,
+      "homeCountry": null,
+      "initialArmyCountry": null,
+      "notes": ""
+    },
+    {
+      "id": "australia",
+      "name": "澳大利亚",
+      "type": "LAND",
+      "supply": true,
+      "homeCountry": null,
+      "initialArmyCountry": null,
+      "notes": ""
+    },
+    {
+      "id": "new_zealand",
+      "name": "新西兰",
+      "type": "LAND",
+      "supply": false,
+      "homeCountry": null,
+      "initialArmyCountry": null,
+      "notes": ""
+    },
+    {
+      "id": "north_africa",
+      "name": "非洲北部",
+      "type": "LAND",
+      "supply": false,
+      "homeCountry": null,
+      "initialArmyCountry": null,
+      "notes": ""
+    },
+    {
+      "id": "south_africa",
+      "name": "非洲南部",
+      "type": "LAND",
+      "supply": false,
+      "homeCountry": null,
+      "initialArmyCountry": null,
+      "notes": ""
+    },
+    {
+      "id": "madagascar",
+      "name": "马达加斯加",
+      "type": "LAND",
+      "supply": false,
+      "homeCountry": null,
+      "initialArmyCountry": null,
+      "notes": ""
+    },
+    {
+      "id": "sea_north_atlantic",
+      "name": "北大西洋",
+      "type": "SEA",
+      "supply": false,
+      "homeCountry": null,
+      "initialArmyCountry": null,
+      "notes": ""
+    },
+    {
+      "id": "sea_mid_atlantic",
+      "name": "中大西洋",
+      "type": "SEA",
+      "supply": false,
+      "homeCountry": null,
+      "initialArmyCountry": null,
+      "notes": ""
+    },
+    {
+      "id": "sea_south_atlantic",
+      "name": "南大西洋",
+      "type": "SEA",
+      "supply": false,
+      "homeCountry": null,
+      "initialArmyCountry": null,
+      "notes": ""
+    },
+    {
+      "id": "sea_southeast_pacific",
+      "name": "东南太平洋",
+      "type": "SEA",
+      "supply": false,
+      "homeCountry": null,
+      "initialArmyCountry": null,
+      "notes": ""
+    },
+    {
+      "id": "sea_north_sea",
+      "name": "北海",
+      "type": "SEA",
+      "supply": false,
+      "homeCountry": null,
+      "initialArmyCountry": null,
+      "notes": ""
+    },
+    {
+      "id": "sea_baltic",
+      "name": "波罗的海",
+      "type": "SEA",
+      "supply": false,
+      "homeCountry": null,
+      "initialArmyCountry": null,
+      "notes": ""
+    },
+    {
+      "id": "sea_mediterranean",
+      "name": "地中海",
+      "type": "SEA",
+      "supply": false,
+      "homeCountry": null,
+      "initialArmyCountry": null,
+      "notes": ""
+    },
+    {
+      "id": "sea_black",
+      "name": "黑海",
+      "type": "SEA",
+      "supply": false,
+      "homeCountry": null,
+      "initialArmyCountry": null,
+      "notes": ""
+    },
+    {
+      "id": "sea_caspian",
+      "name": "里海",
+      "type": "SEA",
+      "supply": false,
+      "homeCountry": null,
+      "initialArmyCountry": null,
+      "notes": "可放置海军"
+    },
+    {
+      "id": "sea_arabian",
+      "name": "阿拉伯海",
+      "type": "SEA",
+      "supply": false,
+      "homeCountry": null,
+      "initialArmyCountry": null,
+      "notes": ""
+    },
+    {
+      "id": "sea_indian",
+      "name": "印度洋",
+      "type": "SEA",
+      "supply": false,
+      "homeCountry": null,
+      "initialArmyCountry": null,
+      "notes": ""
+    },
+    {
+      "id": "sea_south_china",
+      "name": "南海",
+      "type": "SEA",
+      "supply": false,
+      "homeCountry": null,
+      "initialArmyCountry": null,
+      "notes": ""
+    },
+    {
+      "id": "sea_east_china",
+      "name": "东海",
+      "type": "SEA",
+      "supply": false,
+      "homeCountry": null,
+      "initialArmyCountry": null,
+      "notes": ""
+    },
+    {
+      "id": "sea_north_pacific",
+      "name": "北太平洋",
+      "type": "SEA",
+      "supply": false,
+      "homeCountry": null,
+      "initialArmyCountry": null,
+      "notes": ""
+    },
+    {
+      "id": "sea_central_pacific",
+      "name": "中太平洋",
+      "type": "SEA",
+      "supply": false,
+      "homeCountry": null,
+      "initialArmyCountry": null,
+      "notes": ""
+    },
+    {
+      "id": "sea_south_pacific",
+      "name": "南太平洋",
+      "type": "SEA",
+      "supply": false,
+      "homeCountry": null,
+      "initialArmyCountry": null,
+      "notes": ""
+    },
+    {
+      "id": "sea_east_pacific",
+      "name": "东太平洋",
+      "type": "SEA",
+      "supply": false,
+      "homeCountry": null,
+      "initialArmyCountry": null,
+      "notes": "跨地图边缘邻接拉丁美洲"
+    }
+  ],
+  "baseEdges": [
+    [
+      "australia",
+      "sea_indian"
+    ],
+    [
+      "australia",
+      "sea_south_china"
+    ],
+    [
+      "australia",
+      "sea_south_pacific"
+    ],
+    [
+      "balkans",
+      "eastern_europe"
+    ],
+    [
+      "balkans",
+      "germany"
+    ],
+    [
+      "balkans",
+      "italy"
+    ],
+    [
+      "balkans",
+      "sea_black"
+    ],
+    [
+      "balkans",
+      "sea_mediterranean"
+    ],
+    [
+      "balkans",
+      "ukraine"
+    ],
+    [
+      "british_isles",
+      "sea_north_sea"
+    ],
+    [
+      "canada",
+      "sea_east_pacific"
+    ],
+    [
+      "canada",
+      "sea_north_atlantic"
+    ],
+    [
+      "canada",
+      "sea_north_pacific"
+    ],
+    [
+      "canada",
+      "united_states"
+    ],
+    [
+      "eastern_china",
+      "mongolia"
+    ],
+    [
+      "eastern_china",
+      "sea_east_china"
+    ],
+    [
+      "eastern_china",
+      "southeast_asia"
+    ],
+    [
+      "eastern_china",
+      "vladivostok"
+    ],
+    [
+      "eastern_china",
+      "western_china"
+    ],
+    [
+      "eastern_europe",
+      "germany"
+    ],
+    [
+      "eastern_europe",
+      "ross_region"
+    ],
+    [
+      "eastern_europe",
+      "sea_baltic"
+    ],
+    [
+      "eastern_europe",
+      "ukraine"
+    ],
+    [
+      "germany",
+      "italy"
+    ],
+    [
+      "germany",
+      "sea_baltic"
+    ],
+    [
+      "germany",
+      "western_europe"
+    ],
+    [
+      "hawaii",
+      "sea_central_pacific"
+    ],
+    [
+      "hawaii",
+      "sea_east_pacific"
+    ],
+    [
+      "hawaii",
+      "sea_north_pacific"
+    ],
+    [
+      "iceland",
+      "sea_north_atlantic"
+    ],
+    [
+      "iceland",
+      "sea_north_sea"
+    ],
+    [
+      "india",
+      "middle_east"
+    ],
+    [
+      "india",
+      "sea_arabian"
+    ],
+    [
+      "india",
+      "southeast_asia"
+    ],
+    [
+      "india",
+      "western_china"
+    ],
+    [
+      "indonesia",
+      "sea_arabian"
+    ],
+    [
+      "indonesia",
+      "sea_indian"
+    ],
+    [
+      "indonesia",
+      "sea_south_china"
+    ],
+    [
+      "italy",
+      "sea_mediterranean"
+    ],
+    [
+      "italy",
+      "western_europe"
+    ],
+    [
+      "iwo_jima",
+      "sea_central_pacific"
+    ],
+    [
+      "iwo_jima",
+      "sea_east_china"
+    ],
+    [
+      "iwo_jima",
+      "sea_north_pacific"
+    ],
+    [
+      "japan",
+      "sea_east_china"
+    ],
+    [
+      "kazakhstan",
+      "middle_east"
+    ],
+    [
+      "kazakhstan",
+      "mongolia"
+    ],
+    [
+      "kazakhstan",
+      "moscow"
+    ],
+    [
+      "kazakhstan",
+      "sea_caspian"
+    ],
+    [
+      "kazakhstan",
+      "siberia"
+    ],
+    [
+      "kazakhstan",
+      "ukraine"
+    ],
+    [
+      "kazakhstan",
+      "western_china"
+    ],
+    [
+      "latin_america",
+      "sea_east_pacific"
+    ],
+    [
+      "latin_america",
+      "sea_mid_atlantic"
+    ],
+    [
+      "latin_america",
+      "sea_north_atlantic"
+    ],
+    [
+      "latin_america",
+      "sea_south_atlantic"
+    ],
+    [
+      "latin_america",
+      "sea_southeast_pacific"
+    ],
+    [
+      "latin_america",
+      "united_states"
+    ],
+    [
+      "madagascar",
+      "sea_arabian"
+    ],
+    [
+      "madagascar",
+      "sea_indian"
+    ],
+    [
+      "middle_east",
+      "north_africa"
+    ],
+    [
+      "middle_east",
+      "sea_arabian"
+    ],
+    [
+      "middle_east",
+      "sea_black"
+    ],
+    [
+      "middle_east",
+      "sea_caspian"
+    ],
+    [
+      "middle_east",
+      "sea_mediterranean"
+    ],
+    [
+      "middle_east",
+      "ukraine"
+    ],
+    [
+      "middle_east",
+      "western_china"
+    ],
+    [
+      "mongolia",
+      "siberia"
+    ],
+    [
+      "mongolia",
+      "vladivostok"
+    ],
+    [
+      "mongolia",
+      "western_china"
+    ],
+    [
+      "moscow",
+      "ross_region"
+    ],
+    [
+      "moscow",
+      "siberia"
+    ],
+    [
+      "moscow",
+      "ukraine"
+    ],
+    [
+      "new_guinea",
+      "sea_central_pacific"
+    ],
+    [
+      "new_guinea",
+      "sea_south_china"
+    ],
+    [
+      "new_guinea",
+      "sea_south_pacific"
+    ],
+    [
+      "new_zealand",
+      "sea_east_pacific"
+    ],
+    [
+      "new_zealand",
+      "sea_south_pacific"
+    ],
+    [
+      "north_africa",
+      "sea_arabian"
+    ],
+    [
+      "north_africa",
+      "sea_mediterranean"
+    ],
+    [
+      "north_africa",
+      "sea_north_sea"
+    ],
+    [
+      "north_africa",
+      "south_africa"
+    ],
+    [
+      "philippines",
+      "sea_central_pacific"
+    ],
+    [
+      "philippines",
+      "sea_east_china"
+    ],
+    [
+      "philippines",
+      "sea_south_china"
+    ],
+    [
+      "ross_region",
+      "scandinavia"
+    ],
+    [
+      "ross_region",
+      "sea_baltic"
+    ],
+    [
+      "ross_region",
+      "siberia"
+    ],
+    [
+      "ross_region",
+      "ukraine"
+    ],
+    [
+      "scandinavia",
+      "sea_baltic"
+    ],
+    [
+      "scandinavia",
+      "sea_north_sea"
+    ],
+    [
+      "sea_arabian",
+      "sea_indian"
+    ],
+    [
+      "sea_arabian",
+      "south_africa"
+    ],
+    [
+      "sea_arabian",
+      "southeast_asia"
+    ],
+    [
+      "sea_baltic",
+      "western_europe"
+    ],
+    [
+      "sea_black",
+      "ukraine"
+    ],
+    [
+      "sea_caspian",
+      "ukraine"
+    ],
+    [
+      "sea_central_pacific",
+      "sea_east_china"
+    ],
+    [
+      "sea_central_pacific",
+      "sea_east_pacific"
+    ],
+    [
+      "sea_central_pacific",
+      "sea_north_pacific"
+    ],
+    [
+      "sea_central_pacific",
+      "sea_south_china"
+    ],
+    [
+      "sea_central_pacific",
+      "sea_south_pacific"
+    ],
+    [
+      "sea_east_china",
+      "sea_north_pacific"
+    ],
+    [
+      "sea_east_china",
+      "sea_south_china"
+    ],
+    [
+      "sea_east_china",
+      "vladivostok"
+    ],
+    [
+      "sea_east_pacific",
+      "sea_north_pacific"
+    ],
+    [
+      "sea_east_pacific",
+      "sea_south_pacific"
+    ],
+    [
+      "sea_east_pacific",
+      "sea_southeast_pacific"
+    ],
+    [
+      "sea_east_pacific",
+      "united_states"
+    ],
+    [
+      "sea_indian",
+      "sea_south_atlantic"
+    ],
+    [
+      "sea_indian",
+      "sea_south_china"
+    ],
+    [
+      "sea_indian",
+      "sea_south_pacific"
+    ],
+    [
+      "sea_indian",
+      "south_africa"
+    ],
+    [
+      "sea_mediterranean",
+      "western_europe"
+    ],
+    [
+      "sea_mid_atlantic",
+      "sea_north_atlantic"
+    ],
+    [
+      "sea_mid_atlantic",
+      "sea_north_sea"
+    ],
+    [
+      "sea_mid_atlantic",
+      "sea_south_atlantic"
+    ],
+    [
+      "sea_mid_atlantic",
+      "south_africa"
+    ],
+    [
+      "sea_north_atlantic",
+      "sea_north_sea"
+    ],
+    [
+      "sea_north_atlantic",
+      "united_states"
+    ],
+    [
+      "sea_north_pacific",
+      "vladivostok"
+    ],
+    [
+      "sea_north_sea",
+      "western_europe"
+    ],
+    [
+      "sea_south_atlantic",
+      "sea_southeast_pacific"
+    ],
+    [
+      "sea_south_atlantic",
+      "south_africa"
+    ],
+    [
+      "sea_south_china",
+      "sea_south_pacific"
+    ],
+    [
+      "sea_south_china",
+      "southeast_asia"
+    ],
+    [
+      "siberia",
+      "vladivostok"
+    ],
+    [
+      "southeast_asia",
+      "western_china"
+    ]
+  ],
+  "straits": [
+    {
+      "id": "danish_strait",
+      "name": "丹麦海峡",
+      "landRegion": "scandinavia",
+      "seaA": "sea_north_sea",
+      "seaB": "sea_baltic",
+      "defaultController": "axis"
+    },
+    {
+      "id": "gibraltar_strait",
+      "name": "直布罗陀海峡",
+      "landRegion": "north_africa",
+      "seaA": "sea_north_sea",
+      "seaB": "sea_mediterranean",
+      "defaultController": "allies"
+    },
+    {
+      "id": "panama_canal",
+      "name": "巴拿马运河",
+      "landRegion": "latin_america",
+      "seaA": "sea_north_atlantic",
+      "seaB": "sea_southeast_pacific",
+      "defaultController": "allies"
+    },
+    {
+      "id": "suez_canal",
+      "name": "苏伊士运河",
+      "landRegion": "middle_east",
+      "seaA": "sea_mediterranean",
+      "seaB": "sea_arabian",
+      "defaultController": "allies"
+    },
+    {
+      "id": "malacca_strait",
+      "name": "马六甲海峡",
+      "landRegion": "southeast_asia",
+      "seaA": "sea_south_china",
+      "seaB": "sea_arabian",
+      "defaultController": "allies"
+    }
+  ]
+}

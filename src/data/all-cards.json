@@ -1,0 +1,2207 @@
+[
+  {
+    "id": "special_1",
+    "sourceIndex": 1,
+    "deckOwner": "united_kingdom",
+    "country": "united_kingdom",
+    "type": "状态",
+    "name": "反法西斯抵抗运动",
+    "text": "在你的出牌阶段：可【放弃打出手牌】并弃置2张手牌，在<西欧>或者<意大利>发起陆战。"
+  },
+  {
+    "id": "special_2",
+    "sourceIndex": 2,
+    "deckOwner": "united_kingdom",
+    "country": "united_kingdom",
+    "type": "状态",
+    "name": "澳大利亚劳管局",
+    "text": "当你建设陆军时：可在<澳大利亚>征召陆军来代替建设陆军。"
+  },
+  {
+    "id": "special_3",
+    "sourceIndex": 3,
+    "deckOwner": "united_kingdom",
+    "country": "united_kingdom",
+    "type": "状态",
+    "name": "麦肯齐·金起草国家资源动员法",
+    "text": "在你的计分阶段：若在<北大西洋>有英国海军，获得1分；若在<加拿大>有英国陆军，获得1分。"
+  },
+  {
+    "id": "special_4",
+    "sourceIndex": 4,
+    "deckOwner": "united_kingdom",
+    "country": "united_kingdom",
+    "type": "状态",
+    "name": "英国皇家海军",
+    "text": "每回合限一次，当你发起海战时：可弃置2张手牌；在发起海战的海域或另一个相邻海域发起海战。"
+  },
+  {
+    "id": "special_5",
+    "sourceIndex": 5,
+    "deckOwner": "united_kingdom",
+    "country": "united_kingdom",
+    "type": "状态",
+    "name": "流亡政府",
+    "text": "若<西欧>被轴心国陆军占领，<不列颠群岛>成为法国的大本营。"
+  },
+  {
+    "id": "special_6",
+    "sourceIndex": 6,
+    "deckOwner": "united_kingdom",
+    "country": "united_kingdom",
+    "type": "状态",
+    "name": "霍巴特滑稽坦克",
+    "text": "在英国的回合中，无视轴心国的【状态卡】。"
+  },
+  {
+    "id": "special_7",
+    "sourceIndex": 7,
+    "deckOwner": "united_kingdom",
+    "country": "united_kingdom",
+    "type": "状态",
+    "name": "波兰主权",
+    "text": "<东欧>成为仅对于英国的补给点（该补给点不提供分数）。在你的出牌阶段：可【放弃打出手牌】，在<东欧>征召英国陆军。"
+  },
+  {
+    "id": "special_8",
+    "sourceIndex": 8,
+    "deckOwner": "united_kingdom",
+    "country": "united_kingdom",
+    "type": "状态",
+    "name": "维克托·霍普宣布印度参战",
+    "text": "当你建设陆军时：可在<印度>征召陆军来代替建设陆军。"
+  },
+  {
+    "id": "special_9",
+    "sourceIndex": 9,
+    "deckOwner": "united_kingdom",
+    "country": "france",
+    "type": "状态",
+    "name": "自由法国",
+    "text": "法国军队总是处于补给状态。"
+  },
+  {
+    "id": "special_10",
+    "sourceIndex": 10,
+    "deckOwner": "united_kingdom",
+    "country": "france",
+    "type": "状态",
+    "name": "塞内加尔步兵团",
+    "text": "<非洲南部>成为仅对于法国的补给点（该补给点不提供分数）。在你的出牌阶段：可【放弃打出手牌】，在<非洲南部>征召法国陆军。"
+  },
+  {
+    "id": "special_11",
+    "sourceIndex": 11,
+    "deckOwner": "united_kingdom",
+    "country": "united_kingdom",
+    "type": "响应",
+    "name": "防御姿态",
+    "text": "当处于补给状态的英国陆军将被移除时触发：本回合此陆军不会被移除。"
+  },
+  {
+    "id": "special_12",
+    "sourceIndex": 12,
+    "deckOwner": "united_kingdom",
+    "country": "united_kingdom",
+    "type": "响应",
+    "name": "效忠吾王",
+    "text": "当轴心国在<印度>或<澳大利亚>或<加拿大>建设陆军时触发：立刻消灭此陆军。"
+  },
+  {
+    "id": "special_13",
+    "sourceIndex": 13,
+    "deckOwner": "united_kingdom",
+    "country": "united_kingdom",
+    "type": "响应",
+    "name": "配给",
+    "text": "在你的出牌阶段标准打出一张牌后触发：将刚打出的那张牌洗入牌库。若为状态或响应牌，则不生效。"
+  },
+  {
+    "id": "special_14",
+    "sourceIndex": 14,
+    "deckOwner": "united_kingdom",
+    "country": "united_kingdom",
+    "type": "响应",
+    "name": "皇家空军",
+    "text": "当位于<不列颠群岛>或与之相邻的英国部队将被移除时触发：本回合此部队不会被移除。"
+  },
+  {
+    "id": "special_15",
+    "sourceIndex": 15,
+    "deckOwner": "united_kingdom",
+    "country": "united_kingdom",
+    "type": "响应",
+    "name": "反潜战术",
+    "text": "当轴心国打【经济战卡】时触发：此经济战卡效果无效。"
+  },
+  {
+    "id": "special_16",
+    "sourceIndex": 16,
+    "deckOwner": "united_kingdom",
+    "country": "united_kingdom",
+    "type": "响应",
+    "name": "驱逐舰",
+    "text": "当处于补给状态的美国或英国海军将被移除时触发：本回合此海军不会被移除。"
+  },
+  {
+    "id": "special_17",
+    "sourceIndex": 17,
+    "deckOwner": "united_kingdom",
+    "country": "united_kingdom",
+    "type": "响应",
+    "name": "破译恩尼格玛密码",
+    "text": "当德国发起【状态卡】效果后触发：（在结算该效果后）弃置此【状态卡】。"
+  },
+  {
+    "id": "special_18",
+    "sourceIndex": 18,
+    "deckOwner": "united_kingdom",
+    "country": "france",
+    "type": "响应",
+    "name": "生命的飞跃",
+    "text": "在法国陆军将被移除时触发：此回合中该陆军不会被移除。"
+  },
+  {
+    "id": "special_19",
+    "sourceIndex": 19,
+    "deckOwner": "united_kingdom",
+    "country": "france",
+    "type": "响应",
+    "name": "法兰西爱国者加入同盟国",
+    "text": "美国或法国或英国在<非洲北部><非洲南部><中东><西欧>发起陆战后触发：在战斗区域征召法国陆军。"
+  },
+  {
+    "id": "special_20",
+    "sourceIndex": 20,
+    "deckOwner": "united_kingdom",
+    "country": "united_kingdom",
+    "type": "事件",
+    "name": "增加英联邦的支持",
+    "text": "在<印度><澳大利亚><加拿大>其中之一征召陆军。"
+  },
+  {
+    "id": "special_21",
+    "sourceIndex": 21,
+    "deckOwner": "united_kingdom",
+    "country": "united_kingdom",
+    "type": "事件",
+    "name": "史末资强化对英关系",
+    "text": "在<非洲南部>征召陆军；在<南大西洋>或<阿拉伯海>征召海军。"
+  },
+  {
+    "id": "special_22",
+    "sourceIndex": 22,
+    "deckOwner": "united_kingdom",
+    "country": "united_kingdom",
+    "type": "事件",
+    "name": "波兰地下党",
+    "text": "消灭位于<东欧>的1支轴心国陆军。"
+  },
+  {
+    "id": "special_23",
+    "sourceIndex": 23,
+    "deckOwner": "united_kingdom",
+    "country": "united_kingdom",
+    "type": "事件",
+    "name": "新加坡要塞化",
+    "text": "在<东南亚>征召陆军；在<南海>征召海军。"
+  },
+  {
+    "id": "special_24",
+    "sourceIndex": 24,
+    "deckOwner": "united_kingdom",
+    "country": "united_kingdom",
+    "type": "事件",
+    "name": "佩塔尔二世在南斯拉夫即位",
+    "text": "在<巴尔干>消灭一支轴心国陆军；在<巴尔干>征召英国陆军。"
+  },
+  {
+    "id": "special_25",
+    "sourceIndex": 25,
+    "deckOwner": "united_kingdom",
+    "country": "united_kingdom",
+    "type": "经济战",
+    "name": "轰炸机军团",
+    "text": "选择德国或意大利，其须弃置牌库顶的4张牌。"
+  },
+  {
+    "id": "special_26",
+    "sourceIndex": 26,
+    "deckOwner": "united_kingdom",
+    "country": "united_kingdom",
+    "type": "经济战",
+    "name": "马耳他潜艇群",
+    "text": "德国和意大利各自弃置其牌库顶的2张牌，或移除其位于<地中海>的海军。"
+  },
+  {
+    "id": "special_27",
+    "sourceIndex": 27,
+    "deckOwner": "united_kingdom",
+    "country": "france",
+    "type": "事件",
+    "name": "法国皇家海军",
+    "text": "建设1支法国海军。"
+  },
+  {
+    "id": "special_28",
+    "sourceIndex": 28,
+    "deckOwner": "united_kingdom",
+    "country": "france",
+    "type": "事件",
+    "name": "自由法国海军",
+    "text": "建设1支法国海军。"
+  },
+  {
+    "id": "special_29",
+    "sourceIndex": 29,
+    "deckOwner": "united_kingdom",
+    "country": "france",
+    "type": "事件",
+    "name": "莱茵河与多瑙河",
+    "text": "法国发起1次陆战。"
+  },
+  {
+    "id": "special_30",
+    "sourceIndex": 30,
+    "deckOwner": "united_kingdom",
+    "country": "france",
+    "type": "事件",
+    "name": "自由法国同盟",
+    "text": "在<西欧><非洲南部><非洲北部>中的1至2个地区征召法国陆军。"
+  },
+  {
+    "id": "special_31",
+    "sourceIndex": 31,
+    "deckOwner": "united_kingdom",
+    "country": "france",
+    "type": "事件",
+    "name": "荷属东印度",
+    "text": "在<印度尼西亚>和<新几内亚>征召法国陆军。在<南海>征召法国海军。"
+  },
+  {
+    "id": "special_32",
+    "sourceIndex": 32,
+    "deckOwner": "united_kingdom",
+    "country": "france",
+    "type": "事件",
+    "name": "低地国家自由军",
+    "text": "法国在<西欧>征召陆军；或，以法国军队在<西欧>发起陆战。"
+  },
+  {
+    "id": "special_33",
+    "sourceIndex": 33,
+    "deckOwner": "united_kingdom",
+    "country": "france",
+    "type": "事件",
+    "name": "战斗法国",
+    "text": "建设1支法国陆军。"
+  },
+  {
+    "id": "special_34",
+    "sourceIndex": 34,
+    "deckOwner": "united_kingdom",
+    "country": "france",
+    "type": "事件",
+    "name": "法国外籍兵团",
+    "text": "在<非洲南部><非洲北部><马达加斯加><东南亚><新几内亚><中东>其中之一征召法国陆军。"
+  },
+  {
+    "id": "special_35",
+    "sourceIndex": 35,
+    "deckOwner": "united_kingdom",
+    "country": "france",
+    "type": "事件",
+    "name": "法国陆军",
+    "text": "建设1支法国陆军。"
+  },
+  {
+    "id": "special_36",
+    "sourceIndex": 36,
+    "deckOwner": "united_kingdom",
+    "country": "united_kingdom",
+    "type": "增强",
+    "name": "华沙起义",
+    "text": "在你的计分阶段开始时打出：弃置2张手牌，在<东欧>征召陆军。"
+  },
+  {
+    "id": "special_37",
+    "sourceIndex": 37,
+    "deckOwner": "united_kingdom",
+    "country": "united_kingdom",
+    "type": "增强",
+    "name": "保持冷静，继续前进",
+    "text": "当轴心国发起【状态卡】效果时打出：你弃置1张手牌，本回合中该【状态卡】无效。"
+  },
+  {
+    "id": "special_38",
+    "sourceIndex": 38,
+    "deckOwner": "united_kingdom",
+    "country": "united_kingdom",
+    "type": "增强",
+    "name": "英联邦殖民地民兵",
+    "text": "你的计分阶段开始时打出：弃置2张手牌，在<非洲北部><中东><东南亚><印度尼西亚>其中之一征召陆军。"
+  },
+  {
+    "id": "special_39",
+    "sourceIndex": 39,
+    "deckOwner": "united_kingdom",
+    "country": "united_kingdom",
+    "type": "增强",
+    "name": "布莱切利园",
+    "text": "当轴心国发起【增强卡】效果时打出：你弃置1张手牌，该【增强卡】无效，且不支付该增强的费用。"
+  },
+  {
+    "id": "special_40",
+    "sourceIndex": 40,
+    "deckOwner": "united_kingdom",
+    "country": "united_kingdom",
+    "type": "增强",
+    "name": "特种空勤团突袭机场",
+    "text": "在你的出牌阶段开始时打出：弃置2张手牌，消灭1支与英国空军相邻的轴心国空军。"
+  },
+  {
+    "id": "special_41",
+    "sourceIndex": 41,
+    "deckOwner": "united_kingdom",
+    "country": "france",
+    "type": "增强",
+    "name": "法国空军",
+    "text": "你的空军阶段开始时打出：部署法国空军。"
+  },
+  {
+    "id": "special_42",
+    "sourceIndex": 42,
+    "deckOwner": "soviet_union",
+    "country": "soviet_union",
+    "type": "状态",
+    "name": "迁都古比雪夫",
+    "text": "<西伯利亚>成为苏联的大本营，并成为补给点。<莫斯科>不再是补给点。"
+  },
+  {
+    "id": "special_43",
+    "sourceIndex": 43,
+    "deckOwner": "soviet_union",
+    "country": "soviet_union",
+    "type": "状态",
+    "name": "正面攻击",
+    "text": "每回合限一次，当你发起陆战后：可弃置2张手牌，在战斗地区或其相邻地区发起陆战。"
+  },
+  {
+    "id": "special_44",
+    "sourceIndex": 44,
+    "deckOwner": "soviet_union",
+    "country": "soviet_union",
+    "type": "状态",
+    "name": "坦克运输",
+    "text": "当你建设陆军时：可从手牌中弃置1张【发起陆战】和1张【建设陆军】，在此陆军的相邻地区发起陆战。"
+  },
+  {
+    "id": "special_45",
+    "sourceIndex": 45,
+    "deckOwner": "soviet_union",
+    "country": "soviet_union",
+    "type": "状态",
+    "name": "女性义务兵役",
+    "text": "在你的出牌阶段打出【建设陆军】时：可将此【建设陆军】立即返回你的手牌。"
+  },
+  {
+    "id": "special_46",
+    "sourceIndex": 46,
+    "deckOwner": "soviet_union",
+    "country": "soviet_union",
+    "type": "状态",
+    "name": "近卫军",
+    "text": "在你的出牌阶段：可【放弃打出手牌】并弃置2张手牌，打出1张弃牌堆中的【建设陆军】。"
+  },
+  {
+    "id": "special_47",
+    "sourceIndex": 47,
+    "deckOwner": "soviet_union",
+    "country": "soviet_union",
+    "type": "状态",
+    "name": "什维尔尼克疏散委员会",
+    "text": "苏联陆军总是处于补给状态。（陆军依然只能建设在大本营或邻接其他苏联部队的地区）"
+  },
+  {
+    "id": "special_48",
+    "sourceIndex": 48,
+    "deckOwner": "soviet_union",
+    "country": "soviet_union",
+    "type": "状态",
+    "name": "焦土作战",
+    "text": "<乌克兰>不会为轴心国提供补给。"
+  },
+  {
+    "id": "special_49",
+    "sourceIndex": 49,
+    "deckOwner": "soviet_union",
+    "country": "soviet_union",
+    "type": "状态",
+    "name": "消耗战",
+    "text": "在你的弃牌阶段：每弃置1张【建设陆军】，获得1分。"
+  },
+  {
+    "id": "special_50",
+    "sourceIndex": 50,
+    "deckOwner": "soviet_union",
+    "country": "soviet_union",
+    "type": "状态",
+    "name": "量与质兼得",
+    "text": "你的回合内限1次，当你建设陆军后：可弃置手牌中的1张【建设陆军】，额外建设1支陆军。"
+  },
+  {
+    "id": "special_51",
+    "sourceIndex": 51,
+    "deckOwner": "soviet_union",
+    "country": "soviet_union",
+    "type": "状态",
+    "name": "喀秋莎",
+    "text": "每回合限1次，你发起陆战后：可弃置1张手牌，在相同的地区发起陆战。"
+  },
+  {
+    "id": "special_52",
+    "sourceIndex": 52,
+    "deckOwner": "soviet_union",
+    "country": "china",
+    "type": "状态",
+    "name": "中国人民解放军",
+    "text": "中国军队总是处于补给状态。在你的出牌阶段，可【放弃打出手牌】，在<中国西部><中国东部><蒙古地区>其中之一征召中国陆军。"
+  },
+  {
+    "id": "special_53",
+    "sourceIndex": 53,
+    "deckOwner": "soviet_union",
+    "country": "soviet_union",
+    "type": "响应",
+    "name": "重型坦克",
+    "text": "当你的陆军被发起陆战时触发：攻击方须弃置4张手牌，否则此战斗中该陆军不会被移除。"
+  },
+  {
+    "id": "special_54",
+    "sourceIndex": 54,
+    "deckOwner": "soviet_union",
+    "country": "soviet_union",
+    "type": "响应",
+    "name": "斯大林格勒保卫战",
+    "text": "当<乌克兰>的苏联陆军将被移除时触发：本回合这支陆军不会被移除。"
+  },
+  {
+    "id": "special_55",
+    "sourceIndex": 55,
+    "deckOwner": "soviet_union",
+    "country": "soviet_union",
+    "type": "响应",
+    "name": "无休止的扩大",
+    "text": "在任意时机触发：在此回合中，<西伯利亚>和<哈萨克斯坦>的苏联陆军不会被移除。"
+  },
+  {
+    "id": "special_56",
+    "sourceIndex": 56,
+    "deckOwner": "soviet_union",
+    "country": "soviet_union",
+    "type": "响应",
+    "name": "莫斯科保卫战",
+    "text": "当<莫斯科>的苏联陆军将被移除时触发：本回合这支陆军不会被移除。"
+  },
+  {
+    "id": "special_57",
+    "sourceIndex": 57,
+    "deckOwner": "soviet_union",
+    "country": "soviet_union",
+    "type": "响应",
+    "name": "湿季泥沼",
+    "text": "当轴心国在<莫斯科>或其相邻地区建设陆军时触发：立刻消灭其建设的陆军。"
+  },
+  {
+    "id": "special_58",
+    "sourceIndex": 58,
+    "deckOwner": "soviet_union",
+    "country": "soviet_union",
+    "type": "响应",
+    "name": "撤退与整编",
+    "text": "当<莫斯科>或<乌克兰>的苏联陆军将被移除时触发：在<西伯利亚>和<哈萨克斯坦>征召陆军。"
+  },
+  {
+    "id": "special_59",
+    "sourceIndex": 59,
+    "deckOwner": "soviet_union",
+    "country": "soviet_union",
+    "type": "响应",
+    "name": "保卫祖国",
+    "text": "在你的回合开始时触发：在<莫斯科>或其相邻地区征召陆军；在<莫斯科>消灭一支轴心国陆军。"
+  },
+  {
+    "id": "special_60",
+    "sourceIndex": 60,
+    "deckOwner": "soviet_union",
+    "country": "soviet_union",
+    "type": "响应",
+    "name": "列宁格勒保卫战",
+    "text": "当<罗斯地区>的苏联陆军将被移除时触发：本回合这支陆军不会被移除。"
+  },
+  {
+    "id": "special_61",
+    "sourceIndex": 61,
+    "deckOwner": "soviet_union",
+    "country": "soviet_union",
+    "type": "事件",
+    "name": "诺门罕战役",
+    "text": "在<蒙古地区>征召陆军，在<海参崴>或<中国东部>发起陆战。"
+  },
+  {
+    "id": "special_62",
+    "sourceIndex": 62,
+    "deckOwner": "soviet_union",
+    "country": "soviet_union",
+    "type": "事件",
+    "name": "冬季攻势",
+    "text": "在<莫斯科>或其相邻地区消灭一至两支轴心国陆军。"
+  },
+  {
+    "id": "special_63",
+    "sourceIndex": 63,
+    "deckOwner": "soviet_union",
+    "country": "soviet_union",
+    "type": "事件",
+    "name": "西伯利亚铁路",
+    "text": "收回版图上的所有苏联陆军，然后依次重新建设这些陆军。"
+  },
+  {
+    "id": "special_64",
+    "sourceIndex": 64,
+    "deckOwner": "soviet_union",
+    "country": "soviet_union",
+    "type": "事件",
+    "name": "西伯利亚运输",
+    "text": "在<西伯利亚>或其相邻地区征召1支陆军。"
+  },
+  {
+    "id": "special_65",
+    "sourceIndex": 65,
+    "deckOwner": "soviet_union",
+    "country": "soviet_union",
+    "type": "事件",
+    "name": "苏德友好条约",
+    "text": "在<罗斯地区>征召陆军；在<东欧>征召陆军。"
+  },
+  {
+    "id": "special_66",
+    "sourceIndex": 66,
+    "deckOwner": "soviet_union",
+    "country": "soviet_union",
+    "type": "事件",
+    "name": "铁托游击队",
+    "text": "在<巴尔干>消灭一支轴心国陆军；在<巴尔干>征召一支苏联或英国陆军。"
+  },
+  {
+    "id": "special_67",
+    "sourceIndex": 67,
+    "deckOwner": "soviet_union",
+    "country": "soviet_union",
+    "type": "事件",
+    "name": "华西列夫斯基出兵远东",
+    "text": "在<海参崴>征召陆军；在<中国东部>发起陆战。"
+  },
+  {
+    "id": "special_68",
+    "sourceIndex": 68,
+    "deckOwner": "soviet_union",
+    "country": "soviet_union",
+    "type": "事件",
+    "name": "千岛群岛登陆行动",
+    "text": "在<东海>建设海军；对<日本>发起陆战。"
+  },
+  {
+    "id": "special_69",
+    "sourceIndex": 69,
+    "deckOwner": "soviet_union",
+    "country": "china",
+    "type": "事件",
+    "name": "毛泽东",
+    "text": "在<中国东部>或<中国西部>消灭一支轴心国陆军。"
+  },
+  {
+    "id": "special_70",
+    "sourceIndex": 70,
+    "deckOwner": "soviet_union",
+    "country": "soviet_union",
+    "type": "增强",
+    "name": "空降部队",
+    "text": "当你部署或调度空军后打出：弃置1张【建设陆军】，在该空军的相邻地区建设1支陆军。"
+  },
+  {
+    "id": "special_71",
+    "sourceIndex": 71,
+    "deckOwner": "soviet_union",
+    "country": "soviet_union",
+    "type": "增强",
+    "name": "进击的朱可夫",
+    "text": "当你在<罗斯地区><东欧><乌克兰><巴尔干>发起战斗时打出：弃置1张【建设陆军】，在战斗地区建设陆军。"
+  },
+  {
+    "id": "special_72",
+    "sourceIndex": 72,
+    "deckOwner": "soviet_union",
+    "country": "soviet_union",
+    "type": "增强",
+    "name": "亚洲人力储备",
+    "text": "在你的弃牌阶段开始时打出：从弃牌堆中将2张【建设陆军】置入手牌。"
+  },
+  {
+    "id": "special_73",
+    "sourceIndex": 73,
+    "deckOwner": "soviet_union",
+    "country": "soviet_union",
+    "type": "增强",
+    "name": "莫斯科战役",
+    "text": "所有苏联陆军被移除后打出：弃置1张【建设陆军】，在<莫斯科>或其相邻地区消灭1支轴心国陆军。"
+  },
+  {
+    "id": "special_74",
+    "sourceIndex": 74,
+    "deckOwner": "soviet_union",
+    "country": "soviet_union",
+    "type": "增强",
+    "name": "重建要塞",
+    "text": "在你的弃牌阶段开始时打出：弃置1张【建设陆军】，从弃牌堆选取1张【响应卡】并暗置此卡。"
+  },
+  {
+    "id": "special_75",
+    "sourceIndex": 75,
+    "deckOwner": "soviet_union",
+    "country": "soviet_union",
+    "type": "增强",
+    "name": "维捷布斯克之门",
+    "text": "在你的计分阶段开始时打出：弃置1张【建设陆军】和其它2张手牌，在<莫斯科>或<罗斯地区>消灭一支轴心国陆军。"
+  },
+  {
+    "id": "special_76",
+    "sourceIndex": 76,
+    "deckOwner": "soviet_union",
+    "country": "soviet_union",
+    "type": "增强",
+    "name": "骑兵师",
+    "text": "在你的出牌阶段开始时打出：弃置1张【建设陆军】，移除版图上的1支苏联陆军，建设1支陆军。"
+  },
+  {
+    "id": "special_77",
+    "sourceIndex": 77,
+    "deckOwner": "soviet_union",
+    "country": "china",
+    "type": "增强",
+    "name": "Z计划",
+    "text": "在你的空军阶段开始时打出：部署中国空军，或使中国空军夺取制空权。"
+  },
+  {
+    "id": "special_78",
+    "sourceIndex": 78,
+    "deckOwner": "united_states",
+    "country": "united_states",
+    "type": "状态",
+    "name": "美国海军陆战队",
+    "text": "当你在任意<太平洋>海域建设海军时：可弃置牌库顶的1张牌，邻接此海军发起1次陆战。"
+  },
+  {
+    "id": "special_79",
+    "sourceIndex": 79,
+    "deckOwner": "united_states",
+    "country": "united_states",
+    "type": "状态",
+    "name": "盟军远征部队最高司令部",
+    "text": "英国、法国、美国的部队彼此共享补给线。"
+  },
+  {
+    "id": "special_80",
+    "sourceIndex": 80,
+    "deckOwner": "united_states",
+    "country": "united_states",
+    "type": "状态",
+    "name": "人工港",
+    "text": "每回合限1次，当你建设海军时：可弃置牌库顶的1张牌，邻接此海军建设1支陆军。"
+  },
+  {
+    "id": "special_81",
+    "sourceIndex": 81,
+    "deckOwner": "united_states",
+    "country": "united_states",
+    "type": "状态",
+    "name": "战时国债",
+    "text": "当你执行【资源再分配】时：可改为从弃牌堆拿取基本卡。"
+  },
+  {
+    "id": "special_82",
+    "sourceIndex": 82,
+    "deckOwner": "united_states",
+    "country": "united_states",
+    "type": "状态",
+    "name": "胜利花园",
+    "text": "当你执行【资源再分配】时：只须弃置1 张手牌。"
+  },
+  {
+    "id": "special_83",
+    "sourceIndex": 83,
+    "deckOwner": "united_states",
+    "country": "united_states",
+    "type": "状态",
+    "name": "战时生产",
+    "text": "每回合限1次，当你建设陆军时：可弃置牌库顶的1张牌，额外建设1支陆军。"
+  },
+  {
+    "id": "special_84",
+    "sourceIndex": 84,
+    "deckOwner": "united_states",
+    "country": "united_states",
+    "type": "状态",
+    "name": "先进造船厂",
+    "text": "每回合限一次，当你建设海军时：可弃置牌库顶的1张牌，额外建设一支海军。"
+  },
+  {
+    "id": "special_85",
+    "sourceIndex": 85,
+    "deckOwner": "united_states",
+    "country": "united_states",
+    "type": "状态",
+    "name": "铆钉女工",
+    "text": "每回合限一次，在你的弃牌阶段开始时：可将1至2张手牌置于抽牌库底。"
+  },
+  {
+    "id": "special_86",
+    "sourceIndex": 86,
+    "deckOwner": "united_states",
+    "country": "united_states",
+    "type": "状态",
+    "name": "雷达",
+    "text": "每回合限一次，当处于补给状态的美国海军被攻击时：可弃置牌库顶的2张牌，被攻击的海军不会被移除。"
+  },
+  {
+    "id": "special_87",
+    "sourceIndex": 87,
+    "deckOwner": "united_states",
+    "country": "united_states",
+    "type": "状态",
+    "name": "空中堡垒",
+    "text": "当你打出【经济战卡】时：目标须弃置的卡牌数加2。"
+  },
+  {
+    "id": "special_88",
+    "sourceIndex": 88,
+    "deckOwner": "united_states",
+    "country": "united_states",
+    "type": "状态",
+    "name": "登陆作战",
+    "text": "每回合限一次，当你发起陆战时：若战斗地区邻接处于补给状态的美国海军，你可弃置牌库顶的1张牌，在该地区建设陆军。"
+  },
+  {
+    "id": "special_89",
+    "sourceIndex": 89,
+    "deckOwner": "united_states",
+    "country": "united_states",
+    "type": "状态",
+    "name": "航空母舰",
+    "text": "每回合限一次，当你发起海战时：可弃置牌库顶的1张牌，在战斗地区建设海军。"
+  },
+  {
+    "id": "special_90",
+    "sourceIndex": 90,
+    "deckOwner": "united_states",
+    "country": "china",
+    "type": "状态",
+    "name": "抗日义勇军",
+    "text": "每当建设或征召中国陆军，或中国陆军被发起战斗时：日本须弃置1张手牌。"
+  },
+  {
+    "id": "special_91",
+    "sourceIndex": 91,
+    "deckOwner": "united_states",
+    "country": "china",
+    "type": "状态",
+    "name": "重庆国民政府",
+    "text": "<中国西部>成为仅对于中国的补给点。在你的出牌阶段：可【放弃打出手牌】，在<中国西部>征召中国陆军。"
+  },
+  {
+    "id": "special_92",
+    "sourceIndex": 92,
+    "deckOwner": "united_states",
+    "country": "united_states",
+    "type": "事件",
+    "name": "代号：Magic",
+    "text": "从桌面弃置1张日本的【响应卡】。（不公开此卡的内容）"
+  },
+  {
+    "id": "special_93",
+    "sourceIndex": 93,
+    "deckOwner": "united_states",
+    "country": "united_states",
+    "type": "事件",
+    "name": "摩尔曼斯克运输船队",
+    "text": "在<罗斯地区>征召苏联陆军；苏联可建设1支陆军。"
+  },
+  {
+    "id": "special_94",
+    "sourceIndex": 94,
+    "deckOwner": "united_states",
+    "country": "united_states",
+    "type": "事件",
+    "name": "武器援助",
+    "text": "选择苏联或英国，其可打出1张手牌，摸1张牌。"
+  },
+  {
+    "id": "special_95",
+    "sourceIndex": 95,
+    "deckOwner": "united_states",
+    "country": "united_states",
+    "type": "事件",
+    "name": "瓜达尔卡纳尔岛",
+    "text": "在<新西兰>征召陆军；在<新西兰>的相邻海域建设海军。"
+  },
+  {
+    "id": "special_96",
+    "sourceIndex": 96,
+    "deckOwner": "united_states",
+    "country": "united_states",
+    "type": "事件",
+    "name": "广阔的资源",
+    "text": "打出弃牌堆中的1张牌。"
+  },
+  {
+    "id": "special_97",
+    "sourceIndex": 97,
+    "deckOwner": "united_states",
+    "country": "united_states",
+    "type": "事件",
+    "name": "珍珠港部署舰队",
+    "text": "在<夏威夷>征召陆军；在<夏威夷>的相邻海域建设海军。"
+  },
+  {
+    "id": "special_98",
+    "sourceIndex": 98,
+    "deckOwner": "united_states",
+    "country": "united_states",
+    "type": "事件",
+    "name": "民主兵工厂",
+    "text": "英国可按任意顺序建设1支陆军和1支海军。"
+  },
+  {
+    "id": "special_99",
+    "sourceIndex": 99,
+    "deckOwner": "united_states",
+    "country": "united_states",
+    "type": "经济战",
+    "name": "SBD 无畏式俯冲轰炸机",
+    "text": "若距离<日本>两个地区以内存在美国海军，日本须弃置牌库顶的4张牌。"
+  },
+  {
+    "id": "special_100",
+    "sourceIndex": 100,
+    "deckOwner": "united_states",
+    "country": "united_states",
+    "type": "经济战",
+    "name": "燃烧弹轰炸",
+    "text": "若距离某轴心国的大本营一个地区以内存在美国陆军或海军，该轴心国须弃置牌库顶的7张牌。"
+  },
+  {
+    "id": "special_101",
+    "sourceIndex": 101,
+    "deckOwner": "united_states",
+    "country": "united_states",
+    "type": "经济战",
+    "name": "B-29 超级堡垒",
+    "text": "若距离<日耳曼>三个地区以内存在美国陆军，德国须弃置牌库顶的5张牌。"
+  },
+  {
+    "id": "special_102",
+    "sourceIndex": 102,
+    "deckOwner": "united_states",
+    "country": "united_states",
+    "type": "经济战",
+    "name": "B-26 掠夺者",
+    "text": "若距离某轴心国的大本营三个地区以内存在美国陆军，该轴心国须弃置牌库顶的4张牌。"
+  },
+  {
+    "id": "special_103",
+    "sourceIndex": 103,
+    "deckOwner": "united_states",
+    "country": "united_states",
+    "type": "经济战",
+    "name": "B-24 解放者",
+    "text": "若距离<意大利>两个地区以内存在美国陆军，意大利须弃置牌库顶的4张牌。"
+  },
+  {
+    "id": "special_104",
+    "sourceIndex": 104,
+    "deckOwner": "united_states",
+    "country": "united_states",
+    "type": "经济战",
+    "name": "轰炸东京",
+    "text": "若距离<日本>3 个区域内有处于补给状态的美国海军，日本须弃置其牌库顶的1张牌。美国获得3分。"
+  },
+  {
+    "id": "special_105",
+    "sourceIndex": 105,
+    "deckOwner": "united_states",
+    "country": "united_states",
+    "type": "经济战",
+    "name": "石油禁运",
+    "text": "德国、意大利、日本须各自移除1支部队，或弃置其牌库顶的2张牌。"
+  },
+  {
+    "id": "special_106",
+    "sourceIndex": 106,
+    "deckOwner": "united_states",
+    "country": "united_states",
+    "type": "经济战",
+    "name": "潜艇切断日本运输线",
+    "text": "距离<日本>2个区域内每有1支美国海军，日本须弃置其牌库顶的2张牌。"
+  },
+  {
+    "id": "special_107",
+    "sourceIndex": 107,
+    "deckOwner": "united_states",
+    "country": "united_states",
+    "type": "事件",
+    "name": "先开火后谈判",
+    "text": "在任意<太平洋>海域建设1支海军，在该海军的相邻地区发起1次海战。"
+  },
+  {
+    "id": "special_108",
+    "sourceIndex": 108,
+    "deckOwner": "united_states",
+    "country": "united_states",
+    "type": "事件",
+    "name": "巴西远征军",
+    "text": "在<拉丁美洲>建设陆军，在<中大西洋>或<南大西洋>建设海军。"
+  },
+  {
+    "id": "special_109",
+    "sourceIndex": 109,
+    "deckOwner": "united_states",
+    "country": "united_states",
+    "type": "事件",
+    "name": "现购自运政策取代【美国中立法】",
+    "text": "选择一个同盟国，在该同盟国的大本营或其相邻地区征召1支该同盟国部队。"
+  },
+  {
+    "id": "special_110",
+    "sourceIndex": 110,
+    "deckOwner": "united_states",
+    "country": "united_states",
+    "type": "事件",
+    "name": "战区移动",
+    "text": "收回版图上的所有美国陆军，然后依次重新建设这些陆军。"
+  },
+  {
+    "id": "special_111",
+    "sourceIndex": 111,
+    "deckOwner": "united_states",
+    "country": "united_states",
+    "type": "事件",
+    "name": "进击的巴顿",
+    "text": "在<西欧>建设陆军。在<日耳曼>或<意大利>发起陆战。"
+  },
+  {
+    "id": "special_112",
+    "sourceIndex": 112,
+    "deckOwner": "united_states",
+    "country": "china",
+    "type": "经济战",
+    "name": "抗日战争僵持阶段",
+    "text": "场上每有1支中国陆军或空军，日本须 弃置其牌库顶的2张牌。"
+  },
+  {
+    "id": "special_113",
+    "sourceIndex": 113,
+    "deckOwner": "united_states",
+    "country": "china",
+    "type": "事件",
+    "name": "百团大战",
+    "text": "以中国军队发起陆战。"
+  },
+  {
+    "id": "special_114",
+    "sourceIndex": 114,
+    "deckOwner": "united_states",
+    "country": "china",
+    "type": "事件",
+    "name": "美国人民同情中国",
+    "text": "建设1支中国陆军。"
+  },
+  {
+    "id": "special_115",
+    "sourceIndex": 115,
+    "deckOwner": "united_states",
+    "country": "china",
+    "type": "事件",
+    "name": "滇缅公路",
+    "text": "若<东南亚>有同盟国陆军，则在<中国东部>或<中国西部>征召1支中国陆军，或在<中国东部>或<中国西部>移除1支轴心国陆军。"
+  },
+  {
+    "id": "special_116",
+    "sourceIndex": 116,
+    "deckOwner": "united_states",
+    "country": "united_states",
+    "type": "增强",
+    "name": "伦敦上空的鹰",
+    "text": "在你的空军阶段开始时打出：英国部署1支空军。"
+  },
+  {
+    "id": "special_117",
+    "sourceIndex": 117,
+    "deckOwner": "united_states",
+    "country": "united_states",
+    "type": "增强",
+    "name": "王牌飞行员帕皮·博因顿",
+    "text": "在你的计分阶段开始时打出：弃置牌库顶的1张牌，在<中太平洋>或其相邻地区部署1支空军。"
+  },
+  {
+    "id": "special_118",
+    "sourceIndex": 118,
+    "deckOwner": "united_states",
+    "country": "united_states",
+    "type": "增强",
+    "name": "地毯式轰炸",
+    "text": "当你发起战斗时打出：可弃置1张【经济战卡】，在相同的区域再次发起战斗。"
+  },
+  {
+    "id": "special_119",
+    "sourceIndex": 119,
+    "deckOwner": "united_states",
+    "country": "united_states",
+    "type": "增强",
+    "name": "美国陆军游骑兵",
+    "text": "当你部署或调度空军时打出：弃置牌库顶的1张牌，消灭1支邻接于该空军的敌方陆军。"
+  },
+  {
+    "id": "special_120",
+    "sourceIndex": 120,
+    "deckOwner": "united_states",
+    "country": "united_states",
+    "type": "增强",
+    "name": "太平洋基地",
+    "text": "在你的计分阶段开始时打出：弃置牌库顶的1张牌，在<中太平洋>的相邻地区征召陆军。"
+  },
+  {
+    "id": "special_121",
+    "sourceIndex": 121,
+    "deckOwner": "united_states",
+    "country": "united_states",
+    "type": "增强",
+    "name": "P-51 野马式战斗机",
+    "text": "当你打出【经济战卡】时打出：距离目标国家的大本营2地区内，每有1支美国空军，目标须弃置的卡牌数加1。"
+  },
+  {
+    "id": "special_122",
+    "sourceIndex": 122,
+    "deckOwner": "united_states",
+    "country": "united_states",
+    "type": "增强",
+    "name": "我们的政治哲学",
+    "text": "在你的弃牌阶段开始时打出：弃置牌库顶的2张牌，英国从其弃牌堆选取1张【响应卡】并暗置。"
+  },
+  {
+    "id": "special_123",
+    "sourceIndex": 123,
+    "deckOwner": "united_states",
+    "country": "united_states",
+    "type": "增强",
+    "name": "纳瓦霍族加密通讯员",
+    "text": "在你的出牌阶段开始时打出：将1张【增强卡】暗置于桌面上，此【增强卡】可如同【响应卡】一般触发（需满足卡面打出条件）"
+  },
+  {
+    "id": "special_124",
+    "sourceIndex": 124,
+    "deckOwner": "united_states",
+    "country": "united_states",
+    "type": "增强",
+    "name": "沉睡的巨人",
+    "text": "当你在任意<太平洋>海域建设海军时打出：弃置牌库顶的1张牌，在该海军的相邻地区建设1支海军或陆军。"
+  },
+  {
+    "id": "special_125",
+    "sourceIndex": 125,
+    "deckOwner": "united_states",
+    "country": "china",
+    "type": "增强",
+    "name": "飞虎队",
+    "text": "在你的空军阶段开始时打出：部署1支中国空军，或使中国空军夺取制空权。"
+  },
+  {
+    "id": "special_126",
+    "sourceIndex": 126,
+    "deckOwner": "germany",
+    "country": "germany",
+    "type": "状态",
+    "name": "陆地巡航者",
+    "text": "当德国陆军被发起战斗时：发起战斗的国家须弃置其牌库顶的2张牌。"
+  },
+  {
+    "id": "special_127",
+    "sourceIndex": 127,
+    "deckOwner": "germany",
+    "country": "germany",
+    "type": "状态",
+    "name": "齐格菲防线",
+    "text": "当<日耳曼>的轴心国陆军被发起战斗时：发起战斗的国家须弃置其牌库顶的3张牌。"
+  },
+  {
+    "id": "special_128",
+    "sourceIndex": 128,
+    "deckOwner": "germany",
+    "country": "germany",
+    "type": "状态",
+    "name": "群狼战术",
+    "text": "任何玩家打出带有【潜艇】字样的【经济战卡】时：可令目标须弃置的卡牌数加2，若<斯堪的纳维亚>有德国陆军则为3张。"
+  },
+  {
+    "id": "special_129",
+    "sourceIndex": 129,
+    "deckOwner": "germany",
+    "country": "germany",
+    "type": "状态",
+    "name": "人民冲锋队",
+    "text": "每回合限一次，在你的回合开始时：可弃置牌库顶的1张牌，在<日耳曼>征召陆军。（不计入出牌阶段的行动）"
+  },
+  {
+    "id": "special_130",
+    "sourceIndex": 130,
+    "deckOwner": "germany",
+    "country": "germany",
+    "type": "状态",
+    "name": "合成燃料",
+    "text": "每回合限一次，当你建设陆军后：可弃置牌库顶的2张牌，在建设陆军的相邻地区建设一支陆军。"
+  },
+  {
+    "id": "special_131",
+    "sourceIndex": 131,
+    "deckOwner": "germany",
+    "country": "germany",
+    "type": "状态",
+    "name": "瑞典铁矿",
+    "text": "在你的计分阶段：若<波罗的海>有德国海军，获得1分，在此基础上：若<斯堪的纳维亚>也有德国陆军，额外获得1分。"
+  },
+  {
+    "id": "special_132",
+    "sourceIndex": 132,
+    "deckOwner": "germany",
+    "country": "germany",
+    "type": "状态",
+    "name": "卓越规划",
+    "text": "每回合限一次，在你的出牌阶段开始时：可观看牌库顶的4张牌，将其以任意顺序放回牌库顶。"
+  },
+  {
+    "id": "special_133",
+    "sourceIndex": 133,
+    "deckOwner": "germany",
+    "country": "germany",
+    "type": "状态",
+    "name": "喷气式战斗机",
+    "text": "当你成为【经济战卡】的目标时：须弃置的卡牌数减3，最低为0。"
+  },
+  {
+    "id": "special_134",
+    "sourceIndex": 134,
+    "deckOwner": "germany",
+    "country": "germany",
+    "type": "状态",
+    "name": "俯冲式轰炸机",
+    "text": "每回合限一次，当你发起陆战后：可弃置牌库顶的1张牌，在战斗地区或其相邻地区发起陆战。"
+  },
+  {
+    "id": "special_135",
+    "sourceIndex": 135,
+    "deckOwner": "germany",
+    "country": "germany",
+    "type": "状态",
+    "name": "征兵",
+    "text": "在你的出牌阶段：可【放弃打出手牌】并弃置牌库顶的2张牌，建设一支陆军。"
+  },
+  {
+    "id": "special_136",
+    "sourceIndex": 136,
+    "deckOwner": "germany",
+    "country": "germany",
+    "type": "状态",
+    "name": "闪电战",
+    "text": "每回合限一次，当你发起陆战后：可弃置牌库顶的1张牌，在战斗地区建设陆军。"
+  },
+  {
+    "id": "special_137",
+    "sourceIndex": 137,
+    "deckOwner": "germany",
+    "country": "germany",
+    "type": "状态",
+    "name": "兵贵神速",
+    "text": "每回合限一次，当你建设陆军时：可弃置牌库顶的1张牌，在建设陆军的相邻地区发起陆战。"
+  },
+  {
+    "id": "special_138",
+    "sourceIndex": 138,
+    "deckOwner": "germany",
+    "country": "germany",
+    "type": "状态",
+    "name": "大西洋防线",
+    "text": "每回合限一次，当轴心国的陆军在<西欧>被攻击时，发起陆战的国家须弃置其牌库顶的3张牌。"
+  },
+  {
+    "id": "special_139",
+    "sourceIndex": 139,
+    "deckOwner": "germany",
+    "country": "germany",
+    "type": "状态",
+    "name": "丰富的资源",
+    "text": "在你的计分阶段：每有一支位于<乌克兰><哈萨克斯坦><罗斯地区>的德国陆军，获得1分。"
+  },
+  {
+    "id": "special_140",
+    "sourceIndex": 140,
+    "deckOwner": "germany",
+    "country": "germany",
+    "type": "增强",
+    "name": "FlaK-40型128毫米高射炮",
+    "text": "当同盟国夺取制空权将意大利空军移除时打出：消灭同盟国发起夺取制空权的空军。"
+  },
+  {
+    "id": "special_141",
+    "sourceIndex": 141,
+    "deckOwner": "germany",
+    "country": "germany",
+    "type": "增强",
+    "name": "施佩伯爵将军号装甲舰",
+    "text": "当你建设海军时打出：弃置你牌库顶的1张牌，在<北海>或<北大西洋>或<中大西洋>发起海战。"
+  },
+  {
+    "id": "special_142",
+    "sourceIndex": 142,
+    "deckOwner": "germany",
+    "country": "germany",
+    "type": "增强",
+    "name": "云量",
+    "text": "在你的出牌阶段开始时打出：本回合中不能打出空军进行防御。"
+  },
+  {
+    "id": "special_143",
+    "sourceIndex": 143,
+    "deckOwner": "germany",
+    "country": "germany",
+    "type": "增强",
+    "name": "伞兵",
+    "text": "在你的出牌阶段开始时打出：弃置你牌库顶的1张牌，在与你空军相邻的地区发起1次陆战。"
+  },
+  {
+    "id": "special_144",
+    "sourceIndex": 144,
+    "deckOwner": "germany",
+    "country": "germany",
+    "type": "增强",
+    "name": "G7e 鱼雷",
+    "text": "当你打出带有【潜艇】字样的【经济战卡】时打出：弃置你牌库顶的1张牌，发起1次海战。"
+  },
+  {
+    "id": "special_145",
+    "sourceIndex": 145,
+    "deckOwner": "germany",
+    "country": "germany",
+    "type": "增强",
+    "name": "Ju-52 的航空补给",
+    "text": "在你的出牌阶段开始时打出：若版图上有德国空军，则本回合中所有德国部队处于补给状态。"
+  },
+  {
+    "id": "special_146",
+    "sourceIndex": 146,
+    "deckOwner": "germany",
+    "country": "germany",
+    "type": "增强",
+    "name": "Ju-87 俯冲轰炸机",
+    "text": "当你部署或调度空军时打出：弃置你牌库顶的1张牌，在该空军相邻地区发起陆战。"
+  },
+  {
+    "id": "special_147",
+    "sourceIndex": 147,
+    "deckOwner": "germany",
+    "country": "germany",
+    "type": "增强",
+    "name": "威瑟演习作战",
+    "text": "在你的计分阶段开始时打出：弃置你牌库顶的1张牌，在<斯堪的纳维亚>征召陆军，你可打出一张涉及<斯堪的纳维亚>的卡。"
+  },
+  {
+    "id": "special_148",
+    "sourceIndex": 148,
+    "deckOwner": "germany",
+    "country": "germany",
+    "type": "增强",
+    "name": "战术革新",
+    "text": "在你的出牌阶段开始时打出：弃置1张生效中的德国【状态卡】，打出1张手牌中的【状态卡】。"
+  },
+  {
+    "id": "special_149",
+    "sourceIndex": 149,
+    "deckOwner": "germany",
+    "country": "germany",
+    "type": "增强",
+    "name": "轰炸伦敦",
+    "text": "当你打出【经济战卡】时打出：距离<不列颠群岛>2地区内每有1支德国空军，英国额外弃置其牌库顶的2张牌。"
+  },
+  {
+    "id": "special_150",
+    "sourceIndex": 150,
+    "deckOwner": "germany",
+    "country": "germany",
+    "type": "事件",
+    "name": "白色方案",
+    "text": "弃置牌库顶的1张牌，在<东欧>征召陆军。打出1张手牌。"
+  },
+  {
+    "id": "special_151",
+    "sourceIndex": 151,
+    "deckOwner": "germany",
+    "country": "germany",
+    "type": "事件",
+    "name": "生产构思",
+    "text": "从摸牌库任选1张【状态卡】并打出之。重洗摸牌库。"
+  },
+  {
+    "id": "special_152",
+    "sourceIndex": 152,
+    "deckOwner": "germany",
+    "country": "germany",
+    "type": "事件",
+    "name": "海狮计划",
+    "text": "在<北海>建设海军，在<不列颠群岛>发起陆战。"
+  },
+  {
+    "id": "special_153",
+    "sourceIndex": 153,
+    "deckOwner": "germany",
+    "country": "germany",
+    "type": "事件",
+    "name": "战略规划",
+    "text": "从摸牌库挑选至多2张牌置入手牌，弃置1张手牌，重洗摸牌库。"
+  },
+  {
+    "id": "special_154",
+    "sourceIndex": 154,
+    "deckOwner": "germany",
+    "country": "germany",
+    "type": "事件",
+    "name": "瑞典支援芬兰",
+    "text": "若<罗斯地区>有德国或苏联的陆军，德国在<波罗的海>建设海军，在<斯堪的纳维亚>征召陆军，你可打出一张涉及<斯堪的纳维亚>的卡。"
+  },
+  {
+    "id": "special_155",
+    "sourceIndex": 155,
+    "deckOwner": "germany",
+    "country": "germany",
+    "type": "事件",
+    "name": "土耳其加入轴心国",
+    "text": "在<黑海>建设海军，在<中东>征召陆军。"
+  },
+  {
+    "id": "special_156",
+    "sourceIndex": 156,
+    "deckOwner": "germany",
+    "country": "germany",
+    "type": "事件",
+    "name": "高速公路",
+    "text": "收回版图上的所有德国陆军，然后依次重新建设这些陆军。"
+  },
+  {
+    "id": "special_157",
+    "sourceIndex": 157,
+    "deckOwner": "germany",
+    "country": "germany",
+    "type": "事件",
+    "name": "掠夺",
+    "text": "每有一支位于<日耳曼>之外的德国陆军或海军，获得1分。"
+  },
+  {
+    "id": "special_158",
+    "sourceIndex": 158,
+    "deckOwner": "germany",
+    "country": "germany",
+    "type": "事件",
+    "name": "阿登战役",
+    "text": "在<西欧>发起陆战，在<西欧>建设陆军。"
+  },
+  {
+    "id": "special_159",
+    "sourceIndex": 159,
+    "deckOwner": "germany",
+    "country": "germany",
+    "type": "事件",
+    "name": "巴尔干军政府",
+    "text": "在<巴尔干>征召一支意大利陆军；在<乌克兰>消灭一支同盟国陆军。"
+  },
+  {
+    "id": "special_160",
+    "sourceIndex": 160,
+    "deckOwner": "germany",
+    "country": "germany",
+    "type": "事件",
+    "name": "枪支或黄油",
+    "text": "此卡牌可视为【建设陆军】【建设海军】【发起陆战】【发起海战】其中之一打出。"
+  },
+  {
+    "id": "special_161",
+    "sourceIndex": 161,
+    "deckOwner": "germany",
+    "country": "germany",
+    "type": "事件",
+    "name": "强制征兵",
+    "text": "在<日耳曼>或其相邻地区征召一至两支陆军。"
+  },
+  {
+    "id": "special_162",
+    "sourceIndex": 162,
+    "deckOwner": "germany",
+    "country": "germany",
+    "type": "事件",
+    "name": "巴巴罗萨",
+    "text": "选择在打出该牌时与德国陆军相邻的至多3支苏联陆军，依次对其发起陆战。"
+  },
+  {
+    "id": "special_163",
+    "sourceIndex": 163,
+    "deckOwner": "germany",
+    "country": "germany",
+    "type": "经济战",
+    "name": "强占阿尔汉格尔斯克",
+    "text": "若<斯堪的纳维亚>和<罗斯地区>都有轴心国的陆军，苏联须弃置其牌库顶的5 张牌。德国获得1分。"
+  },
+  {
+    "id": "special_164",
+    "sourceIndex": 164,
+    "deckOwner": "germany",
+    "country": "germany",
+    "type": "经济战",
+    "name": "电动潜艇",
+    "text": "你选择1个同盟国，其须弃置牌库顶的1 张牌。德国获得2分。"
+  },
+  {
+    "id": "special_165",
+    "sourceIndex": 165,
+    "deckOwner": "germany",
+    "country": "germany",
+    "type": "经济战",
+    "name": "季风狼群",
+    "text": "选择一个同盟国，其须弃置其牌库顶的2张牌。德国获得2分。"
+  },
+  {
+    "id": "special_166",
+    "sourceIndex": 166,
+    "deckOwner": "germany",
+    "country": "germany",
+    "type": "经济战",
+    "name": "V2飞弹",
+    "text": "若有德国陆军位于<西欧>，获得3分，英国须弃置其牌库顶的1张牌。"
+  },
+  {
+    "id": "special_167",
+    "sourceIndex": 167,
+    "deckOwner": "germany",
+    "country": "germany",
+    "type": "经济战",
+    "name": "潜艇袭击摩尔曼斯克运输船队",
+    "text": "每有一支位于<斯堪的纳维亚>或与之相邻的德国陆军或海军，获得1分。苏联须弃置其牌库顶的2张牌。"
+  },
+  {
+    "id": "special_168",
+    "sourceIndex": 168,
+    "deckOwner": "germany",
+    "country": "germany",
+    "type": "经济战",
+    "name": "潜艇袭击无防备运输船",
+    "text": "英国须弃置其牌库顶的2张牌，若在<北海>没有同盟国海军则为3张。德国获得1分。"
+  },
+  {
+    "id": "special_169",
+    "sourceIndex": 169,
+    "deckOwner": "germany",
+    "country": "germany",
+    "type": "经济战",
+    "name": "潜艇主导大西洋海战",
+    "text": "每有一支在版图上的德国海军，获得1分。美国须弃置其牌库顶的2张牌。"
+  },
+  {
+    "id": "special_170",
+    "sourceIndex": 170,
+    "deckOwner": "germany",
+    "country": "germany",
+    "type": "经济战",
+    "name": "潜艇强行封锁",
+    "text": "每有一支与<北海>相邻的德国陆军或海军，获得1分。英国须弃置其牌库顶的2张牌。"
+  },
+  {
+    "id": "special_171",
+    "sourceIndex": 171,
+    "deckOwner": "japan",
+    "country": "japan",
+    "type": "状态",
+    "name": "绝对国防领域",
+    "text": "在你的计分阶段：若版图上有至少3支日本海军，获得1分。"
+  },
+  {
+    "id": "special_172",
+    "sourceIndex": 172,
+    "deckOwner": "japan",
+    "country": "japan",
+    "type": "状态",
+    "name": "北进论",
+    "text": "在你的计分阶段：每有1支位于<海参崴>或<西伯利亚>的日本陆军，获得1分。"
+  },
+  {
+    "id": "special_173",
+    "sourceIndex": 173,
+    "deckOwner": "japan",
+    "country": "japan",
+    "type": "状态",
+    "name": "控制南洋诸岛",
+    "text": "在你的计分阶段：若<中太平洋>有日本海军，获得1分。"
+  },
+  {
+    "id": "special_174",
+    "sourceIndex": 174,
+    "deckOwner": "japan",
+    "country": "japan",
+    "type": "状态",
+    "name": "商船安全运输",
+    "text": "在你的计分阶段：若<夏威夷>没有同盟国的陆军，日本获得1分。"
+  },
+  {
+    "id": "special_175",
+    "sourceIndex": 175,
+    "deckOwner": "japan",
+    "country": "japan",
+    "type": "状态",
+    "name": "帝国之野望",
+    "text": "在你的计分阶段：若<硫磺岛>或<菲律宾>有日本陆军，获得1分。"
+  },
+  {
+    "id": "special_176",
+    "sourceIndex": 176,
+    "deckOwner": "japan",
+    "country": "japan",
+    "type": "状态",
+    "name": "大东亚共荣圈",
+    "text": "在你的计分阶段：每有一支位于<印度尼西亚><新几内亚><东南亚>的日本陆军，获得1分。"
+  },
+  {
+    "id": "special_177",
+    "sourceIndex": 177,
+    "deckOwner": "japan",
+    "country": "japan",
+    "type": "状态",
+    "name": "前进基地",
+    "text": "在你的计分阶段：若<夏威夷><加拿大><新西兰>其中之一有日本陆军，获得2分。"
+  },
+  {
+    "id": "special_178",
+    "sourceIndex": 178,
+    "deckOwner": "japan",
+    "country": "japan",
+    "type": "经济战",
+    "name": "日本海军封锁海参崴",
+    "text": "每有1支位于<东海>的日本海军或空军，获得1分。苏联须弃置牌库顶的1张牌。"
+  },
+  {
+    "id": "special_179",
+    "sourceIndex": 179,
+    "deckOwner": "japan",
+    "country": "japan",
+    "type": "经济战",
+    "name": "气球炸弹",
+    "text": "获得1分。打出此卡后：可弃置3张手牌，将此牌返回你的手牌。"
+  },
+  {
+    "id": "special_180",
+    "sourceIndex": 180,
+    "deckOwner": "japan",
+    "country": "japan",
+    "type": "经济战",
+    "name": "轰炸重庆",
+    "text": "每有1支位于<中国西部>或与之相邻的日本空军，获得1分。美国须弃置其牌库顶的2张牌。"
+  },
+  {
+    "id": "special_181",
+    "sourceIndex": 181,
+    "deckOwner": "japan",
+    "country": "japan",
+    "type": "经济战",
+    "name": "潜艇支援太平洋诸岛",
+    "text": "每有一支位于<东太平洋>或与之相邻的日本海军，获得2分。美国须弃置其牌库顶的2张牌。"
+  },
+  {
+    "id": "special_182",
+    "sourceIndex": 182,
+    "deckOwner": "japan",
+    "country": "japan",
+    "type": "经济战",
+    "name": "印度洋警备队",
+    "text": "每有一支位于<阿拉伯海>或与之相邻的日本海军，获得2分。英国须弃置其牌库顶的2 张牌"
+  },
+  {
+    "id": "special_183",
+    "sourceIndex": 183,
+    "deckOwner": "japan",
+    "country": "japan",
+    "type": "响应",
+    "name": "海军空降部队",
+    "text": "当你建设海军时触发：在与该海军的相邻地区发起1至2次陆战。"
+  },
+  {
+    "id": "special_184",
+    "sourceIndex": 184,
+    "deckOwner": "japan",
+    "country": "japan",
+    "type": "响应",
+    "name": "潜艇支援",
+    "text": "当你建设海军时触发：在与该海军的相邻海域发起1至2次海战"
+  },
+  {
+    "id": "special_185",
+    "sourceIndex": 185,
+    "deckOwner": "japan",
+    "country": "japan",
+    "type": "响应",
+    "name": "为印度民族主义者提供军事援助",
+    "text": "当你在<印度>发起陆战后触发：在<印度>建设陆军。"
+  },
+  {
+    "id": "special_186",
+    "sourceIndex": 186,
+    "deckOwner": "japan",
+    "country": "japan",
+    "type": "响应",
+    "name": "舰队决战",
+    "text": "在你的出牌阶段开始时触发：发起1次海战。"
+  },
+  {
+    "id": "special_187",
+    "sourceIndex": 187,
+    "deckOwner": "japan",
+    "country": "japan",
+    "type": "响应",
+    "name": "卢沟桥事变",
+    "text": "在你的出牌阶段开始时触发：在<中国东部>或与之相邻的地区发起陆战。"
+  },
+  {
+    "id": "special_188",
+    "sourceIndex": 188,
+    "deckOwner": "japan",
+    "country": "japan",
+    "type": "响应",
+    "name": "泰国",
+    "text": "在你的出牌阶段开始时触发：在<东南亚>征召陆军。"
+  },
+  {
+    "id": "special_189",
+    "sourceIndex": 189,
+    "deckOwner": "japan",
+    "country": "japan",
+    "type": "响应",
+    "name": "伪满洲国军",
+    "text": "在你的出牌阶段开始时触发：在<中国东部>征召陆军。"
+  },
+  {
+    "id": "special_190",
+    "sourceIndex": 190,
+    "deckOwner": "japan",
+    "country": "japan",
+    "type": "响应",
+    "name": "皖南事变",
+    "text": "在你的出牌阶段开始时触发：消灭1支中国陆军。"
+  },
+  {
+    "id": "special_191",
+    "sourceIndex": 191,
+    "deckOwner": "japan",
+    "country": "japan",
+    "type": "响应",
+    "name": "丘克群岛",
+    "text": "在你回合的任意时机触发：在<中太平洋>或与之相邻的日本部队在此回合中处于获得补给状态。"
+  },
+  {
+    "id": "special_192",
+    "sourceIndex": 192,
+    "deckOwner": "japan",
+    "country": "japan",
+    "type": "响应",
+    "name": "奇袭",
+    "text": "当你发起海战时触发：发起一次海战，再发起一次陆战。"
+  },
+  {
+    "id": "special_193",
+    "sourceIndex": 193,
+    "deckOwner": "japan",
+    "country": "japan",
+    "type": "响应",
+    "name": "海军特别陆战队",
+    "text": "当你建设海军时触发：在此海军的相邻地区建设一至两支陆军。"
+  },
+  {
+    "id": "special_194",
+    "sourceIndex": 194,
+    "deckOwner": "japan",
+    "country": "japan",
+    "type": "响应",
+    "name": "机动部队",
+    "text": "在你的回合开始时触发：在<北太平洋>或与之相邻的海域征召一支海军"
+  },
+  {
+    "id": "special_195",
+    "sourceIndex": 195,
+    "deckOwner": "japan",
+    "country": "japan",
+    "type": "响应",
+    "name": "关东军",
+    "text": "在位于<中国东部><中国西部><海参崴><蒙古地区>且处于补给状态的日本陆军将被移除时触发：本回合此陆军不会被移除。"
+  },
+  {
+    "id": "special_196",
+    "sourceIndex": 196,
+    "deckOwner": "japan",
+    "country": "japan",
+    "type": "响应",
+    "name": "神风敢死队",
+    "text": "当同盟国邻接日本部队建设海军时触发：立刻消灭其建设的海军。"
+  },
+  {
+    "id": "special_197",
+    "sourceIndex": 197,
+    "deckOwner": "japan",
+    "country": "japan",
+    "type": "响应",
+    "name": "攻陷新加坡",
+    "text": "当你在<东南亚>发起陆战时触发：在<南海>发起海战，在<东南亚>征召陆军"
+  },
+  {
+    "id": "special_198",
+    "sourceIndex": 198,
+    "deckOwner": "japan",
+    "country": "japan",
+    "type": "响应",
+    "name": "驱逐舰运输",
+    "text": "当你发起海战时触发，在与战斗地区相邻的地区建设一至两支陆军"
+  },
+  {
+    "id": "special_199",
+    "sourceIndex": 199,
+    "deckOwner": "japan",
+    "country": "japan",
+    "type": "响应",
+    "name": "全面侵华",
+    "text": "当你在<中国东部>或其相邻地区发起陆战时触发：在战斗地区建设陆军；在<中国东部>或其相邻地区发起陆战。"
+  },
+  {
+    "id": "special_200",
+    "sourceIndex": 200,
+    "deckOwner": "japan",
+    "country": "japan",
+    "type": "响应",
+    "name": "战舰修理",
+    "text": "当处于补给状态的日本海军将被移除时触发：本回合这支海军不会被移除。"
+  },
+  {
+    "id": "special_201",
+    "sourceIndex": 201,
+    "deckOwner": "japan",
+    "country": "japan",
+    "type": "响应",
+    "name": "万岁冲锋",
+    "text": "当你发起陆战后触发：在战斗地区或相邻地区发起陆战。"
+  },
+  {
+    "id": "special_202",
+    "sourceIndex": 202,
+    "deckOwner": "japan",
+    "country": "japan",
+    "type": "增强",
+    "name": "山本五十六指挥大和号",
+    "text": "在你的出牌阶段开始时打出：从手牌中弃置1张【响应卡】，在一支处于补给状态的日本海军所在海域部署空军。"
+  },
+  {
+    "id": "special_203",
+    "sourceIndex": 203,
+    "deckOwner": "japan",
+    "country": "japan",
+    "type": "增强",
+    "name": "虎! 虎! 虎!",
+    "text": "当你在<中太平洋>或与之相邻的地区夺取制空权时打出：从手牌中弃置1张【响应卡】，在该地区发起战斗。"
+  },
+  {
+    "id": "special_204",
+    "sourceIndex": 204,
+    "deckOwner": "japan",
+    "country": "japan",
+    "type": "增强",
+    "name": "太平洋帝国",
+    "text": "在你的计分阶段打出：每有1支位于任意<太平洋>海域的日本海军，获得1分"
+  },
+  {
+    "id": "special_205",
+    "sourceIndex": 205,
+    "deckOwner": "japan",
+    "country": "japan",
+    "type": "增强",
+    "name": "南云忠一指挥第一航空舰队",
+    "text": "当你在海域部署或调度空军时打出：从手牌中弃置1张【响应卡】；在与该空军相邻的1个区域发起战斗。"
+  },
+  {
+    "id": "special_206",
+    "sourceIndex": 206,
+    "deckOwner": "japan",
+    "country": "japan",
+    "type": "增强",
+    "name": "诸岛要塞",
+    "text": "在你的计分阶段开始时打出：从手牌中弃置1张【响应卡】，在<印度尼西亚><新几内亚><硫磺岛><菲律宾>其中之一征召陆军。"
+  },
+  {
+    "id": "special_207",
+    "sourceIndex": 207,
+    "deckOwner": "japan",
+    "country": "japan",
+    "type": "增强",
+    "name": "武士道",
+    "text": "当你的陆军被发起陆战时打出：从手牌中弃置1张【响应卡】，此战斗中该陆军不会被移除。"
+  },
+  {
+    "id": "special_208",
+    "sourceIndex": 208,
+    "deckOwner": "japan",
+    "country": "japan",
+    "type": "增强",
+    "name": "大日本帝国海军",
+    "text": "当你建设海军时打出：从手牌中弃置1张【响应卡】，额外建设1支海军。"
+  },
+  {
+    "id": "special_209",
+    "sourceIndex": 209,
+    "deckOwner": "japan",
+    "country": "japan",
+    "type": "增强",
+    "name": "秋水火箭战斗机",
+    "text": "在你的弃牌阶段开始时打出：消灭1支邻接日本空军的同盟国空军。"
+  },
+  {
+    "id": "special_210",
+    "sourceIndex": 210,
+    "deckOwner": "italy",
+    "country": "italy",
+    "type": "状态",
+    "name": "土耳其开放海峡",
+    "text": "对于轴心国，<中东>与<巴尔干>相邻，<黑海>与<地中海>相邻。"
+  },
+  {
+    "id": "special_211",
+    "sourceIndex": 211,
+    "deckOwner": "italy",
+    "country": "italy",
+    "type": "状态",
+    "name": "西班牙控制直布罗陀海峡",
+    "text": "<北海>与<地中海>对于轴心国相邻、对于同盟国不相邻。"
+  },
+  {
+    "id": "special_212",
+    "sourceIndex": 212,
+    "deckOwner": "italy",
+    "country": "italy",
+    "type": "状态",
+    "name": "尚未收复的意大利",
+    "text": "在你的计分阶段：若<西欧>有意大利陆军，获得1分。"
+  },
+  {
+    "id": "special_213",
+    "sourceIndex": 213,
+    "deckOwner": "italy",
+    "country": "italy",
+    "type": "状态",
+    "name": "海王",
+    "text": "在你的计分阶段：每有一支在版图上的意大利海军，获得1分。"
+  },
+  {
+    "id": "special_214",
+    "sourceIndex": 214,
+    "deckOwner": "italy",
+    "country": "italy",
+    "type": "状态",
+    "name": "意大利殖民地帝国",
+    "text": "在你的计分阶段：<非洲北部><非洲南部><中东>其中每有一个地区被轴心国占领，获得1分。"
+  },
+  {
+    "id": "special_215",
+    "sourceIndex": 215,
+    "deckOwner": "italy",
+    "country": "italy",
+    "type": "状态",
+    "name": "耀武",
+    "text": "在你的出牌阶段：可【放弃打出手牌】并弃置2张牌库顶的牌，发起一次陆战"
+  },
+  {
+    "id": "special_216",
+    "sourceIndex": 216,
+    "deckOwner": "italy",
+    "country": "italy",
+    "type": "状态",
+    "name": "反共情绪",
+    "text": "在你的计分阶段：每有一支位于<罗斯地区><乌克兰>的意大利陆军，获得1分。"
+  },
+  {
+    "id": "special_217",
+    "sourceIndex": 217,
+    "deckOwner": "italy",
+    "country": "italy",
+    "type": "状态",
+    "name": "巴尔干资源",
+    "text": "在你的计分阶段：若<巴尔干>有意大利陆军，获得1分。"
+  },
+  {
+    "id": "special_218",
+    "sourceIndex": 218,
+    "deckOwner": "italy",
+    "country": "italy",
+    "type": "响应",
+    "name": "不可思议行动",
+    "text": "在苏联建设陆军后触发：若其与英国陆军或美国陆军相邻，则消灭该苏联陆军。"
+  },
+  {
+    "id": "special_219",
+    "sourceIndex": 219,
+    "deckOwner": "italy",
+    "country": "italy",
+    "type": "响应",
+    "name": "山地特种兵",
+    "text": "当位于<意大利>或与之相邻的意大利陆军被发起陆战时触发：此战斗中该陆军不会被移除。"
+  },
+  {
+    "id": "special_220",
+    "sourceIndex": 220,
+    "deckOwner": "italy",
+    "country": "italy",
+    "type": "响应",
+    "name": "王牌飞行员",
+    "text": "当你成为【经济战卡】的目标时触发：须弃置的卡牌数减5，最低为0。"
+  },
+  {
+    "id": "special_221",
+    "sourceIndex": 221,
+    "deckOwner": "italy",
+    "country": "italy",
+    "type": "响应",
+    "name": "罗马尼亚增援",
+    "text": "当处于补给状态的德国陆军被移除后触发：在该地区征召意大利陆军。"
+  },
+  {
+    "id": "special_222",
+    "sourceIndex": 222,
+    "deckOwner": "italy",
+    "country": "italy",
+    "type": "响应",
+    "name": "卡西诺山",
+    "text": "当位于<意大利>的轴心国陆军将被移除时触发：本回合该陆军不会被移除。"
+  },
+  {
+    "id": "special_223",
+    "sourceIndex": 223,
+    "deckOwner": "italy",
+    "country": "italy",
+    "type": "响应",
+    "name": "德国增援反击",
+    "text": "当处于补给状态的意大利陆军被移除后触发：在该地区征召德国陆军。"
+  },
+  {
+    "id": "special_224",
+    "sourceIndex": 224,
+    "deckOwner": "italy",
+    "country": "italy",
+    "type": "增强",
+    "name": "索马里兰",
+    "text": "在你的计分阶段打出：在<非洲南部>征召陆军。"
+  },
+  {
+    "id": "special_225",
+    "sourceIndex": 225,
+    "deckOwner": "italy",
+    "country": "italy",
+    "type": "增强",
+    "name": "意大利皇家海军总部",
+    "text": "在你的计分阶段打出：版图上每有1支意大利海军，获得1分。"
+  },
+  {
+    "id": "special_226",
+    "sourceIndex": 226,
+    "deckOwner": "italy",
+    "country": "italy",
+    "type": "增强",
+    "name": "意大利皇家空军",
+    "text": "当你成为【经济战卡】的目标时打出：从版图上移除1支意大利空军，不执行弃牌。"
+  },
+  {
+    "id": "special_227",
+    "sourceIndex": 227,
+    "deckOwner": "italy",
+    "country": "italy",
+    "type": "增强",
+    "name": "钢铁条约",
+    "text": "在你的回合的任意时机打出：德国弃置0至5张手牌。意大利随机地将相同数量的牌从弃牌堆置于牌库顶。"
+  },
+  {
+    "id": "special_228",
+    "sourceIndex": 228,
+    "deckOwner": "italy",
+    "country": "italy",
+    "type": "增强",
+    "name": "意大利尽早完成航母",
+    "text": "在你的出牌阶段开始时打出：弃置1张手牌，向意大利海军所处海域部署或调度1支空军。"
+  },
+  {
+    "id": "special_229",
+    "sourceIndex": 229,
+    "deckOwner": "italy",
+    "country": "italy",
+    "type": "增强",
+    "name": "黄金广场政变",
+    "text": "在你的计分阶段开始时打出：在<中东>征召陆军。"
+  },
+  {
+    "id": "special_230",
+    "sourceIndex": 230,
+    "deckOwner": "italy",
+    "country": "italy",
+    "type": "增强",
+    "name": "波尔多潜艇基地",
+    "text": "当德国打出带有【潜艇】字样的【经济战卡】时打出：该卡的目标须额外弃置其牌库顶的3张牌。"
+  },
+  {
+    "id": "special_231",
+    "sourceIndex": 231,
+    "deckOwner": "italy",
+    "country": "italy",
+    "type": "事件",
+    "name": "华夫脱党起义",
+    "text": "在<非洲北部>消灭1支同盟国陆军。"
+  },
+  {
+    "id": "special_232",
+    "sourceIndex": 232,
+    "deckOwner": "italy",
+    "country": "italy",
+    "type": "事件",
+    "name": "礼萨汗支援轴心国",
+    "text": "在<中东>消灭1支同盟国陆军。"
+  },
+  {
+    "id": "special_233",
+    "sourceIndex": 233,
+    "deckOwner": "italy",
+    "country": "italy",
+    "type": "事件",
+    "name": "西班牙国",
+    "text": "在<西欧>或<非洲北部>建设1支陆军；在<地中海>或<北海>建设1支海军。"
+  },
+  {
+    "id": "special_234",
+    "sourceIndex": 234,
+    "deckOwner": "italy",
+    "country": "italy",
+    "type": "事件",
+    "name": "大力神行动",
+    "text": "在<地中海>征召意大利海军和德国海军。"
+  },
+  {
+    "id": "special_235",
+    "sourceIndex": 235,
+    "deckOwner": "italy",
+    "country": "italy",
+    "type": "事件",
+    "name": "德国非洲军团",
+    "text": "在<非洲北部>征召德国陆军，在<地中海>征召德国海军。"
+  },
+  {
+    "id": "special_236",
+    "sourceIndex": 236,
+    "deckOwner": "italy",
+    "country": "italy",
+    "type": "事件",
+    "name": "乔里亚尼号、卡佩里尼海军司令号",
+    "text": "所有轴心国玩家各自从弃牌堆随机地展示1张卡，可以打出其中的【基本卡】【状态卡】【经济战卡】，否则将其置于牌库顶。"
+  },
+  {
+    "id": "special_237",
+    "sourceIndex": 237,
+    "deckOwner": "italy",
+    "country": "italy",
+    "type": "事件",
+    "name": "掠夺",
+    "text": "每有一支位于<意大利>之外的意大利陆军或海军，获得1分。"
+  },
+  {
+    "id": "special_238",
+    "sourceIndex": 238,
+    "deckOwner": "italy",
+    "country": "italy",
+    "type": "事件",
+    "name": "进攻共产国际",
+    "text": "在<乌克兰>征召陆军，在<罗斯地区>征召陆军。"
+  },
+  {
+    "id": "special_239",
+    "sourceIndex": 239,
+    "deckOwner": "italy",
+    "country": "italy",
+    "type": "事件",
+    "name": "意属东非",
+    "text": "在<非洲北部>征召陆军；在<阿拉伯海>征召海军。"
+  },
+  {
+    "id": "special_240",
+    "sourceIndex": 240,
+    "deckOwner": "italy",
+    "country": "italy",
+    "type": "事件",
+    "name": "德国支援希腊战场",
+    "text": "在<巴尔干>消灭1支同盟国陆军；在<巴尔干>征召德国陆军。"
+  },
+  {
+    "id": "special_241",
+    "sourceIndex": 241,
+    "deckOwner": "italy",
+    "country": "italy",
+    "type": "事件",
+    "name": "西班牙蓝色师",
+    "text": "从桌面弃置1张苏联的【响应卡】。（不公开此卡的内容）"
+  },
+  {
+    "id": "special_242",
+    "sourceIndex": 242,
+    "deckOwner": "italy",
+    "country": "italy",
+    "type": "经济战",
+    "name": "派克行动",
+    "text": "若在距离<乌克兰>2个区域内有英国陆军，则苏联须弃置其牌库顶的2张牌，轴心国获得1分。"
+  },
+  {
+    "id": "special_243",
+    "sourceIndex": 243,
+    "deckOwner": "italy",
+    "country": "italy",
+    "type": "经济战",
+    "name": "爱尔兰起义",
+    "text": "英国须弃置牌库顶的2张牌。"
+  },
+  {
+    "id": "special_244",
+    "sourceIndex": 244,
+    "deckOwner": "italy",
+    "country": "italy",
+    "type": "经济战",
+    "name": "皇家海军封锁海路",
+    "text": "每有一支在版图上的意大利海军，获得1分。英国须弃置其牌库顶的1张牌。"
+  },
+  {
+    "id": "special_245",
+    "sourceIndex": 245,
+    "deckOwner": "italy",
+    "country": "italy",
+    "type": "经济战",
+    "name": "第十驱逐舰舰队",
+    "text": "英国须弃置其牌库顶的1张牌，若<地中海>没有同盟国的海军则改为2张。意大利获得1分。"
+  }
+]

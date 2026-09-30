@@ -1,0 +1,7 @@
+{
+  "file": "战场军需官-卡牌文本审计-定稿版.xlsx",
+  "sheet": "全量卡牌索引",
+  "sha256": "e523595225c350e3074fdf5a07816fa1cb8a8c52cd3d36838f3a536c18b2f7ab",
+  "count": 245,
+  "rulesOverrides": "card-rule-overrides.json"
+}

@@ -1,0 +1,16 @@
+import {join} from 'node:path';import {pathToFileURL} from 'node:url';import assert from 'node:assert/strict';
+const {chromium}=await import(pathToFileURL(join(process.env.USERPROFILE,'.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright-core/index.mjs')).href);
+const browser=await chromium.launch({executablePath:'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe',headless:true});const page=await browser.newPage({viewport:{width:1920,height:1080}});const errors=[];page.on('pageerror',e=>errors.push(e.message));
+try{
+ await page.goto('http://127.0.0.1:4174');await page.getByRole('button',{name:'创建新游戏 →',exact:true}).click();const room=page.getByRole('region',{name:'房间座位',exact:true});assert.equal(await room.getByRole('button').count(),14);
+ const hand=page.locator('.table-hand .hand-card');for(let i=0;i<7;i++)await hand.nth(i).click();await page.locator('.hand-phase-prompt').getByRole('button',{name:'确认',exact:true}).click();assert.equal(await room.getByRole('button',{name:/01.*德国.*分/}).getAttribute('aria-pressed'),'true');assert.equal(await hand.count(),7);
+ await room.getByRole('button',{name:/07.*GM/}).click();await page.getByText('结算与响应查看',{exact:true}).click();const tools=page.locator('.local-tools');await tools.getByRole('button',{name:'英国',exact:true}).click();for(let i=0;i<7;i++)await hand.nth(i).click();await page.locator('.hand-phase-prompt').getByRole('button',{name:'确认',exact:true}).click();assert((await page.locator('.map-phase-panel h3').innerText()).includes('日本'));
+ await room.getByRole('button',{name:'01 德国观察者',exact:true}).click();assert.equal(await tools.count(),0);assert.equal(await hand.count(),7);assert.equal(await page.locator('.table-hand button:enabled').count(),0);assert.equal(await page.getByRole('button',{name:'回退一步',exact:true}).count(),0);assert.equal(await page.locator('.guided-prompt').count(),0);
+ await page.locator('.map-panel-buttons').getByRole('button',{name:'牌库',exact:true}).click();assert((await page.locator('.catalog-dock .hand-card').count())>0);
+ await room.getByRole('button',{name:'07 通用观察者',exact:true}).click();assert.deepEqual(await page.locator('.map-panel-buttons button').allTextContents(),['对局记录']);assert.equal(await page.locator('.table-hand').count(),0);assert.equal(await page.locator('.catalog-dock').count(),0);assert.equal(await page.locator('.response-notice').count(),0);assert.equal(await page.locator('.map-hand-dock .hand-card').count(),0);
+ await page.getByRole('button',{name:'英国',exact:true}).click();assert(await page.getByRole('dialog').count()>0);
+ await room.getByRole('button',{name:/07.*GM/}).click();await page.getByText('场景编辑器',{exact:true}).click();await page.getByText('测试场景',{exact:true}).click();await page.getByRole('button',{name:'载入：布莱切利园 · 取消德国增强',exact:true}).click();await page.locator('.gm-response-switch').getByRole('button',{name:'切换到德国',exact:true}).waitFor();
+ await room.getByRole('button',{name:'02 英国观察者',exact:true}).click();assert.equal(await page.locator('.gm-response-switch').count(),0);assert.deepEqual(errors,[]);console.log('PASS: fixed country, GM auto-switch, 14 seats, read-only country observer, public-only observer, GM response shortcuts.');
+}finally{await browser.close();}
+
+

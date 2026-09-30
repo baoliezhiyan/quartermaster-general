@@ -1,0 +1,31 @@
+{
+  "rulesVersion": "1.2.2",
+  "scope": "rules-v1.2.2-strategy-and-hand-costs",
+  "files": [
+    {
+      "path": "docs/sources/战场军需官电子游戏版-设计与AI开发实施文档-v1.2-规则裁决修订版.docx",
+      "sha256": "133ba02dd78f19da87b661b994c6384cf93eb59aea80b125ae8d4a05d4687f2f"
+    },
+    {
+      "path": "docs/sources/战场军需官-卡牌文本审计-定稿版.xlsx",
+      "sha256": "e523595225c350e3074fdf5a07816fa1cb8a8c52cd3d36838f3a536c18b2f7ab"
+    },
+    {
+      "path": "docs/sources/战场军需官-地图数据审核表.xlsx",
+      "sha256": "fb4f5e0798c8651a78874a97b9417f8991abd01e1d5daff72cdce8dca4b68529"
+    },
+    {
+      "path": "assets/reference/map-reference.png",
+      "sha256": "808f1a21dd71b741878b17436b732918c7eac4ece0c72a62104efbecd297ac65"
+    },
+    {
+      "path": "docs/sources/战场军需官电子游戏版-设计与AI开发实施文档-v1.2.1-资源重整规则修订版.docx",
+      "sha256": "e3aeb03c1023f79304cc022d7ba1bc6ccb0cbba8f6bce9e6873a3c8c571795bb"
+    },
+    {
+      "path": "docs/sources/战场军需官电子游戏版-设计与AI开发实施文档-v1.2.2-战略规划与弃牌费用规则修订版.docx",
+      "sha256": "cf75bb403e8c37987a8e28990e9e7a15bd21ca4ed27a2afab95dbf6b2794047f"
+    }
+  ],
+  "currentDesign": "docs/sources/战场军需官电子游戏版-设计与AI开发实施文档-v1.2.2-战略规划与弃牌费用规则修订版.docx"
+}

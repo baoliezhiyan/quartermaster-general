@@ -1,0 +1,37 @@
+# 文档、规则与训练导航
+
+此目录同时保留历史设计和较新的裁定，不应把年代较早的文档当当前完整规则。游戏应用版本以根目录package.json为准；训练实验另外冻结提交、课程与指纹。
+
+## 协作必读
+
+- [根目录AI规则](../AGENTS.md)：独立目录/分支、共享规则边界、训练同步与提交要求。
+- [贡献说明](../CONTRIBUTING.md)：Issue、平衡讨论和PR流程。
+- [训练同步记录](training/SYNC-LOG.md)：课程与正式规则差异登记。
+
+## 牌表及游戏规则
+
+- [原版卡面表](cards/standard.md) / [平衡卡面表](cards/balanced.md)：从源码生成的浏览表，按稳定ID讨论；不同模式不能混用。
+- `src/data/all-cards.json`、`prelude-cards.json`、`balance-cards.json` 与 `src/core/cardCatalog.ts`：实际牌面及组合入口。并非所有历史override文件都会自动参与当前运行，以代码引用为准。
+- [结算架构](resolution-scheduler-v1.3.16.md)、[费用与攻击责任](rules-v1.4.0.md)：核心结算基线；后续裁定仍须叠加。
+- 后续规则修订依版本查阅：[v1.5.11](v1.5.11-rules.md)、[v1.6.0](v1.6.0-rules.md)、[v1.6.4](rules-v1.6.4.md)、[v1.6.7](v1.6.7-rules.md)、[v1.6.10](v1.6.10-rules.md)、[v1.6.11](v1.6.11-rules.md)。每页注明适用范围；后来的明确裁定覆盖同事项的旧说法，不代表删除其他规则。
+- `sources/`、早期v2/v3 DOCX、step-*文档保留为历史设计与来源资料；不是对当前实现的无条件验收证明。
+
+本次整理不改任何玩法，不把未接受的平衡提案写成规则。代码、卡面和文档不一致时应报Issue并核对裁定，不以“代码已这样写”为理由掩盖bug。
+
+## 回放与联机
+
+- [回放规范v1.1](match-log-spec-v1.1.md)、[使用说明](match-log-guide.md)、[实现验收边界](match-log-validation.md)。协议formatVersion=2，文档版本v1.1。
+- 实现字段契约位于 `src/matchLog/contract.ts`；训练记录应按同一协议生产。
+- [本地资源客户端](local-client.md)、[联机架构历史说明](v3-local-multiplayer.md)、[Cloudflare测试说明](cloudflare-testing.md)、[cpolar说明](cpolar-start.md)。第三方隧道工具/账户配置不上传仓库。
+
+## 训练文档
+
+- [PPO第一步方案v0.3](training/战场军需官PPO第一步实施方案-v0.3.md)：已验收的事件课程、观察/动作、奖励与优势计算基线。
+- [并行与40局完整批次更新要求](training/parallel-plan.md)：后续优化需求，覆盖v0.3的4096决策采集条件；不表示已实现。
+- [第二轮独立复验](training/PPO第一步第二轮返工独立复验报告-20260930.md)：只对报告实际受测构建有效。
+- [并行性能测量与建议](training/训练环境并行与性能建议-20260930.md)：环境吞吐不等于完整PPO吞吐。
+- [基础竞技场](basic-training-arena.md)。历史训练报告均按日期/指纹阅读，不能用旧报告替代当前测试。
+
+## 构建与限制
+
+根目录README提供当前源码启动方法。发布打包依赖未纳入仓库的第三方运行时/工具和生成样例；不能把某台电脑上成功打包当作新克隆自动可打包。当前部分历史脚本仍含本机绝对路径，需要单独做可移植性修复；首次上传不批量改动这些脚本。
