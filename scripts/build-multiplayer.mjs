@@ -18,6 +18,8 @@ await cp('docs/local-client.md',join(folder,'本地资源客户端说明.md'));
 await mkdir(join(folder,'对局记录'));
 await mkdir(join(folder,'回放接口'));
 await cp('src/actionReplay/contract.ts',join(folder,'回放接口/contract.ts'));
+await cp('src/actionReplay/trainingContract.ts',join(folder,'回放接口/training-contract-v1.ts'));
+await cp('docs/training-replay-output-v1.md',join(folder,'回放接口/训练端输出规范-v1.md'));
 await cp('docs/action-replay-adapter.md',join(folder,'回放接口/adapter.md'));
 await cp('docs/match-log-spec-v2.0.md',join(folder,'回放接口/spec-v2.0.md'));
 await cp('outputs/match-log-samples',join(folder,'回放样例'),{recursive:true});
