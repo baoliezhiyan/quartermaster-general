@@ -127,3 +127,5 @@ button:disabled { cursor:not-allowed; }
 
 .country-name { color:var(--card-edge); }
 .country-name[data-country="japan"] { text-shadow:0 0 2px #263830,0 0 1px #263830; }
+
+.action-replay-record .replay-controls{display:flex;flex-wrap:wrap;gap:4px;margin-bottom:10px}.action-replay-record .replay-entry{display:block;width:100%;text-align:left;padding:9px 5px;border:0;border-bottom:1px solid #d1d3c3;background:transparent}.action-replay-record .replay-entry[aria-current=step]{background:#dae1cb}.replay-historical-prompt{background:#e2e7d7;padding:8px}

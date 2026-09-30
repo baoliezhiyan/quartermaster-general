@@ -4,7 +4,8 @@ import {createGame} from '../src/core/game';
 import {cardEffects} from '../src/core/specialCards';
 import {parseMatchLog} from '../src/matchLog/codec';
 import {GAME_VERSION} from '../src/matchLog/normalize';
-import {replayNode} from '../src/matchLog/view';
+import {parseReplay} from '../src/actionReplay/codec';
+import {Player} from '../src/actionReplay/player';
 import type {Command} from '../src/core';
 import {observeFacts} from '../src/core/factObserver';
 import {factCapture,recordTransaction} from '../src/matchLog/recorder';
@@ -18,9 +19,7 @@ it.each(['special_158','special_162'])('records each ordered battle/build child 
  const dispatch=async(command:Record<string,unknown>)=>{const state=c.getSnapshot()!;if(state.viewSeat!==state.operatorSeat)await c.dispatch({type:'SET_VIEW',seat:state.operatorSeat,expectedRevision:state.revision});const live=c.getSnapshot()!;expect(await c.dispatch({seat:live.operatorSeat,expectedRevision:live.revision,...command} as Command)).toMatchObject({ok:true});};
  const targets=id==='special_162'?['su1','su2']:[];await dispatch({type:'PLAY_CARD',cardId:card.id,targetIds:targets,effectIndices:cardEffects(s,card,targets).map((_,i)=>i)});
  for(let i=0;c.getSnapshot()!.resolution?.running&&i<70;i++){const q=c.getSnapshot()!.resolution!.choice!;expect(q).toBeTruthy();await dispatch({type:'RESOLVE_ENGINE_CHOICE',choiceId:q.id,ids:q.kind==='TRIGGER'?[]:q.options.slice(0,q.min).map(o=>o.id)});}
- expect(c.getSnapshot()!.resolution?.running).toBe(false);const a=await parseMatchLog(await c.exportReplay(),GAME_VERSION);const removals=a.frames.filter(f=>f.events.some(e=>e.eventType==='unit_removed'));expect(removals.length).toBeGreaterThanOrEqual(id==='special_162'?2:1);expect(a.frames.some(f=>f.events.some(e=>e.eventType==='effect_applied'))).toBe(true);
- for(const f of a.frames)if('action'in f&&f.action){const before=replayNode(a,f.seq,true),after=replayNode(a,f.seq,false,f.action.actorSeat);expect(before.state.pendingDecisions.some(d=>d.decisionId===f.action!.decisionId)).toBe(true);expect(after.action?.decisionId).toBe(f.action.decisionId);}
- expect(a.frames.at(-1)!.state.units).toEqual(c.getSnapshot()!.units.map(u=>expect.objectContaining({unitId:u.id,country:u.country,regionId:u.regionId,type:u.type})));
+ expect(c.getSnapshot()!.resolution?.running).toBe(false);const a=await parseReplay(await c.exportReplay());expect(a.groups).toHaveLength(1);const player=new Player(a);expect((await player.seek(a.groups[0].root.actionId,true)).units).toEqual(c.getSnapshot()!.units);expect((await player.seek(a.groups[0].root.actionId)).units).toEqual(s.units);
 },60000);
 it('explicit response choice and automatic mandatory choice are distinct recorded decisions',async()=>{
  const {s}=fixture('special_158'),captures:ReturnType<typeof factCapture>[]=[];const rule={id:'forced-score',label:'必发测试',owner:'germany' as const,source:'system' as const,sourceInstanceId:'system-score',timing:'After' as const,on:'signal',mandatory:true,effects:[{kind:'score' as const,seat:'germany' as const,amount:1,label:'强制得分'}]};

@@ -6,7 +6,7 @@ import {TableHand} from '../src/ui/TableHand';
 
 it('separates regular hand and three prelude panels, with live zone counts',()=>{
  const state=createGame('panels',44,'FULL',true),d=state.prelude!.decks.germany;
- expect(MAP_PANELS.slice(-4).map(p=>p[0])).toEqual(['record','prelude-hand','prelude-discard','prelude-deck']);
+ expect(MAP_PANELS.slice(-5,-1).map(p=>p[0])).toEqual(['record','prelude-hand','prelude-discard','prelude-deck']);
  expect(panelLabel(state,'deck')).toBe(`牌库(${state.decks.germany.drawPile.length})`);
  expect(panelLabel(state,'discard')).toBe('弃牌堆(0)');
  expect(panelLabel(state,'prelude-deck')).toBe(`序章牌库(${d.drawPile.length})`);

@@ -1,10 +1,13 @@
 import {it,expect} from 'vitest';
 import {LocalGameController} from '../src/controller/LocalGameController';
-import {parseMatchLog} from '../src/matchLog/codec';
-import {GAME_VERSION} from '../src/matchLog/normalize';
-import {replayNode} from '../src/matchLog/view';
-it('fact replay defaults to pre-decision and cannot replace a running game',async()=>{
- const c=new LocalGameController();await c.dispatch({type:'CREATE_GAME',gameId:'replay-facts',seed:4,mode:'FULL'});const s=c.getSnapshot()!;await c.dispatch({type:'KEEP_OPENING',seat:'germany',expectedRevision:s.revision,cardIds:s.decks.germany.hand.slice(0,7).map(c=>c.id)});
- const a=await parseMatchLog(await c.exportReplay(),GAME_VERSION),frame=a.frames.find(f=>f.kind==='decision')!;expect(replayNode(a,frame.seq).state.areas.find(a=>a.areaId==='germany/regular_hand')!.cardIds).toHaveLength(12);expect(replayNode(a,a.frames.at(-1)!.seq,false).state.areas.find(a=>a.areaId==='germany/regular_hand')!.cardIds).toHaveLength(7);
- const saved=c.getSnapshot();for(const seq of [1,frame.seq,a.frames.at(-1)!.seq])replayNode(a,seq);expect(c.getSnapshot()).toBe(saved);await expect(c.importReplay(await c.exportReplay())).rejects.toThrow('只读');expect(c.getSnapshot()).toBe(saved);
-},30000);
+import {parseReplay} from '../src/actionReplay/codec';
+import {ReplayController} from '../src/actionReplay/ReplayController';
+it('uses an independent readonly controller and defaults to before the decision',async()=>{
+ const live=new LocalGameController();await live.dispatch({type:'CREATE_GAME',gameId:'readonly',seed:4,mode:'FULL'});const s=live.getSnapshot()!;
+ await live.dispatch({type:'KEEP_OPENING',seat:'germany',expectedRevision:s.revision,cardIds:s.decks.germany.hand.slice(0,7).map(c=>c.id)});
+ const before=live.getSnapshot(),replay=new ReplayController(await parseReplay(await live.exportReplay())),id=replay.entries[0].id;
+ await replay.seek(id);expect(replay.getSnapshot().decks.germany.hand).toHaveLength(12);await replay.seek(id,true);expect(replay.getSnapshot().decks.germany.hand).toHaveLength(7);
+ expect((await replay.dispatch({type:'ADVANCE_PHASE',seat:'germany',expectedRevision:0})).ok).toBe(false);expect(live.getSnapshot()).toBe(before);
+ replay.setRoomAccess({kind:'observer',seat:'germany'});expect(replay.getSnapshot().decks.japan.hand.every(c=>c.definitionId==='hidden')).toBe(true);
+ await expect(live.importReplay(await live.exportReplay())).rejects.toThrow('只读');
+});

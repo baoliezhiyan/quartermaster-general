@@ -37,7 +37,7 @@ it('preserves exported game, undo and deterministic replay through actual contro
  const d=await dir(),s=createJournalStore(d,options),c=new LocalGameController(s,true);await c.dispatch({type:'CREATE_GAME',gameId:'journal-game',seed:1940,mode:'FULL'});
  for(const seat of ['germany','united_kingdom','japan','soviet_union','italy','united_states']){const state=c.getSnapshot();await c.dispatch({type:'KEEP_OPENING',seat,expectedRevision:state.revision,cardIds:state.decks[seat].hand.slice(0,7).map(c=>c.id)});}
  const recovered=await createJournalStore(d,options).read();expect(()=>validateSession(recovered)).not.toThrow();expect(verifyReplay(recovered)).toBe(true);
- const {matchRecording,...save}=recovered;expect(matchRecording.records.length).toBeGreaterThan(2);
+ const {actionRecording,...save}=recovered;expect(actionRecording.records.length).toBeGreaterThan(2);
  expect(JSON.stringify(save)===JSON.stringify(JSON.parse(c.exportSave()))).toBe(true);
  const reloaded=new LocalGameController(createJournalStore(d,options),true);await reloaded.exportReplay();
  expect(await reloaded.exportReplay()===await c.exportReplay()).toBe(true);

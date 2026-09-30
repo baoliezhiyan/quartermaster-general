@@ -1,3 +1,4 @@
+import {MATCH_LOG_GAME_VERSION} from '../dist-server/Room.js';
 import {withMatchLogs} from './match-log-store.mjs';
 import http from 'node:http';
 import {randomUUID} from 'node:crypto';
@@ -82,6 +83,6 @@ let stopping=false;async function stop(){if(stopping)return;stopping=true;clearI
 process.on('SIGINT',()=>void stop());process.on('SIGTERM',()=>void stop());
 server.on('error',async e=>{console.error(e.message);await stop();process.exitCode=1;});
 server.listen(port,host,()=>{
- const url=policy.publicOrigin?`${policy.publicOrigin}/`:`${policy.localOrigin}/`;console.log(`战场军需官 v1.6.9\n${policy.publicOrigin?'公网入口：'+url+'\n':''}本机入口：${policy.localOrigin}/\n自动存档与身份：${data}\n保持此窗口开启。Ctrl+C 关闭服务。`);
+ const url=policy.publicOrigin?`${policy.publicOrigin}/`:`${policy.localOrigin}/`;console.log(`战场军需官 v${MATCH_LOG_GAME_VERSION}\n${policy.publicOrigin?'公网入口：'+url+'\n':''}本机入口：${policy.localOrigin}/\n自动存档与身份：${data}\n保持此窗口开启。Ctrl+C 关闭服务。`);
  if(process.argv.includes('--open'))spawn('rundll32.exe',['url.dll,FileProtocolHandler',policy.localOrigin+'/'],{windowsHide:true,stdio:'ignore'}).on('error',()=>{});
 });

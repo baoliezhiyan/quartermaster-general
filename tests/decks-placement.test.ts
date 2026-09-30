@@ -108,7 +108,7 @@ describe('atomic placement and independent inventories',()=>{
     expect(reserve(next,'germany','army')).toBe(0);
     expect(next.units.some(u=>u.id===plans[0].recycleId)).toBe(false);
     expect(next.decks.germany.hand).toHaveLength(5);
-    expect(suppliedUnits(next).has(`unit:${next.revision}`)).toBe(true);
+    expect(next.units.some(u=>!s.units.some(old=>old.id===u.id)&&suppliedUnits(next).has(u.id))).toBe(true);
   });
   it('pays the acting deck while recruiting another country and leaves its own inventory alone',()=>{
     const s=started(), regionId='western_china';

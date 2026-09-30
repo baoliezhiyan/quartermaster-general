@@ -3,9 +3,11 @@ import {createGame,transition} from '../src/core/game';
 import {observeFacts} from '../src/core/factObserver';
 import {normalize,GAME_VERSION} from '../src/matchLog/normalize';
 import {projectFacts,replayNode} from '../src/matchLog/view';
-import {parseMatchLog,sealMatchLog,validateFacts} from '../src/matchLog/codec';
+import {parseMatchLog,sealMatchLog} from '../src/matchLog/codec';
 import {constructedPool} from './match-fixtures';
 import {LocalGameController} from '../src/controller/LocalGameController';
+import {parseReplay,seal} from '../src/actionReplay/codec';
+import {Player} from '../src/actionReplay/player';
 import {SEATS} from '../src/core/types';
 it('observer never changes initialization RNG or decisions across both rulesets',()=>{
  for(const prelude of [false,true])for(const balance of [false,true]){const cmd={type:'CREATE_GAME' as const,gameId:'rng',seed:947234,mode:'FULL' as const,prelude,balance,neutrality:true};const a=transition(null,cmd);let seen=0;const b=observeFacts((s)=>{normalize(s);seen++;},()=>transition(null,cmd));expect(b).toEqual(a);expect(seen).toBeGreaterThan(10);}
@@ -23,5 +25,6 @@ it('six perspectives conceal foreign cards, private prompts, exact order and eng
  for(const seat of [...SEATS,'public'] as const){const view=projectFacts(full,seat),serialized=JSON.stringify(view);for(const other of SEATS)if(other!==seat){for(const c of s.decks[other].hand)expect(serialized).not.toContain(c.id);}if(seat!=='japan')expect(serialized).not.toContain('日本私密提示');if(seat!=='public')expect(view.areas.find(a=>a.areaId===seat+'/regular_deck')!.ordered).toBe(false);}
 });
 it('exports a fixed revision while play continues, rejects standard version mismatch',async()=>{
- const c=new LocalGameController();await c.dispatch({type:'CREATE_GAME',gameId:'concurrent-export',seed:3,mode:'FULL'});const s=c.getSnapshot()!,download=c.exportReplay();const play=c.dispatch({type:'KEEP_OPENING',seat:'germany',expectedRevision:s.revision,cardIds:s.decks.germany.hand.slice(0,7).map(c=>c.id)});const a=await parseMatchLog(await download,GAME_VERSION);await play;expect(a.frames.at(-1)!.state.areas.find(a=>a.areaId==='germany/regular_hand')!.cardIds).toHaveLength(12);const b=await parseMatchLog(await c.exportReplay(),GAME_VERSION);expect(b.frames.at(-1)!.state.areas.find(a=>a.areaId==='germany/regular_hand')!.cardIds).toHaveLength(7);await expect(parseMatchLog(await download,'other')).rejects.toThrow('版本');for(const f of b.frames)validateFacts(f.state,b.header);
+ const c=new LocalGameController();await c.dispatch({type:'CREATE_GAME',gameId:'concurrent-export',seed:3,mode:'FULL'});const s=c.getSnapshot()!,download=c.exportReplay();const play=c.dispatch({type:'KEEP_OPENING',seat:'germany',expectedRevision:s.revision,cardIds:s.decks.germany.hand.slice(0,7).map(c=>c.id)});const a=await parseReplay(await download);await play;expect((await new Player(a).seek(null)).decks.germany.hand).toHaveLength(12);const b=await parseReplay(await c.exportReplay());expect((await new Player(b).seek(b.groups[0].root.actionId,true)).decks.germany.hand).toHaveLength(7);const records=b.records.slice(0,-1) as any;records[0]={...records[0],gameVersion:'other'};await expect(parseReplay(await seal(records))).rejects.toThrow('版本');
+
 },60000);

@@ -24,7 +24,7 @@
 | --- | --- |
 | src/core、src/data | 正式规则、结算与卡表，属于共享规则边界 |
 | src/ui、src/controller、src/network | 客户端显示、交互、控制、联机 |
-| src/matchLog | 两端共享回放格式、校验、状态展示协议 |
+| src/actionReplay（现行）、src/matchLog（历史） | 两端共享回放格式、校验、状态展示协议 |
 | src/training、scripts/ppo*、相关Python测试 | 训练环境、课程、编码和PPO |
 | docs | 已说明版本/范围的设计、规则、验收与协作资料 |
 
@@ -56,7 +56,7 @@
 
 ## 6. 回放契约
 
-规范入口为 docs/match-log-spec-v1.1.md，运行时契约为 src/matchLog/contract.ts，校验器/schema以当前实现为准。协议改动须同步规范、类型、校验器、样例及跨端测试，并明确兼容策略。
+规范入口为 docs/match-log-spec-v2.0.md，运行时契约为 src/actionReplay/contract.ts，校验器/schema以当前实现为准。协议改动须同步规范、类型、校验器、样例及跨端测试，并明确兼容策略。
 
 正式/资源池两种模式分别展示；不能以内部hand字段伪造真实手牌。full_fidelity日志与PPO观察张量是不同通道；记录器看到真值不意味着模型可见。没有真实训练端样例联调，不得宣称跨端完整回放通过。
 
