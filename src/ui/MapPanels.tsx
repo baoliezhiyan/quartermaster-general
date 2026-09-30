@@ -22,6 +22,9 @@ export function panelCount(state:ReadState,panel:MapPanel):number|undefined {
  return panel==='resource-pool'?replayPoolCards(state).length:panel==='deck'?d.drawPile.length:panel==='discard'?(state.publicDiscardCounts?.[state.viewSeat]??d.discardPile.length):panel==='prelude-deck'?p?.drawPile.length:panel==='prelude-discard'?p?.discardPile.length:undefined;
 }
 export function panelLabel(state:ReadState,panel:MapPanel) {
+ const availability=(state as ReadState&{trainingReplay?:{available:string[]}}).trainingReplay;
+ const zone=({hand:'hand',deck:'drawPile',discard:'discardPile','resource-pool':'resourcePool'} as Record<string,string>)[panel];
+ if(availability&&zone&&!availability.available.includes(state.viewSeat+':'+zone))return MAP_PANELS.find(p=>p[0]===panel)![1]+'（未提供或不可见）';
  const label=MAP_PANELS.find(p=>p[0]===panel)![1],count=panelCount(state,panel);
  return count===undefined?label:`${label}(${count})`;
 }
@@ -33,6 +36,9 @@ export function catalogCards(cards:readonly CardInstance[]) {
 }
 export function MapPanelContent({panel,state,choiceCards={},chosenCards=[],onCard,dispatch,busy,infoSeat,onInfoSeat,readOnly=false,room,roomRequest,replay=false}:{replay?:boolean;room?:RoomInfo;roomRequest?:(method:string,...args:unknown[])=>Promise<unknown>;readOnly?:boolean;infoSeat?:SeatId|null;onInfoSeat?:(seat:SeatId)=>void;dispatch:(c:Command)=>Promise<void>;busy:boolean;panel:Exclude<MapPanel,'hand'>;state:ReadState;choiceCards?:Record<string,string[]>;chosenCards?:string[];onCard?:(id:string)=>void}) {
  if(panel==='record')return <RoomRecord state={state} room={room} request={roomRequest} infoSeat={infoSeat} onInfoSeat={onInfoSeat}/>;
+ const availability=(state as ReadState&{trainingReplay?:{available:string[]}}).trainingReplay;
+ const zone=({deck:'drawPile',discard:'discardPile','resource-pool':'resourcePool'} as Record<string,string>)[panel];
+ if(availability&&zone&&!availability.available.includes(state.viewSeat+':'+zone))return <section aria-label={MAP_PANELS.find(p=>p[0]===panel)![1]}><p>此牌区未提供或在当前视角下不可见。</p></section>;
  if(panel==='prelude-hand')return state.prelude?<PreludeHand state={state} busy={busy} readOnly={readOnly} dispatch={dispatch}/>:null;
  const deck=state.decks[state.viewSeat],prelude=state.prelude?.decks[state.viewSeat];
  const cards=panel==='resource-pool'?replayPoolCards(state):panel==='deck'?(replay?deck.drawPile:catalogCards(deck.drawPile)):panel==='discard'?deck.discardPile:panel==='active'?activePanelCards(state):panel==='prelude-deck'?(replay?prelude?.drawPile??[]:catalogCards(prelude?.drawPile??[])):panel==='prelude-discard'?prelude?.discardPile??[]:[];

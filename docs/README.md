@@ -21,7 +21,7 @@
 ## 回放与联机
 
 - [回放规范v2.0](match-log-spec-v2.0.md)、[使用说明](match-log-guide.md)、[实现验收边界](match-log-validation.md)。协议formatVersion=3，文档版本v2.0。
-- 实现字段契约位于 `src/actionReplay/contract.ts`；本次暂不接纳训练记录，训练端需另行提供匹配适配器与真实样例。
+- 实现字段契约位于 `src/actionReplay/contract.ts`；训练场面/独立牌区适配器另见 [训练端输出规范v1](training-replay-output-v1.md) 与 `src/actionReplay/trainingContract.ts`。暂未进行真实训练端联调。
 - [本地资源客户端](local-client.md)、[联机架构历史说明](v3-local-multiplayer.md)、[Cloudflare测试说明](cloudflare-testing.md)、[cpolar说明](cpolar-start.md)。第三方隧道工具/账户配置不上传仓库。
 
 ## 训练文档

@@ -30,3 +30,5 @@ export class ReplayController implements GameController {
  checkReplay=async()=>{const last=this.archive.groups.at(-1);if(last)await this.player.seek(last.root.actionId,true,true);return true;};
  exportDiagnostics=()=>JSON.stringify({mode:'readonly-replay',recordingId:this.archive.header.recordingId,selectedId:this.selectedId});
 }
+
+export type ReplayView=Omit<GameController,'getSnapshot'> & Pick<ReplayController,'getSnapshot'|'entries'|'narratives'|'selectedId'|'after'|'seek'|'describe'> & {player:{details:import('./player').Detail[]}};
