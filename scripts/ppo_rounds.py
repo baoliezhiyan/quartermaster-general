@@ -97,7 +97,8 @@ def export_weights(checkpoint: Path, target: Path, mode: str,
 def record_game(checkpoint: Path, target: Path, mode: str, round_number: int,
                 training_seed: int, model_sha256: str, max_decisions: int = 3000):
     seed, learner_side = selected_game(training_seed, mode, round_number)
-    client = ppo.ArenaClient(log_path=target, log_snapshots=True)
+    raw_target = target.with_name(".training-raw.jsonl")
+    client = ppo.ArenaClient(log_path=raw_target, log_snapshots=True)
     try:
         encoder = ppo.Encoder(client.schema)
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -115,7 +116,7 @@ def record_game(checkpoint: Path, target: Path, mode: str, round_number: int,
                     "learnerSide": learner_side,
                     "opponent": "frozen-weighted-legal-baseline-v1",
                     "actionSampling": "stochastic-per-game-seed", "modelSha256": model_sha256,
-                    "recordScope": "full-state-per-decision; training log, not match-log replay"}
+                    "recordScope": "full-training-scene-replay-v1"}
         result = ppo.play_episode(client, encoder, model, device, mode, seed,
                                   max_decisions, trace="full",
                                   baseline_side="allies" if learner_side == "axis" else "axis",
@@ -125,15 +126,18 @@ def record_game(checkpoint: Path, target: Path, mode: str, round_number: int,
         client.close()
     if result["outcome"]["termination"] != "natural":
         raise RuntimeError("抽样评估局未自然结束；不输出本轮结果")
-    digest = validate_record(target, result["decisions"], seed)
+    digest = validate_record(raw_target, result["decisions"], seed)
     summary = {"recordType": "trainingSummary", "round": round_number,
                "seed": seed, "learnerSide": learner_side,
                "decisions": result["decisions"], "countryTurns": result["countryTurns"],
                "winner": result["outcome"]["winner"],
                "allianceScores": result["outcome"]["allianceScores"],
                "sha256OfPriorLines": digest}
-    with target.open("a", encoding="utf-8", newline="\n") as stream:
+    with raw_target.open("a", encoding="utf-8", newline="\n") as stream:
         stream.write(json.dumps(summary, ensure_ascii=False, separators=(",", ":")) + "\n")
+    subprocess.run(["node", "scripts/ppo-export-training-replay.mjs", str(raw_target),
+                    str(target)], cwd=ppo.ROOT, check=True)
+    raw_target.unlink()
     return summary
 
 

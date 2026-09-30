@@ -27,7 +27,9 @@ export function createTrainingScene(scene:TrainingScene,gameId:string,cards:Map<
 export async function trainingSceneHash(s:GameState){return hash({units:s.units,scores:s.scores,round:s.round,phase:s.phase,activeSeat:s.activeSeat,unitSerial:s.unitSerial??0,active:Object.fromEntries(SEATS.map(seat=>[seat,s.decks[seat].active.map(c=>c.id)])),turnFlags:s.turnFlags??null});}
 export function applyScene(s:GameState,e:SceneEffect,cards:Map<string,TrainingCard>):string {
  if(e.kind==='board'){
-  const effect:BoardEffect={kind:'action',label:'训练记录场面动作',country:e.country,action:e.action,airDefense:e.airDefense, ...(e.action==='destroy'?{destroyTypes:['army','navy'] as ('army'|'navy')[]}: {})};
+  const effect:BoardEffect={kind:'action',label:'训练记录场面动作',country:e.country,action:e.action,airDefense:e.airDefense,
+    ...(e.action==='recruit_army'||e.action==='recruit_navy'?{regions:[e.regionId]}:{}),
+    ...(e.action==='destroy'?{destroyTypes:['army','navy'] as ('army'|'navy')[]}: {})};
   const options=boardOptions(s,effect).filter(o=>o.regionId===e.regionId&&(['attackerId','defenderId','airId','recycleId','mode'] as const).every(k=>e[k]===undefined||e[k]===o[k]));
   if(options.length!==1)throw Error('训练场面动作不合法或目标不唯一：'+e.action+' / '+e.regionId);
   const option=options[0],defender=s.units.find(u=>u.id===option.defenderId);effect.option=option;

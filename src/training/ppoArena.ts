@@ -26,7 +26,7 @@ export const PPO_STATIC_SCHEMA={observationSchemaVersion:PPO_OBSERVATION_SCHEMA_
   bindingKeys:['built-navy','new-china','xiangxi-battle'],maxEffectTokens:32};
 export type CourseMode='A'|'B';
 export type CardSet='basics'|'events';
-export type PpoArenaOptions={mode:CourseMode;buildFingerprint:string;trace?:TraceLevel;cardSet?:CardSet};
+export type PpoArenaOptions={mode:CourseMode;buildFingerprint:string;trace?:TraceLevel;cardSet?:CardSet;captureReplay?:boolean};
 export type UnitFact={country:CountryId;type:Unit['type'];regionId:string};
 export type EffectFeature={kind:string;action?:string;country?:CountryId;seat?:SeatId;
   fee:boolean;optional:boolean;min?:number;max?:number;count?:number;amount?:number;
@@ -140,6 +140,8 @@ export class PpoTrainingArena {
   private knownUnits:Record<string,UnitFact>={};
   private submittedThisStep:{id:string;definitionId:string}[]=[];
   private pendingSubmissions:Record<string,string>={};
+  private readonly captureReplay:boolean;
+  private replayCommits:unknown[]=[];
   readonly records:unknown[]=[];
   readonly header:{format:typeof PPO_ARENA_FORMAT;gameId:string;episodeId:string;seed:number;
     mode:CourseMode;cardSet:CardSet;courseVersion:string;overridesVersion:string;mapVersion:string;
@@ -153,6 +155,7 @@ export class PpoTrainingArena {
     if(!['basics','events'].includes(cardSet))throw new Error('Invalid PPO card set');
     if(TRAINING_EVENT_IDS.size!==58||TRAINING_EVENT_IDS.has('special_227'))throw new Error('Event whitelist is invalid');
     this.trace=options.trace??'none';
+    this.captureReplay=!!options.captureReplay;
     const s=createGame(gameId,seed,'FULL',false,false,true);
     const catalog=regularCatalog(true,false);
     for(const seat of SEATS){
@@ -173,7 +176,8 @@ export class PpoTrainingArena {
     s.events=[];s.publicLog=[];s.trainingBasicOnly=false;
     s.trainingCourse={version:'ppo-events-v1',mode:options.mode,openIds:Object.fromEntries(
       SEATS.map(seat=>[seat,[] as string[]])) as Record<SeatId,string[]>,
-      openRandomState:(seed^0x7f4a7c15)>>>0,discardRandomState:(seed^0xd1b54a32)>>>0};
+      openRandomState:(seed^0x7f4a7c15)>>>0,discardRandomState:(seed^0xd1b54a32)>>>0,
+      ...(this.captureReplay?{captureReplay:true}:{})};
     this.state=s;
     for(const seat of SEATS)this.refreshOpen(seat);
     const eventIds=cardSet==='events'?SEATS.flatMap(seat=>TRAINING_EVENT_IDS_BY_SEAT[seat]):[];
@@ -209,6 +213,15 @@ export class PpoTrainingArena {
     for(const seat of SEATS){const ids=new Set(this.state.decks[seat].hand.map(c=>c.id));
       course.openIds[seat]=course.mode==='A'?[...ids]:course.openIds[seat].filter(id=>ids.has(id));}
   }
+  private replayState(s:GameState){return structuredClone({round:s.round,phase:s.phase,activeSeat:s.activeSeat,
+    units:s.units,scores:s.scores,unitSerial:s.unitSerial??0,turnFlags:s.turnFlags??null,
+    activeCards:Object.fromEntries(SEATS.map(seat=>[seat,s.decks[seat].active.map(c=>c.id)])),
+    resources:Object.fromEntries(SEATS.map(seat=>{const d=s.decks[seat];return [seat,{hand:[],
+      drawPile:[...d.hand,...d.drawPile].map(c=>c.id),
+      discardPile:[...d.discardPile,...d.resolving,...d.removed,...d.active,...d.faceDown].map(c=>c.id),
+      resourcePool:s.trainingCourse?.mode==='B'?s.trainingCourse.openIds[seat]:[]}] as const;
+    })) as unknown as Record<SeatId,Record<string,string[]>>,
+    resolutionEvents:s.resolution?.events??[],resolutionScenario:s.resolution?.scenario??null});}
   private commit(command:Command){const before=this.state;
     for(const unit of before.units)this.knownUnits[unit.id]={country:unit.country,type:unit.type,regionId:unit.regionId};
     const outcome=transition(before,command);
@@ -218,6 +231,11 @@ export class PpoTrainingArena {
     this.pruneOpen();
     if((before.activeSeat!==this.state.activeSeat||before.round!==this.state.round)&&this.state.round>1)
       this.refreshOpen(this.state.activeSeat);
+    if(this.captureReplay)this.replayCommits.push({commandType:command.type,
+      seat:'seat'in command?command.seat:before.activeSeat,
+      cardId:'cardId'in command?command.cardId:undefined,
+      before:this.replayState(before),after:this.replayState(this.state),
+      boardEvents:this.state.events.slice(before.events.length).filter(e=>e.type==='TRAINING_BOARD_APPLIED')});
     this.cached=undefined;
   }
   private unitFact=(id:string):UnitFact|undefined=>{
@@ -477,6 +495,7 @@ export class PpoTrainingArena {
     if(!selected)throw new Error('Invalid PPO candidate');
     const s=this.state,beforeScore=scoreCopy(s),beforeTotals=allianceScores(s),beforeT=turnClock(s);
     this.submittedThisStep=[];
+    this.replayCommits=[];
     if(selected.kind==='pass')this.commit({type:'ADVANCE_PHASE',seat:s.activeSeat,expectedRevision:s.revision});
     else if(selected.kind==='source'){
       if(selected.definitionId==='special_162')this.pendingCardId=selected.cardId!;
@@ -513,7 +532,8 @@ export class PpoTrainingArena {
       seat:obs.decisionSeat,activeSeat:obs.activeSeat,action:selected,info,
       ...(this.trace==='full'?{before:{scores:beforeScore,units:obs.units},
         after:{scores:scoreCopy(after),units:after.units.map(u=>({...u}))},
-        events:[...after.events],publicLog:[...(after.publicLog??[])]}:{})};
+        events:[...after.events],publicLog:[...(after.publicLog??[])],
+        ...(this.captureReplay?{replayCommits:this.replayCommits}:{})}:{})};
     if(record)this.records.push(record);
     after.events=[];after.publicLog=[];
     return {observation:next,info,result,record};

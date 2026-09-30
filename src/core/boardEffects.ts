@@ -31,10 +31,19 @@ function remove(s:GameState,id:string) {
 }
 export function applyBoardEffect(s:GameState,e:BoardEffect,queueRemoval?:(id:string)=>void):boolean {
   const o=boardOptions(s,e).find(o=>o.id===e.option?.id); if(!o) return false;
+  const beforeIds=s.trainingCourse?.captureReplay?new Set(s.units.map(u=>u.id)):null;
   e.option=o;
   if(o.replacement)e.action=o.replacement;
   const eliminate=(id:string)=>queueRemoval?queueRemoval(id):remove(s,id);
   const newId=()=>nextUnitId(s);
+  const record=()=>{if(!beforeIds)return;
+    const created=s.units.find(u=>!beforeIds.has(u.id));
+    s.events.push({type:'TRAINING_BOARD_APPLIED',revision:s.revision,country:e.country,
+      action:e.action,regionId:o.regionId,...(o.attackerId?{attackerId:o.attackerId}:{}),
+      ...(o.defenderId?{defenderId:o.defenderId}:{}),...(o.airId?{airId:o.airId}:{}),
+      ...(o.recycleId?{recycleId:o.recycleId}:{}),mode:o.mode,
+      ...(created?{newUnitId:created.id}:{}),...(e.airDefense===false?{airDefense:false}:{})});
+  };
   if(o.mode==='build') {
     if(o.recycleId) remove(s,o.recycleId);
     const old=s.units.find(u=>u.country===e.country && u.type===o.unitType && u.regionId===o.regionId);
@@ -52,12 +61,12 @@ export function applyBoardEffect(s:GameState,e:BoardEffect,queueRemoval?:(id:str
     const defense=e.action==='destroy'||s.turnFlags?.noAirDefense||e.airDefense===false?undefined:s.units.find(u=>u.type==='air' && u.country===defender.country && u.regionId===defender.regionId);
     if(defense) {
       eliminate(defense.id);
-      if(!o.intercept) return true;
+      if(!o.intercept){record();return true;}
       const attacker=s.units.find(u=>u.id===o.attackerId)!;
       const air=s.units.find(u=>u.type==='air' && u.country===e.country && u.regionId===attacker.regionId)!;
       eliminate(air.id);
     }
     eliminate(defender.id);
   }
-  return true;
+  record();return true;
 }
