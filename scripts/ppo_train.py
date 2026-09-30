@@ -28,7 +28,7 @@ GAMMA = 1.0
 LAMBDA_ROUND = 0.95
 POTENTIAL_SCALE = 0.3
 ENCODER_VERSION = "ppo-vector-v3"
-TRAINER_VERSION = "ppo-trainer-v3"
+TRAINER_VERSION = "ppo-trainer-v4-parallel40"
 EFFECT_KINDS = ["action", "score", "draw", "deckTop", "forceHand", "signal", "choose", "cards",
                 "extraPlay", "rebuild", "remove", "flag", "balance", "trace", "cancel", "randomReturn",
                 "randomPlay", "frameChange", "countChange", "reallocate", "prelude", "copyStatus"]
@@ -40,6 +40,9 @@ CHOICE_KINDS = ["BUILD_ORDER", "EFFECT_DECISION", "AIR_DEFENSE", "AIR_INTERCEPT"
                 "REALLOCATE", "EFFECTS", "SELECT", "CARDS", "EXTRA_CARD", "EXTRA_TARGET", "EXTRA_EFFECTS"]
 CHOICE_FIELDS = ["regionId", "defenderId", "attackerId", "option"]
 TARGET_SLOTS = 8
+UNIT_TYPES = ["army", "navy", "air"]
+NODES = ["SOURCE", "TARGETS", "ENGINE_CHOICE"]
+CANDIDATE_KINDS = ["source", "pass", "choice", "targets"]
 CHOICE_SLOTS = 16
 CHOICE_FEATURE_KINDS = ["build_order", "action_region", "defenderId", "attackerId",
                         "empty_defender", "action_plan", "effect_choice", "extra_card",
@@ -54,21 +57,46 @@ ENCODER_DICTIONARY = {"effectKinds": EFFECT_KINDS, "actions": ACTIONS, "phases":
                       "targetSlots": TARGET_SLOTS, "choiceSlots": CHOICE_SLOTS,
                       "choiceFeatureKinds": CHOICE_FEATURE_KINDS}
 ENCODER_DICTIONARY_HASH = hashlib.sha256(json.dumps(ENCODER_DICTIONARY, sort_keys=True).encode()).hexdigest()
-TRAINER_SOURCE_HASH = hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
+TRAINER_SOURCE_HASH = hashlib.sha256(Path(__file__).read_bytes() +
+    (Path(__file__).with_name("ppo_parallel.py").read_bytes()
+     if Path(__file__).with_name("ppo_parallel.py").exists() else b"") +
+    Path(__file__).with_name("ppo-arena-server.mjs").read_bytes()).hexdigest()
+
+
+_ONEHOT_CACHE = {}
 
 
 def onehot(value, names):
-    out = [0.0] * len(names)
-    if value in names:
-        out[names.index(value)] = 1.0
-    return out
+    key = id(names)
+    cached = _ONEHOT_CACHE.get(key)
+    if cached is None or cached[0] is not names:
+        cached = (names, {name: index for index, name in enumerate(names)},
+                  {None: [0.0] * len(names)})
+        _ONEHOT_CACHE[key] = cached
+    vector = cached[2].get(value)
+    if vector is None:
+        vector = [0.0] * len(names)
+        index = cached[1].get(value)
+        if index is not None:
+            vector[index] = 1.0
+        cached[2][value] = vector
+    return vector
 
 
 class ArenaClient:
-    def __init__(self, log_path=None):
+    def __init__(self, log_path=None, bundle_path=None, entry_path=None,
+                 log_snapshots=False):
         command = ["node", "scripts/ppo-arena-server.mjs"]
         if log_path:
             command += ["--log", str(log_path)]
+        if log_snapshots:
+            if not log_path:
+                raise ValueError("Snapshot logging needs a log path")
+            command += ["--log-snapshots"]
+        if bundle_path:
+            command += ["--bundle", str(bundle_path)]
+        if entry_path:
+            command += ["--entry", str(entry_path)]
         self.process = subprocess.Popen(command, cwd=ROOT, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                                         stderr=subprocess.PIPE, text=True, encoding="utf-8", bufsize=1)
         first = self.process.stdout.readline()
@@ -79,16 +107,31 @@ class ArenaClient:
             raise RuntimeError(greeting)
         self.fingerprint = greeting["buildFingerprint"]
         self.schema = greeting["staticSchema"]
+        self.transport = {"serializeSeconds": 0.0, "waitSeconds": 0.0,
+                          "parseSeconds": 0.0, "serverOperationSeconds": 0.0,
+                          "sentBytes": 0, "receivedBytes": 0}
 
     def request(self, **message):
-        self.process.stdin.write(json.dumps(message, ensure_ascii=False) + "\n")
+        started = time.perf_counter()
+        payload = json.dumps(message, ensure_ascii=False) + "\n"
+        self.transport["serializeSeconds"] += time.perf_counter() - started
+        self.transport["sentBytes"] += len(payload.encode("utf-8"))
+        started = time.perf_counter()
+        self.process.stdin.write(payload)
         self.process.stdin.flush()
         line = self.process.stdout.readline()
+        self.transport["waitSeconds"] += time.perf_counter() - started
         if not line:
             raise RuntimeError(f"Arena server closed: {self.process.stderr.read()}")
+        self.transport["receivedBytes"] += len(line.encode("utf-8"))
+        started = time.perf_counter()
         response = json.loads(line)
+        self.transport["parseSeconds"] += time.perf_counter() - started
         if not response.get("ok"):
             raise RuntimeError(f"Arena error: {response.get('error')}")
+        self.transport["serverOperationSeconds"] += response.get("operationSeconds", 0.0)
+        if "tag" in message and response.get("tag") != message["tag"]:
+            raise RuntimeError("Arena response tag differs from request")
         return response
 
     def close(self):
@@ -98,6 +141,9 @@ class ArenaClient:
             except (RuntimeError, BrokenPipeError):
                 pass
             self.process.wait(timeout=10)
+        for stream in (self.process.stdin, self.process.stdout, self.process.stderr):
+            if stream and not stream.closed:
+                stream.close()
 
 
 class Encoder:
@@ -120,9 +166,20 @@ class Encoder:
             self.neighbors[a].add(b)
             self.neighbors[b].add(a)
         self.home_distances = self._home_distances()
+        self.static_map_features = []
+        for region_id in self.regions:
+            region = self.region_data[region_id]
+            self.static_map_features.extend([float(region["type"] == "SEA"),
+                float(region["supply"]), len(self.neighbors[region_id]) / 15.0])
+            self.static_map_features.extend(onehot(region.get("homeCountry"), self.countries))
+            self.static_map_features.extend([self.home_distances[home].get(region_id, 20) / 20.0
+                                             for home in self.home_distances])
         self.effect_dim = (len(EFFECT_KINDS) + len(ACTIONS) + len(self.countries) + len(self.seats)
                            + 23 + len(self.regions) + TARGET_SLOTS * (1 + len(self.countries) + 3) * 2
                            + len(self.binding_keys) * 2 + 2)
+        self.empty_effect_vector = [0.0] * (self.max_effects * self.effect_dim)
+        self.empty_unit_sequence = [0.0] * (TARGET_SLOTS * (1 + len(self.countries) + 3))
+        self.empty_region_sequence = [0.0] * len(self.regions)
         self.state_dim = len(self.encode_state(self._dummy()))
         self.candidate_dim = len(self.encode_candidate(self._dummy(), self._dummy()["candidates"][0]))
 
@@ -178,6 +235,8 @@ class Encoder:
         return flat
 
     def _region_sequence(self, regions):
+        if not regions:
+            return self.empty_region_sequence
         if len(regions) > len(self.regions):
             raise ValueError("Region sequence exceeds schema cap")
         result = []
@@ -188,6 +247,8 @@ class Encoder:
         return result + [0.0] * (len(self.regions) - len(result))
 
     def _unit_sequence(self, facts):
+        if not facts:
+            return self.empty_unit_sequence
         if len(facts) > TARGET_SLOTS:
             raise ValueError("Unit target sequence exceeds schema cap")
         result = []
@@ -197,7 +258,7 @@ class Encoder:
                 raise ValueError(f"Unknown target region {region}")
             result.extend([(self.region_index[region] + 1) / len(self.regions)] +
                           onehot(fact["country"], self.countries) +
-                          onehot(fact["type"], ["army", "navy", "air"]))
+                          onehot(fact["type"], UNIT_TYPES))
         return result + [0.0] * ((TARGET_SLOTS - len(facts)) * (1 + len(self.countries) + 3))
 
     def _target_facts(self, effect, obs, field="targetIds", fact_field="targetFacts"):
@@ -237,6 +298,8 @@ class Encoder:
         return values
 
     def _effect_vector(self, effects, obs):
+        if not effects:
+            return self.empty_effect_vector
         flat = self._flatten_effects(effects)
         output = []
         for effect, branch in flat:
@@ -265,19 +328,13 @@ class Encoder:
         for region in range(region_count):
             if control[region * 3 + 1] == 0 and control[region * 3 + 2] == 0:
                 control[region * 3] = 1.0
-        static = []
-        for region_id in self.regions:
-            r = self.region_data[region_id]
-            static.extend([float(r["type"] == "SEA"), float(r["supply"]),
-                           len(self.neighbors[region_id]) / 15.0])
-            static.extend(onehot(r.get("homeCountry"), self.countries))
-            static.extend([self.home_distances[h].get(region_id, 20) / 20.0 for h in self.home_distances])
+        static = self.static_map_features
         own = obs["ownResources"]
         values = ([obs["round"] / 20.0, (20 - obs["round"]) / 20.0, float(obs["mode"] == "B"),
                    float(obs.get("cardSet", "events") == "events"),
                    obs["currentEffectIndex"] / 32.0, min(obs.get("choiceMin", 0), 20) / 20.0,
                    min(obs.get("choiceMax", 0), 20) / 20.0, float(obs.get("canSkip", False))] +
-                  onehot(obs["phase"], PHASES) + onehot(obs["node"], ["SOURCE", "TARGETS", "ENGINE_CHOICE"]) +
+                  onehot(obs["phase"], PHASES) + onehot(obs["node"], NODES) +
                   onehot(obs.get("choiceKind"), CHOICE_KINDS) +
                   onehot(obs.get("choiceField"), CHOICE_FIELDS) +
                   onehot(obs["activeSeat"], self.seats) + onehot(obs["decisionSeat"], self.seats) +
@@ -350,21 +407,21 @@ class Encoder:
                 return [0.0] * (len(self.regions) + len(self.countries) + 3)
             return (known(fact["regionId"], self.regions, "unit region") +
                     known(fact["country"], self.countries, "unit country") +
-                    known(fact["type"], ["army", "navy", "air"], "unit type"))
+                    known(fact["type"], UNIT_TYPES, "unit type"))
         def choice_token(item):
             return (known(item["kind"], CHOICE_FEATURE_KINDS, "kind") +
                     known(item.get("action"), ACTIONS, "action") +
                     known(item.get("nextAction"), ACTIONS, "next action") +
                     known(item.get("country"), self.countries, "country") +
                     known(item.get("regionId"), self.regions, "region") +
-                    known(item.get("unitType"), ["army", "navy", "air"], "unit type") +
+                    known(item.get("unitType"), UNIT_TYPES, "unit type") +
                     unit_feature(item.get("source")) + unit_feature(item.get("target")) +
                     known(item.get("definitionId"), self.cards, "card") +
                     [float(item.get("repeated", False)), float(item.get("intercept", False))])
         choice_width = len(choice_token({"kind": "accept"}))
         choice_vector = [number for item in choice_features for number in choice_token(item)]
         choice_vector += [0.0] * ((CHOICE_SLOTS - len(choice_features)) * choice_width)
-        values = (onehot(candidate["kind"], ["source", "pass", "choice", "targets"]) +
+        values = (onehot(candidate["kind"], CANDIDATE_KINDS) +
                   onehot(definition, self.cards) + targets + country_targets +
                   [len(candidate.get("choiceIds") or []) / 10.0,
                    len(candidate.get("targetIds") or []) / 10.0,
@@ -406,14 +463,14 @@ class PpoNetwork(nn.Module):
 
 
 def batch_tensors(samples, device):
-    states = torch.stack([item["state"] for item in samples]).to(device)
+    states = torch.stack([item["state"] for item in samples]).to(device=device, dtype=torch.float32)
     width = max(item["candidates"].shape[0] for item in samples)
     dim = samples[0]["candidates"].shape[1]
     candidates = torch.zeros((len(samples), width, dim), device=device)
     mask = torch.zeros((len(samples), width), dtype=torch.bool, device=device)
     for index, item in enumerate(samples):
         count = item["candidates"].shape[0]
-        candidates[index, :count] = item["candidates"].to(device)
+        candidates[index, :count] = item["candidates"].to(device=device, dtype=torch.float32)
         mask[index, :count] = True
     return states, candidates, mask
 
@@ -461,13 +518,26 @@ def assign_advantages(samples, rewards, elapsed_turns):
     return samples
 
 
-def select_action(model, state, candidates, device, deterministic=False):
+def select_action(model, state, candidates, device, deterministic=False, rng=None):
     with torch.no_grad():
         batch = [{"state": state, "candidates": candidates}]
         inputs = batch_tensors(batch, device)
         logits, value = model(*inputs)
         distribution = Categorical(logits=logits[0, :len(candidates)])
-        action = logits[0, :len(candidates)].argmax() if deterministic else distribution.sample()
+        if deterministic:
+            action = logits[0, :len(candidates)].argmax()
+        elif rng is not None:
+            probs = distribution.probs.cpu().tolist()
+            draw, total = rng.random(), 0.0
+            chosen = len(probs) - 1
+            for index, probability in enumerate(probs):
+                total += probability
+                if draw < total:
+                    chosen = index
+                    break
+            action = torch.tensor(chosen, device=device)
+        else:
+            action = distribution.sample()
         return int(action), float(distribution.log_prob(action)), float(value[0])
 
 
@@ -489,9 +559,10 @@ def weighted_baseline(observation, rng):
 
 
 def play_episode(client, encoder, model, device, mode, seed, max_decisions, trace="none",
-                 baseline_side=None, rng=None, card_set="events"):
+                 baseline_side=None, rng=None, card_set="events", record_metadata=None):
     rng = rng or random.Random(seed)
-    response = client.request(op="reset", seed=seed, mode=mode, cardSet=card_set, trace=trace)
+    response = client.request(op="reset", seed=seed, mode=mode, cardSet=card_set,
+                              trace=trace, recordMetadata=record_metadata)
     observation = response["observation"]
     samples, rewards, elapsed = [], [], []
     choices, sources, submitted, resolved = (defaultdict(int) for _ in range(4))
@@ -504,7 +575,7 @@ def play_episode(client, encoder, model, device, mode, seed, max_decisions, trac
             index = weighted_baseline(observation, rng)
             logprob, value = 0.0, 0.0
         else:
-            index, logprob, value = select_action(model, state, candidates, device)
+            index, logprob, value = select_action(model, state, candidates, device, rng=rng)
         chosen = observation["candidates"][index]
         if chosen["kind"] == "source":
             sources[chosen.get("definitionId") or "unknown"] += 1
@@ -595,7 +666,7 @@ def ppo_update(model, optimizer, samples, device, rng, epochs=4, minibatch=256):
 
 
 def checkpoint_payload(model, optimizer, encoder, client, mode, update, decisions, rng, next_seed,
-                       card_set="events"):
+                       card_set="events", completed_episodes=0, training_seed=None):
     return {"format": "quartermaster-ppo-checkpoint-v1", "encoderVersion": ENCODER_VERSION,
             "trainerVersion": TRAINER_VERSION,
             "trainerSourceSha256": TRAINER_SOURCE_HASH,
@@ -607,13 +678,16 @@ def checkpoint_payload(model, optimizer, encoder, client, mode, update, decision
             "network": {"stateDim": encoder.state_dim, "candidateDim": encoder.candidate_dim},
             "optimizerConfig": OPTIMIZER_CONFIG,
             "rewardConfig": REWARD_CONFIG,
-            "update": update, "completedDecisions": decisions, "nextSeed": next_seed,
+            "update": update, "policyVersion": update,
+            "completedDecisions": decisions, "completedEpisodes": completed_episodes,
+            "episodesPerUpdate": 40, "nextSeed": next_seed, "trainingSeed": training_seed,
             "pythonRandomState": rng.getstate(), "torchRandomState": torch.get_rng_state(),
             "cudaRandomState": torch.cuda.get_rng_state_all() if torch.cuda.is_available() else None,
             "modelState": model.state_dict(), "optimizerState": optimizer.state_dict()}
 
 
-def restore_checkpoint(path, model, optimizer, encoder, client, mode, rng, card_set="events"):
+def restore_checkpoint(path, model, optimizer, encoder, client, mode, rng, card_set="events",
+                       training_seed=None):
     saved = torch.load(path, map_location="cpu", weights_only=False)
     expected = {"format": "quartermaster-ppo-checkpoint-v1", "encoderVersion": ENCODER_VERSION,
                 "trainerVersion": TRAINER_VERSION, "trainerSourceSha256": TRAINER_SOURCE_HASH,
@@ -624,9 +698,14 @@ def restore_checkpoint(path, model, optimizer, encoder, client, mode, rng, card_
                 "mode": mode, "cardSet": card_set,
                 "network": {"stateDim": encoder.state_dim,
                             "candidateDim": encoder.candidate_dim},
-                "rewardConfig": REWARD_CONFIG, "optimizerConfig": OPTIMIZER_CONFIG}
+                "rewardConfig": REWARD_CONFIG, "optimizerConfig": OPTIMIZER_CONFIG,
+                "episodesPerUpdate": 40}
     if any(saved.get(key) != value for key, value in expected.items()):
         raise ValueError("Checkpoint schema, mode, or rules build differs")
+    if saved.get("completedEpisodes") != saved.get("update", -1) * 40:
+        raise ValueError("Checkpoint complete-episode count differs from update boundary")
+    if training_seed is not None and saved.get("trainingSeed") != training_seed:
+        raise ValueError("Checkpoint training seed differs")
     model.load_state_dict(saved["modelState"])
     optimizer.load_state_dict(saved["optimizerState"])
     rng.setstate(saved["pythonRandomState"])
@@ -648,6 +727,8 @@ def evaluation(client, encoder, model, device, mode, seeds, max_decisions, card_
                            "learnerTeam": "allies" if baseline == "axis" else "axis",
                            "winner": end["winner"], "termination": end["termination"],
                            "round": end["round"], "decisions": episode["decisions"],
+                           "countryTurns": episode["countryTurns"],
+                           "choices": episode["choices"],
                            "scoreDifference": end["allianceScores"]["axis"] - end["allianceScores"]["allies"],
                            "eventSourceSelections": sum(count for name, count in episode["sources"].items()
                                                         if name.startswith("special_")),
@@ -656,139 +737,13 @@ def evaluation(client, encoder, model, device, mode, seeds, max_decisions, card_
                            "eventResolutions": sum(count for name, count in episode["resolved"].items()
                                                    if name.startswith("special_")),
                            "consumedEvents": episode["consumedEvents"],
-                           "remainingBySeat": episode["remainingBySeat"]})
+                           "remainingBySeat": episode["remainingBySeat"],
+                           "discardedBySeat": episode["discardedBySeat"]})
     return output
 
 
-def process_usage(client):
-    if sys.platform != "win32":
-        return None
-    command = (f"Get-Process -Id {os.getpid()},{client.process.pid} -ErrorAction SilentlyContinue | "
-               "Select-Object Id,CPU,WorkingSet64,PrivateMemorySize64 | ConvertTo-Json -Compress")
-    try:
-        result = subprocess.run(["powershell", "-NoProfile", "-Command", command],
-                                capture_output=True, text=True, timeout=5, check=True)
-        data = json.loads(result.stdout)
-        return data if isinstance(data, list) else [data]
-    except (OSError, ValueError, subprocess.SubprocessError):
-        return None
-
-
-def main():
-    parser = argparse.ArgumentParser(description="Headless PPO event curriculum")
-    parser.add_argument("--mode", choices=["A", "B"], required=True)
-    parser.add_argument("--card-set", choices=["basics", "events"], default="events")
-    parser.add_argument("--updates", type=int, default=1)
-    parser.add_argument("--batch-decisions", type=int, default=4096)
-    parser.add_argument("--max-episode-decisions", type=int, default=3000)
-    parser.add_argument("--max-episodes-per-update", type=int, default=50)
-    parser.add_argument("--seed", type=int, default=20260929)
-    parser.add_argument("--checkpoint", type=Path, required=True)
-    parser.add_argument("--resume", action="store_true")
-    parser.add_argument("--trace", choices=["none", "summary", "full"], default="none")
-    parser.add_argument("--log", type=Path, default=None)
-    parser.add_argument("--eval-seeds", type=int, default=0)
-    parser.add_argument("--report", type=Path, default=None)
-    parser.add_argument("--cpu", action="store_true")
-    args = parser.parse_args()
-    device = torch.device("cpu" if args.cpu or not torch.cuda.is_available() else "cuda")
-    torch.set_num_threads(min(4, os.cpu_count() or 1))
-    rng = random.Random(args.seed)
-    torch.manual_seed(args.seed)
-    started = time.perf_counter()
-    client = ArenaClient(args.log)
-    try:
-        encoder = Encoder(client.schema)
-        model = PpoNetwork(encoder.state_dim, encoder.candidate_dim).to(device)
-        optimizer = torch.optim.Adam(model.parameters(), lr=3e-4)
-        next_seed = args.seed
-        completed_decisions = 0
-        start_update = 0
-        if args.resume:
-            saved = restore_checkpoint(args.checkpoint, model, optimizer, encoder, client,
-                                       args.mode, rng, args.card_set)
-            next_seed = saved["nextSeed"]
-            completed_decisions = saved["completedDecisions"]
-            start_update = saved["update"]
-        report = {"mode": args.mode, "cardSet": args.card_set,
-                  "buildFingerprint": client.fingerprint,
-                  "device": str(device), "stateDim": encoder.state_dim,
-                  "candidateDim": encoder.candidate_dim,
-                  "parameters": sum(p.numel() for p in model.parameters()), "updates": []}
-        for update_number in range(start_update + 1, start_update + args.updates + 1):
-            batch, episodes = [], []
-            began = time.perf_counter()
-            usage_start = process_usage(client)
-            peak_working = defaultdict(int)
-            while len(batch) < args.batch_decisions and len(episodes) < args.max_episodes_per_update:
-                episode = play_episode(client, encoder, model, device, args.mode, next_seed,
-                                       args.max_episode_decisions, args.trace, rng=rng,
-                                       card_set=args.card_set)
-                next_seed += 1
-                episodes.append({"seed": next_seed - 1, "termination": episode["outcome"]["termination"],
-                                 "reason": episode["outcome"].get("reason"),
-                                 "winner": episode["outcome"]["winner"],
-                                 "round": episode["outcome"]["round"],
-                                 "decisions": episode["decisions"],
-                                 "choices": episode["choices"], "shaped": episode["shaped"],
-                                 "sources": episode["sources"],
-                                 "submitted": episode["submitted"],
-                                 "resolved": episode["resolved"],
-                                 "consumedEvents": episode["consumedEvents"],
-                                 "countryTurns": episode["countryTurns"],
-                                 "meanOpenFraction": episode["meanOpenFraction"],
-                                 "remainingBySeat": episode["remainingBySeat"],
-                                 "discardedBySeat": episode["discardedBySeat"],
-                                 "allianceScores": episode["outcome"]["allianceScores"]})
-                for process in process_usage(client) or []:
-                    peak_working[process["Id"]] = max(peak_working[process["Id"]],
-                                                      process["WorkingSet64"])
-                if episode["outcome"]["termination"] == "natural":
-                    batch.extend(episode["samples"])
-                print(json.dumps({"update": update_number, "episode": episodes[-1]}, ensure_ascii=False), flush=True)
-            if not batch:
-                raise RuntimeError("Every episode truncated; PPO update refused")
-            truncated = sum(e["termination"] == "truncated" for e in episodes)
-            if truncated:
-                raise RuntimeError(f"PPO batch contains {truncated} truncated episodes; investigate before update")
-            collection_seconds = time.perf_counter() - began
-            metrics = ppo_update(model, optimizer, batch, device, rng)
-            completed_decisions += len(batch)
-            usage_end = process_usage(client)
-            args.checkpoint.parent.mkdir(parents=True, exist_ok=True)
-            torch.save(checkpoint_payload(model, optimizer, encoder, client, args.mode,
-                                          update_number, completed_decisions, rng, next_seed,
-                                          args.card_set), args.checkpoint)
-            result = {"number": update_number, "episodes": episodes, "completedDecisions": len(batch),
-                      "truncatedEpisodes": sum(e["termination"] == "truncated" for e in episodes),
-                      "collectionSeconds": collection_seconds,
-                      "completedDecisionsPerSecond": len(batch) / collection_seconds,
-                      "completedCountryTurns": sum(e["countryTurns"] for e in episodes
-                                                   if e["termination"] == "natural"),
-                      "discardedTruncatedCountryTurns": sum(e["countryTurns"] for e in episodes
-                                                            if e["termination"] == "truncated"),
-                      "optimization": metrics,
-                      "processUsage": {"before": usage_start, "after": usage_end,
-                                       "sampledPeakWorkingSetBytes": dict(peak_working)},
-                      "gpuPeakAllocatedBytes": torch.cuda.max_memory_allocated() if device.type == "cuda" else 0}
-            report["updates"].append(result)
-            print(json.dumps({"updateSummary": result}, ensure_ascii=False), flush=True)
-        if args.eval_seeds:
-            report["evaluation"] = {
-                mode: evaluation(client, encoder, model, device, mode,
-                                 range(987650, 987650 + args.eval_seeds),
-                                 args.max_episode_decisions, args.card_set)
-                for mode in ("A", "B")}
-        report["wallSeconds"] = time.perf_counter() - started
-        if args.report:
-            args.report.parent.mkdir(parents=True, exist_ok=True)
-            args.report.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
-        print(json.dumps({"final": {"checkpoint": str(args.checkpoint),
-                                    "wallSeconds": report["wallSeconds"]}}, ensure_ascii=False), flush=True)
-    finally:
-        client.close()
-
-
 if __name__ == "__main__":
+    sys.path.insert(0, str(ROOT))
+    from scripts.ppo_parallel import main
     main()
 

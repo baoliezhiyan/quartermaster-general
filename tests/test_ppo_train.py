@@ -85,12 +85,13 @@ class PpoMathTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "checkpoint.pt"
             torch.save(checkpoint_payload(model, optimizer, encoder, client, "A", 1, 100,
-                                          rng, 10), path)
+                                          rng, 10, completed_episodes=40, training_seed=9), path)
             restored = PpoNetwork(5, 4)
             restored_optimizer = torch.optim.Adam(restored.parameters(), lr=3e-4)
             saved = restore_checkpoint(path, restored, restored_optimizer, encoder,
                                        client, "A", random.Random())
             self.assertEqual(saved["completedDecisions"], 100)
+            self.assertEqual(saved["completedEpisodes"], 40)
             with torch.no_grad():
                 after = restored(*batch_tensors([sample], "cpu"))
             for original, loaded in zip(before, after):
@@ -100,6 +101,9 @@ class PpoMathTests(unittest.TestCase):
                 restore_checkpoint(path, restored, restored_optimizer, encoder,
                                    client, "A", random.Random())
             client.fingerprint = "a" * 64
+            with self.assertRaisesRegex(ValueError, "training seed"):
+                restore_checkpoint(path, restored, restored_optimizer, encoder,
+                                   client, "A", random.Random(), training_seed=10)
             for key, mutation in [
                     ("rewardConfig", {"gamma": 0.9, "lambdaRound": 0.5, "potential": 100}),
                     ("optimizerConfig", {"lr": 0.01}),
@@ -107,7 +111,7 @@ class PpoMathTests(unittest.TestCase):
                     ("encoderDictionarySha256", "0" * 64),
                     ("cardSet", "basics")]:
                 damaged = checkpoint_payload(model, optimizer, encoder, client, "A", 1, 100,
-                                             rng, 10)
+                                             rng, 10, completed_episodes=40, training_seed=9)
                 if mutation is None:
                     del damaged[key]
                 else:
@@ -116,6 +120,12 @@ class PpoMathTests(unittest.TestCase):
                 with self.assertRaises(ValueError, msg=key):
                     restore_checkpoint(path, restored, restored_optimizer, encoder,
                                        client, "A", random.Random())
+            damaged = checkpoint_payload(model, optimizer, encoder, client, "A", 1, 100,
+                                         rng, 10, completed_episodes=39, training_seed=9)
+            torch.save(damaged, path)
+            with self.assertRaisesRegex(ValueError, "complete-episode count"):
+                restore_checkpoint(path, restored, restored_optimizer, encoder,
+                                   client, "A", random.Random())
 
 
 if __name__ == "__main__":

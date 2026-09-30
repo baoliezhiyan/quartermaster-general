@@ -18,7 +18,9 @@ export const PPO_ARENA_FORMAT='quartermaster-ppo-arena-v2';
 export const PPO_OBSERVATION_SCHEMA_VERSION='ppo-observation-v3';
 export const PPO_ACTION_SCHEMA_VERSION='ppo-actions-v3';
 export const PPO_STATIC_SCHEMA={observationSchemaVersion:PPO_OBSERVATION_SCHEMA_VERSION,
-  actionSchemaVersion:PPO_ACTION_SCHEMA_VERSION,regions:MAP.regions,baseEdges:MAP.baseEdges,
+  actionSchemaVersion:PPO_ACTION_SCHEMA_VERSION,
+  courseVersion:TRAINING_COURSE_VERSION,overridesVersion:TRAINING_OVERRIDES_VERSION,
+  regions:MAP.regions,baseEdges:MAP.baseEdges,
   straits:MAP.straits,seats:SEATS,countries:Object.keys(COUNTRY_NAMES),
   basicActions:BASIC_ACTIONS,eventIds:Object.values(TRAINING_EVENT_IDS_BY_SEAT).flat(),
   bindingKeys:['built-navy','new-china','xiangxi-battle'],maxEffectTokens:32};

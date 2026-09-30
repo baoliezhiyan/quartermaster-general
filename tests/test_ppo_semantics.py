@@ -104,8 +104,7 @@ class SemanticObservationTests(unittest.TestCase):
     def test_real_build_order_and_recruit_recycle_choices_are_distinct(self):
         for seed, step, kind, left, right in [
                 (929600, 23, "BUILD_ORDER", "build_army|british_isles", "build_navy|sea_north_sea"),
-                (929602, 57, "ACTION", "recruit:western_china:initial:china",
-                 "recruit:western_china:unit:30:9")]:
+                (929602, 57, "ACTION", "eastern_china", "southeast_asia")]:
             rng = random.Random(seed)
             obs = self.client.request(op="reset", seed=seed, mode="A", cardSet="events")["observation"]
             for _ in range(step):
@@ -114,7 +113,13 @@ class SemanticObservationTests(unittest.TestCase):
                     **obs["decision"], "actionId": candidate["id"]})["observation"]
             self.assertEqual(obs["choiceKind"], kind)
             candidates = {c["choiceIds"][0]: c for c in obs["candidates"] if c.get("choiceIds")}
-            a, b = candidates[left], candidates[right]
+            if kind == "ACTION":
+                by_region = {c["choices"][0]["source"]["regionId"]: c
+                             for c in candidates.values()
+                             if c["choiceIds"][0].startswith("recruit:western_china:")}
+                a, b = by_region[left], by_region[right]
+            else:
+                a, b = candidates[left], candidates[right]
             self.assertNotEqual(self.encoder.encode_candidate(obs, a),
                                 self.encoder.encode_candidate(obs, b))
             if kind == "ACTION":

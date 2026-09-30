@@ -3,12 +3,32 @@ import {PpoTrainingArena} from '../src/training/ppoArena';
 import {TRAINING_EVENT_IDS,TRAINING_EVENT_IDS_BY_SEAT,basicOpenProbability,openSpecialCount} from '../src/core/trainingCourse';
 import {createGame} from '../src/core/game';
 import {cardEffects} from '../src/core/specialCards';
+import {realTriggers} from '../src/core/specialCards';
+import type {Effect,ResolutionFrame} from '../src/core/resolutionTypes';
 import {discardDeckTop} from '../src/core/decks';
 import {regularCatalog} from '../src/core/cardCatalog';
 import type {CardInstance} from '../src/core/types';
 
 const fingerprint='b'.repeat(64);
 describe('PPO event curriculum',()=>{
+  it('training trigger scan matches the unfiltered reference on course-only sources',()=>{
+    const state=new PpoTrainingArena(42,'trigger-parity',{mode:'A',buildFingerprint:fingerprint})
+      .exportSnapshot().state;
+    const reference=structuredClone(state);
+    delete reference.trainingCourse;
+    const frame={id:'parity-frame',source:'test',owner:'germany',effects:[],nextEffectIndex:0,
+      stage:'Validate',status:'RUNNING',parentEventId:null,ancestorIds:[],sourceAncestors:[],
+      currentEventId:'parity-event',finalZone:'discardPile'} as ResolutionFrame;
+    const effects:Effect[]=[
+      ...['TURN_START_WINDOW','SCORE','SCORE_STATUS','STANDARD_CARD_PLAYED'].map(tag=>
+        ({kind:'signal',tag:`PHASE:${tag}`,label:tag}) as Effect),
+      ...(['build_army','build_navy','land_battle','sea_battle'] as const).map(action=>
+        ({kind:'action',country:'germany',action,label:action}) as Effect),
+    ];
+    for(const effect of effects)for(const timing of ['Before','After'] as const)
+      expect(realTriggers(structuredClone(state),frame,structuredClone(effect),timing))
+        .toEqual(realTriggers(structuredClone(reference),frame,structuredClone(effect),timing));
+  });
   it('freezes exactly 58 balanced event IDs and A/B opening boundaries',()=>{
     expect(TRAINING_EVENT_IDS.size).toBe(58);
     expect(TRAINING_EVENT_IDS.has('special_227')).toBe(false);
