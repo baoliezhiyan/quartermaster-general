@@ -67,9 +67,9 @@ export function realTriggers(s:GameState,frame:ResolutionFrame,e:Effect,timing:'
   const rules:TriggerRule[]=includePrelude?preludeTriggers(s,frame,e,timing,sourceInstanceId):[];
   const region=e.kind==='action'?e.option?.regionId:undefined;
   const phase=(p:string)=>e.kind==='signal' && e.tag===`PHASE:${p}`;
-  // The training arena has only four basic cards. Keep prelude/system rules below,
-  // but avoid scanning its finite resource pool at every effect window.
-  if(!s.trainingBasicOnly) for(const owner of SEATS) for(const card of [...s.decks[owner].active,...s.decks[owner].hand,...s.decks[owner].faceDown,...s.decks[owner].resolving]) {
+  // The frozen PPO courses contain only four basics and one-shot events. None
+  // supplies a persistent/response/enhancement trigger; retain system rules below.
+  if(!s.trainingBasicOnly&&!s.trainingCourse) for(const owner of SEATS) for(const card of [...s.decks[owner].active,...s.decks[owner].hand,...s.decks[owner].faceDown,...s.decks[owner].resolving]) {
     if(sourceInstanceId&&card.id!==sourceInstanceId)continue;
     if(!triggerCandidate(card.definitionId,e,timing))continue;
     const d=specialCard(card.definitionId,card.balance); if(!d) continue;

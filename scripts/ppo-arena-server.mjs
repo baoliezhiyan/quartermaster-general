@@ -1,15 +1,22 @@
 import {build} from 'vite';
 import {createHash} from 'node:crypto';
 import {createInterface} from 'node:readline';
-import {createWriteStream,mkdirSync} from 'node:fs';
+import {createWriteStream,mkdirSync,readFileSync,writeFileSync,existsSync} from 'node:fs';
 import {dirname,resolve} from 'node:path';
 
 const args=process.argv.slice(2);
 const get=(name,fallback)=>{const i=args.indexOf(name);return i<0?fallback:args[i+1];};
 const logPath=get('--log',null);
-const compiled=await build({configFile:false,logLevel:'silent',build:{ssr:'src/training/ppoArena.ts',
-  write:false,rollupOptions:{input:'src/training/ppoArena.ts'}}});
-const code=compiled.output[0].code;
+const bundlePath=get('--bundle',null);
+const entryPath=get('--entry','src/training/ppoArena.ts');
+let code;
+if(bundlePath&&existsSync(bundlePath))code=readFileSync(bundlePath,'utf8');
+else {
+  const compiled=await build({configFile:false,logLevel:'silent',build:{ssr:entryPath,
+    write:false,rollupOptions:{input:entryPath}}});
+  code=compiled.output[0].code;
+  if(bundlePath){mkdirSync(dirname(resolve(bundlePath)),{recursive:true});writeFileSync(bundlePath,code,'utf8');}
+}
 const fingerprint=createHash('sha256').update(code).digest('hex');
 const {PpoTrainingArena,PPO_STATIC_SCHEMA}=await import(`data:text/javascript;base64,${Buffer.from(code).toString('base64')}`);
 let arena=null;
@@ -22,6 +29,7 @@ const rl=createInterface({input:process.stdin,crlfDelay:Infinity});
 for await(const line of rl){
   let request;
   try{request=JSON.parse(line);let response;
+    const operationStarted=process.hrtime.bigint();
     if(request.op==='reset'){
       arena=new PpoTrainingArena(request.seed,request.gameId??`ppo-${request.seed}`,{
         mode:request.mode,cardSet:request.cardSet??'events',
@@ -47,7 +55,8 @@ for await(const line of rl){
     }else if(request.op==='close'){
       send({ok:true});break;
     }else throw new Error('Unknown operation');
-    send({ok:true,...response});
+    const operationSeconds=Number(process.hrtime.bigint()-operationStarted)/1e9;
+    send({ok:true,tag:request.tag??null,operationSeconds,...response});
   }catch(error){send({ok:false,error:error instanceof Error?error.message:String(error)});}
 }
 if(log)await new Promise(done=>log.end(done));
