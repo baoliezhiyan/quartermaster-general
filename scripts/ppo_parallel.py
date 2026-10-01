@@ -427,8 +427,10 @@ def main():
     parser.add_argument("--checkpoint", type=Path, required=True)
     parser.add_argument("--resume", action="store_true")
     parser.add_argument("--trace", choices=["none", "summary", "full"], default="none")
-    parser.add_argument("--eval-seeds", type=int, default=20)
-    parser.add_argument("--no-eval", action="store_true")
+    # Accepted for old short-benchmark commands; automatic baseline evaluations
+    # are no longer part of training or round output.
+    parser.add_argument("--eval-seeds", type=int, default=0, help=argparse.SUPPRESS)
+    parser.add_argument("--no-eval", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--report", type=Path, default=None)
     parser.add_argument("--cpu", action="store_true")
     args = parser.parse_args()
@@ -495,6 +497,9 @@ def main():
                 if report.get("trainerSourceSha256") != ppo.TRAINER_SOURCE_HASH:
                     report["priorTrainerSourceSha256"] = report.get("trainerSourceSha256")
                     report["trainerSourceSha256"] = ppo.TRAINER_SOURCE_HASH
+                # Older reports may retain the removed fixed-opponent evaluations.
+                for obsolete in ("baselineEvaluation", "baselineEvaluationSeconds", "evaluations"):
+                    report.pop(obsolete, None)
             warmup_started = time.perf_counter()
             dummy = encoder._dummy()
             dummy["candidates"] = [{"kind": "pass", "id": "warmup"}]
@@ -504,17 +509,6 @@ def main():
                 if device.type == "cuda":
                     torch.cuda.synchronize()
             report["warmupSeconds"] = time.perf_counter() - warmup_started
-            if not args.no_eval and args.eval_seeds and start_update == 0:
-                evaluation_started = time.perf_counter()
-                with ProgressDisplay(f"{args.mode} {ordinal(1, '轮')} · 基线评估",
-                                     2 * args.eval_seeds) as progress:
-                    games = ppo.evaluation(clients[0], encoder, model, device,
-                        args.mode, range(987650, 987650 + args.eval_seeds),
-                        args.max_episode_decisions, args.card_set,
-                        on_progress=progress.update)
-                report["baselineEvaluationSeconds"] = time.perf_counter() - evaluation_started
-                report["baselineEvaluation"] = {"summary": summarize_evaluation(games),
-                                                "games": games}
             for update in range(start_update + 1, start_update + args.updates + 1):
                 if device.type == "cuda":
                     torch.cuda.reset_peak_memory_stats()
@@ -562,18 +556,6 @@ def main():
                           "gpuPeakReservedBytes": torch.cuda.max_memory_reserved()
                           if device.type == "cuda" else 0}
                 report["updates"].append(result)
-                if not args.no_eval and args.eval_seeds and update % 10 == 0:
-                    evaluation_started = time.perf_counter()
-                    with ProgressDisplay(f"{args.mode} {ordinal((update - 1) // 10 + 1, '轮')} · 更新后评估",
-                                         2 * args.eval_seeds) as progress:
-                        games = ppo.evaluation(
-                            clients[0], encoder, model, device, args.mode,
-                            range(987650, 987650 + args.eval_seeds),
-                            args.max_episode_decisions, args.card_set,
-                            on_progress=progress.update)
-                    report.setdefault("evaluations", {})[str(update)] = {
-                        "summary": summarize_evaluation(games), "games": games,
-                        "seconds": time.perf_counter() - evaluation_started}
                 if args.report:
                     args.report.parent.mkdir(parents=True, exist_ok=True)
                     temporary_report = args.report.with_suffix(args.report.suffix + ".tmp")

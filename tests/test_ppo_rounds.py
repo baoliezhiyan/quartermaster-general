@@ -34,13 +34,23 @@ class RoundRunnerTests(unittest.TestCase):
             self.assertEqual(rows[1]["snapshot"]["header"]["seed"], 987650)
             self.assertEqual(rows[-1]["snapshot"]["decisionCount"], 1)
 
-    def test_selected_game_is_reproducible_and_uses_fixed_seed_pool(self):
+    def test_selected_game_is_reproducible_and_not_the_old_fixed_seed_pool(self):
+        seeds = set()
         for mode in ("A", "B"):
             for number in range(1, 12):
-                choice = ppo_rounds.selected_game(20260930, mode, number)
-                self.assertEqual(choice, ppo_rounds.selected_game(20260930, mode, number))
-                self.assertIn(choice[0], ppo_rounds.EVALUATION_SEEDS)
-                self.assertIn(choice[1], ("axis", "allies"))
+                seed = ppo_rounds.selected_game(20260930, mode, number)
+                self.assertEqual(seed, ppo_rounds.selected_game(20260930, mode, number))
+                self.assertGreaterEqual(seed, 1_000_000_000)
+                seeds.add(seed)
+        self.assertEqual(len(seeds), 22)
+
+    def test_round_runner_does_not_request_fixed_opponent_evaluation(self):
+        with patch.object(ppo_rounds.subprocess, "run") as run:
+            ppo_rounds.run_training("A", 10, False, 10, 20260930,
+                                    Path("latest.pt"), Path("report.json"))
+        command = run.call_args.args[0]
+        self.assertNotIn("--eval-seeds", command)
+        self.assertNotIn("--no-eval", command)
 
     def test_record_validation_rejects_missing_state_and_truncation(self):
         with tempfile.TemporaryDirectory() as directory:

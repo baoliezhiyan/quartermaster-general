@@ -61,11 +61,12 @@ TRAINER_SOURCE_HASH = hashlib.sha256(Path(__file__).read_bytes() +
     (Path(__file__).with_name("ppo_parallel.py").read_bytes()
      if Path(__file__).with_name("ppo_parallel.py").exists() else b"") +
     Path(__file__).with_name("ppo-arena-server.mjs").read_bytes()).hexdigest()
-# ccb81d4 used the same training rules. Its only successor changes here are
-# terminal progress and report presentation, so completed-update checkpoints
+# These builds use the same training rules. Their successors change only
+# progress display and evaluation scheduling, so completed-update checkpoints
 # may resume after all other schema, rules, course and seed checks still pass.
 CONSOLE_ONLY_PREDECESSOR_HASHES = frozenset({
     "3f0ff2c6491001bf3c3bd144712b2d055c2d15f750a6bf9229e5e68f5b350e0e",
+    "02c6b3eb1c4a692fccbf9d7c1852b038b3ae14498a825ae8b064f46e94e129fb",
 })
 
 
