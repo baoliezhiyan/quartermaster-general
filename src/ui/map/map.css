@@ -365,10 +365,12 @@ main { padding-top:12px; }
 .window-drag-handle:active { cursor:grabbing; }
 
 .encyclopedia-toggle { margin-left:12px; }
-.card-encyclopedia { position:absolute; inset:0; z-index:80; background:#f0eee3; color:#203c43; display:flex; flex-direction:column; overflow:hidden; }
+.card-encyclopedia { position:absolute; inset:0 auto 0 0; width:min(100%,1280px); z-index:80; background:#f0eee3; color:#203c43; display:flex; flex-direction:column; overflow:hidden; }
 .card-encyclopedia nav { display:flex; flex-wrap:wrap; gap:8px; padding:12px; border-bottom:1px solid #a6af96; }
 .card-encyclopedia nav button[aria-pressed=true] { outline:2px solid #436455; background:#dce4cf; }
 .encyclopedia-grid { overflow:auto; padding:16px; display:grid; grid-template-columns:repeat(auto-fill,minmax(190px,1fr)); gap:16px; align-content:start; }
 .encyclopedia-grid article { min-width:0; }
 .encyclopedia-grid .card-face { width:100%; height:320px; }
 .encyclopedia-grid .card-effect { overflow:auto; }
+
+.encyclopedia-prelude { display:flex; align-items:center; gap:6px; margin-left:12px; white-space:nowrap; }

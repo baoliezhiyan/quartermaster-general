@@ -24,10 +24,14 @@ try{
  await page.getByRole('button',{name:'全卡图鉴',exact:true}).click();
  const atlas=page.getByRole('region',{name:'全卡图鉴',exact:true});await atlas.waitFor();
  assert(await atlas.getByRole('button').count()===6,'Missing six countries');
+ await atlas.getByLabel('显示序章卡牌').uncheck();
+ assert(await atlas.locator('[data-card-id^="prelude_"]').count()===0,'Prelude toggle failed');
+ assert(await atlas.locator('[data-card-id="sea_battle"]').innerText()==='发起海战*2','Missing sea battle count');
+ assert(await atlas.locator('[data-card-id="build_army"]').innerText()==='建设陆军*6','Wrong army count');
  await atlas.getByRole('button',{name:'美国',exact:true}).click();
  await atlas.getByText('罗斯福成立生产管理部',{exact:true}).waitFor();
  assert(await atlas.locator('[data-card-id="special_91"]').count()===1,'Missing Chinese card in US catalog');
- const bounds=await atlas.boundingBox();assert(bounds&&bounds.height>200&&bounds.width>500,'Atlas has no usable layout');
+ const bounds=await atlas.boundingBox();assert(bounds&&bounds.height>200&&bounds.width>500&&bounds.width<=1280,'Atlas has no usable layout');
  await page.screenshot({path:'outputs/encyclopedia-v176.png'});
  await page.getByRole('button',{name:'全卡图鉴',exact:true}).click();assert(await atlas.count()===0,'Atlas did not close');
 
