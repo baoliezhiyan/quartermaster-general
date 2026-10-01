@@ -26,8 +26,8 @@ try{
  assert(await atlas.getByRole('button').count()===6,'Missing six countries');
  await atlas.getByLabel('显示序章卡牌').uncheck();
  assert(await atlas.locator('[data-card-id^="prelude_"]').count()===0,'Prelude toggle failed');
- assert(await atlas.locator('[data-card-id="sea_battle"]').innerText()==='发起海战*2','Missing sea battle count');
- assert(await atlas.locator('[data-card-id="build_army"]').innerText()==='建设陆军*6','Wrong army count');
+ assert(await atlas.locator('[data-card-id="sea_battle"] .card-name').innerText()==='发起海战*2','Missing sea battle count');
+ assert(await atlas.locator('[data-card-id="build_army"] .card-name').innerText()==='建设陆军*6','Wrong army count');
  await atlas.getByRole('button',{name:'美国',exact:true}).click();
  await atlas.getByText('罗斯福成立生产管理部',{exact:true}).waitFor();
  assert(await atlas.locator('[data-card-id="special_91"]').count()===1,'Missing Chinese card in US catalog');

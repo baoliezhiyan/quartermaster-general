@@ -7,6 +7,7 @@ async function load(entry){
 }
 const catalog=await load('src/core/cardCatalog.ts');
 const basic=await load('src/core/basic.ts');
+const numbering=await load('src/ui/cardNumbers.ts');
 const {version}=JSON.parse(await readFile('package.json','utf8'));
 const escape=value=>String(value??'').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('|','\\|').replaceAll('\n','<br>');
 await mkdir('docs/cards',{recursive:true});
@@ -22,9 +23,10 @@ for(const balance of [false,true]){
   }
   for(const [title,cards] of [['常规特殊牌',catalog.regularCatalog(balance,false)],['序章牌',catalog.preludeCatalog(balance)],['中立初始牌（仅启用中立时）',catalog.NEUTRALITY_CARDS]]){
     if(new Set(cards.map(c=>c.id)).size!==cards.length)throw Error(`Duplicate card ID in ${title}`);
-    lines.push('',`## ${title}`,'','| ID | 所属牌库 | 牌面国家 | 类别 | 名称 | 紧张度 | 卡面文本 |','| --- | --- | --- | --- | --- | --- | --- |');
-    for(const c of cards)lines.push('| '+[c.id,basic.COUNTRY_NAMES[c.deckOwner],basic.COUNTRY_NAMES[c.country],c.type,c.name,c.type==='历史'?c.tension??'—':'—',c.text].map(escape).join(' | ')+' |');
+    lines.push('',`## ${title}`,'','| 编号 | 内部稳定ID | 所属牌库 | 牌面国家 | 类别 | 名称 | 紧张度 | 卡面文本 |','| --- | --- | --- | --- | --- | --- | --- | --- |');
+    for(const c of [...cards].sort((a,b)=>numbering.numberedCatalog(balance).findIndex(n=>n.id===a.id)-numbering.numberedCatalog(balance).findIndex(n=>n.id===b.id)))lines.push('| '+[numbering.catalogCardNumber(c.deckOwner,c.id,balance),c.id,basic.COUNTRY_NAMES[c.deckOwner],basic.COUNTRY_NAMES[c.country],c.type,c.name,c.type==='历史'?c.tension??'—':'—',c.text].map(escape).join(' | ')+' |');
   }
+  await writeFile(`docs/cards/${balance?'balanced':'standard'}-ids.json`,JSON.stringify(numbering.numberedCatalog(balance),null,2)+'\n');
   await writeFile(`docs/cards/${balance?'balanced':'standard'}.md`,lines.join('\n')+'\n');
 }
 console.log('Generated docs/cards/standard.md and balanced.md');
