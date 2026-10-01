@@ -1,6 +1,6 @@
 # 训练端输出规范：场面动作与独立牌区 v1.0
 
-日期：2026-10-01。状态：客户端接口已实现；尚无真实训练端文件联调。本规范是训练适配器的新增契约，不替换正式对局的动作回放协议。类型源为 `src/actionReplay/trainingContract.ts`，运行时校验为 `trainingCodec.ts`。
+日期：2026-10-01。状态：客户端接口已实现，PPO A/B 完整抽样局通过训练端导出及客户端逐步重演短测；尚未启动正式 50 次更新训练。本规范是训练适配器的新增契约，不替换正式对局的动作回放协议。类型源为 `src/actionReplay/trainingContract.ts`，运行时校验为 `trainingCodec.ts`。
 
 ## 1. 基本边界
 
@@ -100,4 +100,4 @@ action 支持 build_army/build_navy/recruit_army/recruit_navy/land_battle/sea_ba
 
 未提供 hand/drawPile/discardPile 完全允许；只提供 resourcePool 也允许。多个库同时保留同一ID完全允许。每一步 source card 不在任何展示库也允许。这些都不构成正式出牌合法性错误。
 
-`回放样例/constructed-training-resources.jsonl` 是客户端构造样例，测试跨库重复、显式移动、全量覆盖、独立建设和分数，**不是训练端真实A/B输出**。训练端接入后须另交 A、B 完整文件，覆盖回合外决策、费用、额外出牌、资源刷新、最后一步及所有实际课程事件，再进行真实跨端验收。
+`回放样例/constructed-training-resources.jsonl` 是客户端构造样例，测试跨库重复、显式移动、全量覆盖、独立建设和分数，**不是训练端真实A/B输出**。训练端现已能从 A/B 完整抽样局输出文件：手牌恒空；未耗牌在牌库、已耗牌在弃牌堆；A 资源池恒空，B 在本国回合开始列出当轮开放牌。导出器以真实引擎命令轨迹展开 `training_action`，在交付前用客户端 `TrainingController.checkReplay()` 全程重演。已运行固定种子的 A/B 自然终局短测；覆盖仍以这些样本和回归用例为限，后续正式训练所得样本仍须按同一协议验收。

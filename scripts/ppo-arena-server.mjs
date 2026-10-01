@@ -34,7 +34,7 @@ for await(const line of rl){
     if(request.op==='reset'){
       arena=new PpoTrainingArena(request.seed,request.gameId??`ppo-${request.seed}`,{
         mode:request.mode,cardSet:request.cardSet??'events',
-        buildFingerprint:fingerprint,trace:request.trace??'none'});
+        buildFingerprint:fingerprint,trace:request.trace??'none',captureReplay:logSnapshots});
       record({recordType:'AI训练记录',logFormat:'quartermaster-ppo-training-jsonl-v2',
         trainingMetadata:request.recordMetadata??null,...arena.header});
       response={observation:arena.observe(),header:arena.header};

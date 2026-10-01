@@ -41,6 +41,7 @@ export interface GameState {
     version: 'ppo-events-v1'; mode: 'A' | 'B';
     openIds: Record<SeatId,string[]>;
     openRandomState: number; discardRandomState: number;
+    captureReplay?:boolean;
   };
   /** Arena-only fast path: every deck contains basic cards exclusively. */
   trainingBasicOnly?: boolean;
@@ -120,6 +121,9 @@ export type Command =
     | { type: 'DEBUG_PLACEMENT'; country: CountryId; unitType: 'army' | 'navy'; mode: 'build' | 'recruit'; regionId: string; optionId: string; cost: number; cardIds: string[] }
   ));
 export type GameEvent =
+  | {type:'TRAINING_BOARD_APPLIED';revision:number;country:CountryId;action:string;
+     regionId:string;attackerId?:string;defenderId?:string;airId?:string;recycleId?:string;
+     mode?:string;newUnitId?:string;airDefense?:boolean}
   | { type: 'UNIT_PLACED'; revision: number; mode: 'build' | 'recruit'; country: CountryId; unitId: string; regionId: string; repeated: boolean }
   | { type: 'GAME_CREATED'; revision: number; gameId: string; seed: number }
   | { type: 'VIEW_CHANGED'; revision: number; seat: SeatId }
