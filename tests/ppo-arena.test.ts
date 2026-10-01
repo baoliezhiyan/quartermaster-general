@@ -3,6 +3,7 @@ import {PpoTrainingArena} from '../src/training/ppoArena';
 import {TRAINING_EVENT_IDS,TRAINING_EVENT_IDS_BY_SEAT,basicOpenProbability,openSpecialCount} from '../src/core/trainingCourse';
 import {createGame} from '../src/core/game';
 import {cardEffects} from '../src/core/specialCards';
+import {startResolution} from '../src/core/resolution';
 import {realTriggers} from '../src/core/specialCards';
 import type {Effect,ResolutionFrame} from '../src/core/resolutionTypes';
 import {discardDeckTop} from '../src/core/decks';
@@ -189,6 +190,123 @@ describe('PPO event curriculum',()=>{
     expect(()=>PpoTrainingArena.fromSnapshot(snap,{mode:'B',cardSet:'events',buildFingerprint:fingerprint})).toThrow();
     expect(PpoTrainingArena.fromSnapshot(snap,{mode:'B',cardSet:'basics',buildFingerprint:fingerprint}).observe())
       .toEqual(obs);
+  });
+  it('submits a basic card with its full legal action and no confirmation rollback',()=>{
+    const arena=new PpoTrainingArena(2,'basic-committed',{mode:'A',cardSet:'basics',buildFingerprint:fingerprint});
+    const start=arena.observe()!;
+    const actions=start.candidates.filter(c=>c.definitionId==='build_army');
+    expect(actions.length).toBeGreaterThan(0);
+    expect(actions.every(c=>c.optionId&&c.choices?.[0]?.kind==='action_plan')).toBe(true);
+    const selected=actions[0],before=arena.exportSnapshot().state;
+    const result=arena.step({...start.decision,actionId:selected.id});
+    const after=arena.exportSnapshot().state;
+    expect(result.info.submittedCardDefinitions).toContain('build_army');
+    expect(result.info.resolvedCardDefinitions).toContain('build_army');
+    expect(after.decks.germany.hand.length).toBe(before.decks.germany.hand.length-1);
+    expect(after.decks.germany.discardPile.some(c=>c.id===selected.cardId)).toBe(true);
+    expect(result.observation?.choiceKind).not.toBe('ACTION');
+    expect(result.observation?.candidates.some(c=>c.choiceIds?.length===0&&c.kind==='choice')).toBe(false);
+  });
+  it('commits a no-target event as a legal empty play and never offers a rollback',()=>{
+    const original=new PpoTrainingArena(81,'empty-event',{mode:'A',buildFingerprint:fingerprint});
+    const snapshot=original.exportSnapshot();
+    snapshot.state.units=snapshot.state.units.filter(u=>u.country!=='soviet_union');
+    const arena=PpoTrainingArena.fromSnapshot(snapshot,{mode:'A',buildFingerprint:fingerprint});
+    const obs=arena.observe()!,card=obs.candidates.find(c=>c.definitionId==='special_162')!;
+    expect(card).toBeDefined();
+    const before=arena.exportSnapshot().state;
+    const result=arena.step({...obs.decision,actionId:card.id});
+    const after=arena.exportSnapshot().state;
+    expect(result.info.submittedCardDefinitions).toContain('special_162');
+    expect(result.info.resolvedCardDefinitions).toContain('special_162');
+    expect(after.decks.germany.hand.length).toBe(before.decks.germany.hand.length-1);
+    expect(after.decks.germany.discardPile.some(c=>c.id===card.cardId)).toBe(true);
+    expect(result.observation?.candidates.some(c=>c.id===card.id)).toBe(false);
+  });
+  it('does not treat an unpaid voluntary hand cost as a legal empty play',()=>{
+    const state=new PpoTrainingArena(7,'unpaid-cost',{mode:'A',buildFingerprint:fingerprint})
+      .exportSnapshot().state;
+    state.decks.germany.hand=[];
+    expect(startResolution(state,'需付费效果','germany',[
+      {kind:'cards',seat:'germany',from:'hand',to:'discardPile',min:2,max:2,
+        fee:true,label:'支付两张手牌'},
+      {kind:'score',seat:'germany',amount:1,label:'获得一分'},
+    ],[],undefined,'discardPile',true)).toBe(false);
+    expect(state.resolution?.running).toBeFalsy();
+  });
+  it('consumes only the committed card from B openness without rerolling other cards',()=>{
+    const original=new PpoTrainingArena(81,'b-empty-event',{mode:'B',buildFingerprint:fingerprint});
+    const snapshot=original.exportSnapshot();
+    snapshot.state.units=snapshot.state.units.filter(u=>u.country!=='soviet_union');
+    const event=snapshot.state.decks.germany.hand.find(c=>c.definitionId==='special_162')!;
+    snapshot.state.trainingCourse!.openIds.germany.push(event.id);
+    const openedBefore=[...snapshot.state.trainingCourse!.openIds.germany];
+    const randomBefore=snapshot.state.trainingCourse!.openRandomState;
+    const arena=PpoTrainingArena.fromSnapshot(snapshot,{mode:'B',buildFingerprint:fingerprint});
+    const obs=arena.observe()!,candidate=obs.candidates.find(c=>c.definitionId==='special_162')!;
+    expect(candidate).toBeDefined();
+    const result=arena.step({...obs.decision,actionId:candidate.id});
+    expect(result.info.resolvedCardDefinitions).toContain('special_162');
+    const course=arena.exportSnapshot().state.trainingCourse!;
+    expect(course.openIds.germany).toEqual(openedBefore.filter(id=>id!==event.id));
+    expect(course.openRandomState).toBe(randomBefore);
+  });
+  it('forces a playable branch after committing guns or butter',()=>{
+    const arena=new PpoTrainingArena(91,'guns-committed',{mode:'A',buildFingerprint:fingerprint});
+    const start=arena.observe()!,card=start.candidates.find(c=>c.definitionId==='special_160')!;
+    expect(card).toBeDefined();
+    let result=arena.step({...start.decision,actionId:card.id});
+    expect(result.info.submittedCardDefinitions).toContain('special_160');
+    let seenChoice=false;
+    for(let i=0;i<12&&!result.info.resolvedCardDefinitions.includes('special_160');i++){
+      const obs=result.observation!;
+      expect(obs.node).toBe('ENGINE_CHOICE');
+      expect(obs.candidates.some(c=>c.kind==='choice'&&c.choiceIds?.length===0)).toBe(false);
+      seenChoice=true;
+      const candidate=obs.candidates[0];
+      result=arena.step({...obs.decision,actionId:candidate.id});
+    }
+    expect(seenChoice).toBe(true);
+    expect(result.info.resolvedCardDefinitions).toContain('special_160');
+    expect(arena.exportSnapshot().state.decks.germany.discardPile.some(c=>c.id===card.cardId)).toBe(true);
+  });
+  it('rechecks each action in a committed multiaction event without offering an empty skip',()=>{
+    const original=new PpoTrainingArena(7,'arden-committed',{mode:'A',buildFingerprint:fingerprint});
+    const snapshot=original.exportSnapshot();
+    snapshot.state.units=[
+      {id:'g-front',country:'germany',type:'army',regionId:'germany'},
+      {id:'uk-west',country:'united_kingdom',type:'army',regionId:'western_europe'},
+    ];
+    const arena=PpoTrainingArena.fromSnapshot(snapshot,{mode:'A',buildFingerprint:fingerprint});
+    const first=arena.observe()!,card=first.candidates.find(c=>c.definitionId==='special_158')!;
+    expect(card).toBeDefined();
+    let result=arena.step({...first.decision,actionId:card.id});
+    for(let i=0;i<15&&!result.info.resolvedCardDefinitions.includes('special_158');i++){
+      const obs=result.observation!;
+      expect(obs.candidates.some(c=>c.kind==='choice'&&c.choiceIds?.length===0)).toBe(false);
+      const candidate=obs.candidates[0];
+      expect(candidate).toBeDefined();
+      result=arena.step({...obs.decision,actionId:candidate.id});
+    }
+    expect(result.info.resolvedCardDefinitions).toContain('special_158');
+    const state=arena.exportSnapshot().state;
+    expect(state.units.some(u=>u.id==='uk-west')).toBe(false);
+    expect(state.units.some(u=>u.country==='germany'&&u.regionId==='western_europe')).toBe(true);
+  });
+  it('continues to a later event effect when its first effect has no legal target',()=>{
+    const original=new PpoTrainingArena(7,'arden-first-invalid',{mode:'A',trace:'full',buildFingerprint:fingerprint});
+    const snapshot=original.exportSnapshot();
+    snapshot.state.units=[
+      {id:'g-home',country:'germany',type:'army',regionId:'germany'},
+      {id:'g-west',country:'germany',type:'army',regionId:'western_europe'},
+    ];
+    const arena=PpoTrainingArena.fromSnapshot(snapshot,{mode:'A',trace:'full',buildFingerprint:fingerprint});
+    const start=arena.observe()!,card=start.candidates.find(c=>c.definitionId==='special_158')!;
+    expect(card).toBeDefined();
+    const result=arena.step({...start.decision,actionId:card.id});
+    expect(result.info.resolvedCardDefinitions).toContain('special_158');
+    expect((result.record as any).events.some((event:{type:string;mode?:string;regionId?:string})=>
+      event.type==='UNIT_PLACED'&&event.mode==='build'&&event.regionId==='western_europe')).toBe(true);
   });
   it('uses the intended B opening probabilities without an extra first-turn draw',()=>{
     const trials=120;

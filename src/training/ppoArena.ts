@@ -3,7 +3,7 @@ import {boardOptions} from '../core/boardEffects';
 import {extraEffects} from '../core/extraCards';
 import {BASIC_COUNTS,BASIC_NAMES,COUNTRY_NAMES,reserve} from '../core/basic';
 import {regularCatalog,specialCard} from '../core/cardCatalog';
-import {canExecuteEffects} from '../core/resolution';
+import {canPayEffectFees} from '../core/resolution';
 import {barbarossaTargets,cardEffects} from '../core/specialCards';
 import {createGame,transition} from '../core/game';
 import {MAP} from '../core/map';
@@ -15,8 +15,8 @@ import type {Effect,ChoiceRequest} from '../core/resolutionTypes';
 import {BASIC_ACTIONS,type BasicAction,type DecisionContext,type TraceLevel} from './basicArena';
 
 export const PPO_ARENA_FORMAT='quartermaster-ppo-arena-v2';
-export const PPO_OBSERVATION_SCHEMA_VERSION='ppo-observation-v3';
-export const PPO_ACTION_SCHEMA_VERSION='ppo-actions-v3';
+export const PPO_OBSERVATION_SCHEMA_VERSION='ppo-observation-v4';
+export const PPO_ACTION_SCHEMA_VERSION='ppo-actions-v4';
 export const PPO_STATIC_SCHEMA={observationSchemaVersion:PPO_OBSERVATION_SCHEMA_VERSION,
   actionSchemaVersion:PPO_ACTION_SCHEMA_VERSION,
   courseVersion:TRAINING_COURSE_VERSION,overridesVersion:TRAINING_OVERRIDES_VERSION,
@@ -36,7 +36,7 @@ export type EffectFeature={kind:string;action?:string;country?:CountryId;seat?:S
   filter?:string;from?:string;to?:string;tag?:string;newOnly?:boolean;
   children:EffectFeature[][]};
 export type PpoCandidate={id:string;kind:'source'|'pass'|'choice'|'targets';label:string;
-  cardId?:string;definitionId?:string;choiceIds?:string[];targetIds?:string[];effects?:EffectFeature[];
+  cardId?:string;definitionId?:string;optionId?:string;choiceIds?:string[];targetIds?:string[];effects?:EffectFeature[];
   choices?:ChoiceFeature[]};
 export type ChoiceFeature={kind:string;action?:string;nextAction?:string;country?:CountryId;
   regionId?:string;unitType?:Unit['type'];source?:UnitFact;target?:UnitFact;
@@ -61,7 +61,7 @@ export type PpoEnd={termination:'natural'|'truncated';reason?:string;winner:Game
   finalObservation?:PpoObservation};
 export type PpoStepInfo={decision:DecisionContext;nextDecision:DecisionContext|null;
   scoreDelta:{axis:number;allies:number;bySeat:GameState['scores']};turnsAdvanced:number;
-  submittedCardDefinitions:string[];resolvedCardDefinitions:string[];
+  submittedCardDefinitions:string[];resolvedCardDefinitions:string[];cancelledCardDefinitions:string[];
   termination:'ongoing'|'natural'|'truncated';winner:GameState['winner']};
 export type PpoSnapshot={format:typeof PPO_ARENA_FORMAT;header:PpoTrainingArena['header'];state:GameState;
   decisionCount:number;pendingCardId:string|null;terminationReason:string|null;
@@ -139,6 +139,7 @@ export class PpoTrainingArena {
   private cached:PpoObservation|null|undefined;
   private knownUnits:Record<string,UnitFact>={};
   private submittedThisStep:{id:string;definitionId:string}[]=[];
+  private completedThisStep:{id:string;outcome:'resolved'|'cancelled';appliedEffects:number}[]=[];
   private pendingSubmissions:Record<string,string>={};
   private readonly captureReplay:boolean;
   private replayCommits:unknown[]=[];
@@ -223,10 +224,23 @@ export class PpoTrainingArena {
     })) as unknown as Record<SeatId,Record<string,string[]>>,
     resolutionEvents:s.resolution?.events??[],resolutionScenario:s.resolution?.scenario??null});}
   private commit(command:Command){const before=this.state;
+    const extraSubmitted=command.type==='RESOLVE_ENGINE_CHOICE'&&
+      before.resolution?.choice?.kind==='EXTRA_CARD'?command.ids.flatMap(id=>{
+        const card=Object.values(before.decks).flatMap(deck=>
+          [...deck.hand,...deck.drawPile,...deck.discardPile]).find(card=>card.id===id);
+        return card?[{id:card.id,definitionId:card.definitionId}]:[];
+      }):[];
+    const responseCardId=command.type==='RESOLVE_ENGINE_CHOICE'&&
+      before.resolution?.choice?.kind==='TRIGGER'&&command.ids.length?
+      before.resolution.rules.find(rule=>command.ids.some(id=>id===rule.id||id.endsWith('/'+rule.id)))
+        ?.sourceInstanceId:undefined;
     for(const unit of before.units)this.knownUnits[unit.id]={country:unit.country,type:unit.type,regionId:unit.regionId};
     const outcome=transition(before,command);
     if(!outcome.ok)throw new Error(`Core rejected ${command.type}: ${outcome.error}`);
     this.state=outcome.state;
+    this.submittedThisStep.push(...extraSubmitted);
+    this.completedThisStep.push(...(this.state.trainingCourse?.cardOutcomes??[]).slice(
+      before.trainingCourse?.cardOutcomes?.length??0));
     for(const unit of this.state.units)this.knownUnits[unit.id]={country:unit.country,type:unit.type,regionId:unit.regionId};
     this.pruneOpen();
     if((before.activeSeat!==this.state.activeSeat||before.round!==this.state.round)&&this.state.round>1)
@@ -234,7 +248,10 @@ export class PpoTrainingArena {
     if(this.captureReplay)this.replayCommits.push({commandType:command.type,
       seat:'seat'in command?command.seat:before.activeSeat,
       cardId:'cardId'in command?command.cardId:undefined,
+      responseCardId,
       before:this.replayState(before),after:this.replayState(this.state),
+      cardOutcomes:(this.state.trainingCourse?.cardOutcomes??[]).slice(
+        before.trainingCourse?.cardOutcomes?.length??0),
       boardEvents:this.state.events.slice(before.events.length).filter(e=>e.type==='TRAINING_BOARD_APPLIED')});
     this.cached=undefined;
   }
@@ -300,14 +317,26 @@ export class PpoTrainingArena {
     open=new Set(s.trainingCourse!.openIds[seat]),seen=new Set<string>(),candidates:PpoCandidate[]=[];
     for(const card of s.decks[seat].hand){
       if(!open.has(card.id)||seen.has(card.definitionId))continue;
-      if(basicType(card.definitionId)&&!cardOptions(s,card.id).length)continue;
+      if(basicType(card.definitionId)){
+        const options=cardOptions(s,card.id);
+        if(!options.length)continue;
+        seen.add(card.definitionId);
+        for(const option of options)candidates.push({id:`source:${card.definitionId}:${option.id}`,
+          kind:'source',cardId:card.id,definitionId:card.definitionId,optionId:option.id,
+          label:`${BASIC_NAMES[card.definitionId]} · ${option.label}`,
+          choices:[{kind:'action_plan',action:option.replacement??card.definitionId,
+            country:card.country,regionId:option.regionId,unitType:option.unitType,
+            source:option.attackerId?this.unitFact(option.attackerId):undefined,
+            target:option.defenderId?this.unitFact(option.defenderId):undefined,
+            intercept:!!option.intercept}],effects:effectSequence(s,card,this.unitFact)});
+        continue;
+      }
       if(!basicType(card.definitionId)){
-        const targets=card.definitionId==='special_162'?barbarossaTargets(s):[];
-        if(card.definitionId==='special_162'&&!targets.length)continue;
         if(card.definitionId!=='special_162'){
           const deck=s.decks[seat],probe={...s,decks:{...s.decks,[seat]:{...deck,
             hand:deck.hand.filter(c=>c.id!==card.id)}}};
-          if(!canExecuteEffects(probe,cardEffects(s,card)))continue;
+          const effects=cardEffects(s,card);
+          if(!canPayEffectFees(probe,effects))continue;
         }
       }
       seen.add(card.definitionId);
@@ -495,10 +524,14 @@ export class PpoTrainingArena {
     if(!selected)throw new Error('Invalid PPO candidate');
     const s=this.state,beforeScore=scoreCopy(s),beforeTotals=allianceScores(s),beforeT=turnClock(s);
     this.submittedThisStep=[];
+    this.completedThisStep=[];
     this.replayCommits=[];
     if(selected.kind==='pass')this.commit({type:'ADVANCE_PHASE',seat:s.activeSeat,expectedRevision:s.revision});
     else if(selected.kind==='source'){
-      if(selected.definitionId==='special_162')this.pendingCardId=selected.cardId!;
+      if(selected.definitionId==='special_162'&&barbarossaTargets(s).length)this.pendingCardId=selected.cardId!;
+      else if(selected.optionId){this.commit({type:'PLAY_BASIC',seat:s.activeSeat,
+        expectedRevision:s.revision,cardId:selected.cardId!,optionId:selected.optionId});
+        this.submittedThisStep.push({id:selected.cardId!,definitionId:selected.definitionId!});}
       else this.playCard(selected.cardId!,[]);
     }else if(selected.kind==='targets'){
       const cardId=this.pendingCardId!;this.pendingCardId=null;this.playCard(cardId,selected.targetIds!);
@@ -506,30 +539,26 @@ export class PpoTrainingArena {
       const choice=s.resolution?.choice;if(!choice)throw new Error('Missing core choice');
       this.commit({type:'RESOLVE_ENGINE_CHOICE',seat:choice.seat,expectedRevision:s.revision,
         choiceId:choice.id,ids:selected.choiceIds!,guided:true});
-      if(choice.kind==='EXTRA_CARD')for(const id of selected.choiceIds??[]){
-        const card=Object.values(s.decks).flatMap(deck=>[
-          ...deck.hand,...deck.drawPile,...deck.discardPile]).find(card=>card.id===id);
-        if(card)this.submittedThisStep.push({id:card.id,definitionId:card.definitionId});
-      }
     }
     this.advance();this.decisionCount++;this.cached=undefined;
     const after=this.state,next=this.observe(),totals=allianceScores(after),result=this.result;
     for(const card of this.submittedThisStep)this.pendingSubmissions[card.id]=card.definitionId;
-    const resolved:string[]=[];
-    for(const [id,definitionId] of Object.entries(this.pendingSubmissions)){
-      const pending=Object.values(after.decks).some(deck=>deck.resolving.some(card=>card.id===id))||
-        after.resolution?.frames.some(frame=>frame.cardId===id&&frame.status!=='COMPLETE');
-      if(!pending){resolved.push(definitionId);delete this.pendingSubmissions[id];}
-    }
+    const resolved:string[]=[],cancelled:string[]=[];
+    for(const outcome of this.completedThisStep){const definitionId=this.pendingSubmissions[outcome.id];
+      if(!definitionId)continue;
+      (outcome.outcome==='cancelled'?cancelled:resolved).push(definitionId);
+      delete this.pendingSubmissions[outcome.id];}
     const info:PpoStepInfo={decision:obs.decision,nextDecision:next?.decision??null,
       scoreDelta:{axis:totals.axis-beforeTotals.axis,allies:totals.allies-beforeTotals.allies,
         bySeat:Object.fromEntries(SEATS.map(seat=>[seat,after.scores[seat]-beforeScore[seat]])) as GameState['scores']},
       turnsAdvanced:Math.max(0,turnClock(after)-beforeT),termination:result?.termination??'ongoing',
       submittedCardDefinitions:this.submittedThisStep.map(card=>card.definitionId),
       resolvedCardDefinitions:resolved,
+      cancelledCardDefinitions:cancelled,
       winner:result?.winner??null};
     const record=this.trace==='none'?null:{type:'ppo-decision',decision:obs.decision,
-      seat:obs.decisionSeat,activeSeat:obs.activeSeat,action:selected,info,
+      seat:obs.decisionSeat,activeSeat:obs.activeSeat,round:obs.round,choiceKind:obs.choiceKind,
+      action:selected,info,
       ...(this.trace==='full'?{before:{scores:beforeScore,units:obs.units},
         after:{scores:scoreCopy(after),units:after.units.map(u=>({...u}))},
         events:[...after.events],publicLog:[...(after.publicLog??[])],

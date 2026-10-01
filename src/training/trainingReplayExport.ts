@@ -1,4 +1,4 @@
-import {BASIC_NAMES,BASIC_COUNTS} from '../core/basic';
+import {BASIC_NAMES,BASIC_COUNTS,COUNTRY_NAMES} from '../core/basic';
 import {specialCard} from '../core/cardCatalog';
 import {SEATS,type GameState,type SeatId,type CountryId} from '../core/types';
 import {createTrainingScene,applyScene,trainingSceneHash} from '../actionReplay/trainingScene';
@@ -14,17 +14,18 @@ type Frame={round:number;phase:GameState['phase'];activeSeat:SeatId;units:GameSt
   resources:Record<SeatId,Record<ResourceZone,string[]>>;
   resolutionEvents:Array<{id:string;applied:boolean;ended?:boolean;effect?:any}>;
   resolutionScenario:string|null};
-type Commit={commandType:string;seat:SeatId;cardId?:string;before:Frame;after:Frame;
+type Commit={commandType:string;seat:SeatId;cardId?:string;responseCardId?:string;before:Frame;after:Frame;
+  cardOutcomes?:{id:string;outcome:'resolved'|'cancelled';appliedEffects:number}[];
   boardEvents:Array<{type:string;revision:number;country:CountryId;action:string;
     regionId:string;attackerId?:string;defenderId?:string;airId?:string;
     recycleId?:string;mode?:string;newUnitId?:string;airDefense?:boolean}>};
 type RawRow={recordType?:string;type?:string;seed?:number;trainingMetadata?:Record<string,unknown>;
-  seat?:SeatId;activeSeat?:SeatId;
+  seat?:SeatId;activeSeat?:SeatId;choiceKind?:string;
   snapshot?:{state:GameState;header:{seed:number;mode:'A'|'B';cardSet:'events'|'basics';
     courseVersion:string;overridesVersion:string;eventIds:string[];buildFingerprint:string;
     configHash:string;mapVersion:string;
     gameId:string}};
-  replayCommits?:Commit[];action?:{label?:string;cardId?:string};info?:unknown;
+  replayCommits?:Commit[];action?:{label?:string;cardId?:string;choiceIds?:string[]};info?:unknown;
   termination?:string;winner?:string;round?:number;decisions?:number;
   scores?:Record<SeatId,number>;allianceScores?:{axis:number;allies:number}};
 const zones=['hand','drawPile','discardPile','resourcePool'] as const;
@@ -191,33 +192,62 @@ export async function exportTrainingReplay(rawText:string):Promise<string>{
     zone,[...start.resources!.find(r=>r.seat===seat&&r.zone===zone)!.ids]]))])) as
     Record<SeatId,Record<ResourceZone,string[]>>;
   if(!same(sceneProjection(scene),frameProjection(initial)))throw Error('初始训练场面与客户端场面规则不等价');
+  type Pending={cardId:string;seat:SeatId;round:number;name:string;response:boolean;
+    operations:TrainingStep['operations'];cancelled:boolean};
+  let pending:Pending|null=null;
+  const suspended:Pending[]=[];
+  const append=async(seat:SeatId,cardId:string|undefined,summary:string,
+    operations:TrainingStep['operations'])=>{
+    const index=steps.length+1;
+    steps.push({type:'training_action',seq:index+1,id:`training-${index}`,
+      seat,activeSeat:scene.activeSeat,round:scene.round,
+      phase:scene.phase as TrainingStep['phase'],
+      ...(cardId&&cardMap.has(cardId)?{cardId}:{}),summary,operations,
+      sceneHash:await trainingSceneHash(scene)});
+  };
   for(const row of raw){if(row.type!=='ppo-decision')continue;
     const commits=row.replayCommits;
     if(!commits)throw Error('训练记录缺少逐命令场面轨迹；请开启 replay capture');
-    if(commits.length===0){
-      // Target preselection is a genuine AI decision with no core command yet.
-      const index=steps.length+1;
-      steps.push({type:'training_action',seq:index+1,id:`training-${index}`,
-        seat:row.seat??scene.activeSeat,activeSeat:scene.activeSeat,round:scene.round,
-        phase:scene.phase as TrainingStep['phase'],
-        ...(row.action?.cardId&&cardMap.has(row.action.cardId)?{cardId:row.action.cardId}:{}),
-        summary:`${row.seat??scene.activeSeat}：${row.action?.label??'选择目标'}`,
-        operations:[],sceneHash:await trainingSceneHash(scene)});
-      continue;
-    }
     for(const commit of commits){
-      const index=steps.length+1;
-      const ops=applyCommit(scene,commit,cardMap,index,resources,original.header.mode);
-      const step:TrainingStep={type:'training_action',seq:index+1,id:`training-${index}`,
-        seat:commit.seat,activeSeat:commit.after.activeSeat,round:commit.after.round,
-        phase:commit.after.phase as TrainingStep['phase'],
-        ...(commit.cardId&&cardMap.has(commit.cardId)?{cardId:commit.cardId}:{}),
-        summary:index===1||commit.cardId?`${commit.seat}：${row.action?.label??commit.commandType}`:
-          `${commit.seat}：${commit.commandType}`,
-        operations:ops,sceneHash:await trainingSceneHash(scene)};
-      steps.push(step);
+      if(['PLAY_CARD','PLAY_BASIC'].includes(commit.commandType)&&commit.cardId){
+        if(pending)fail(steps.length+1,'上一张牌尚未完成，不能开始另一张标准出牌');
+        pending={cardId:commit.cardId,seat:commit.seat,round:commit.before.round,
+          name:cardMap.get(commit.cardId)?.name??commit.cardId,response:false,
+          operations:[],cancelled:false};
+      }
+      if(commit.responseCardId){
+        if(pending){
+          if(pending.operations.length)await append(pending.seat,pending.cardId,
+            `第${pending.round}轮 ${COUNTRY_NAMES[pending.seat]}打出【${pending.name}】（响应前）`,
+            pending.operations);
+          pending.operations=[];suspended.push(pending);
+        }
+        pending={cardId:commit.responseCardId,seat:commit.seat,round:commit.before.round,
+          name:cardMap.get(commit.responseCardId)?.name??commit.responseCardId,
+          response:true,operations:[],cancelled:false};
+      }
+      const before=sceneProjection(scene),ops=applyCommit(scene,commit,cardMap,
+        steps.length+1,resources,original.header.mode);
+      if(pending)pending.operations.push(...ops);
+      else if(ops.length||!same(before,sceneProjection(scene))){
+        const actor=COUNTRY_NAMES[commit.seat];
+        const summary=commit.commandType==='ADVANCE_PHASE'||commit.commandType==='DISCARD_HAND'?
+          `${actor}回合推进`:`${actor}：${row.action?.label??'结算选择'}`;
+        await append(commit.seat,commit.cardId,summary,ops);
+      }
+      for(const outcome of commit.cardOutcomes??[]){
+        if(!pending||outcome.id!==pending.cardId)continue;
+        pending.cancelled=outcome.outcome==='cancelled';
+        const action=`第${pending.round}轮 ${COUNTRY_NAMES[pending.seat]}`+
+          `${pending.response?'响应【':'打出【'}${pending.name}】`+
+          (pending.cancelled?'，被取消':'');
+        await append(pending.seat,pending.cardId,action,pending.operations);
+        pending=suspended.pop()??null;
+      }
     }
   }
+  if(pending)throw Error(`训练记录的【${pending.name}】尚未完成结算`);
+  if(suspended.length)throw Error('训练记录存在尚未完成的响应父结算');
   const text=await sealTraining([header,start,...steps]);
   await new TrainingController(await parseTrainingReplay(text)).checkReplay();
   return text;

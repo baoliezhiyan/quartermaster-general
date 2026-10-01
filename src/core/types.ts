@@ -42,6 +42,7 @@ export interface GameState {
     openIds: Record<SeatId,string[]>;
     openRandomState: number; discardRandomState: number;
     captureReplay?:boolean;
+    cardOutcomes?:{id:string;outcome:'resolved'|'cancelled';appliedEffects:number}[];
   };
   /** Arena-only fast path: every deck contains basic cards exclusively. */
   trainingBasicOnly?: boolean;

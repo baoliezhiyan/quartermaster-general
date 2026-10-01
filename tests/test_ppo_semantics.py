@@ -1,5 +1,4 @@
 import copy
-import random
 import unittest
 
 from scripts.ppo_train import ArenaClient, Encoder
@@ -102,33 +101,29 @@ class SemanticObservationTests(unittest.TestCase):
         self.assertNotEqual(self.encoder.encode_state(first), self.encoder.encode_state(second))
 
     def test_real_build_order_and_recruit_recycle_choices_are_distinct(self):
-        for seed, step, kind, left, right in [
-                (929600, 23, "BUILD_ORDER", "build_army|british_isles", "build_navy|sea_north_sea"),
-                (929602, 57, "ACTION", "eastern_china", "southeast_asia")]:
-            rng = random.Random(seed)
-            obs = self.client.request(op="reset", seed=seed, mode="A", cardSet="events")["observation"]
-            for _ in range(step):
-                candidate = rng.choice(obs["candidates"])
-                obs = self.client.request(op="step", action={
-                    **obs["decision"], "actionId": candidate["id"]})["observation"]
-            self.assertEqual(obs["choiceKind"], kind)
-            candidates = {c["choiceIds"][0]: c for c in obs["candidates"] if c.get("choiceIds")}
-            if kind == "ACTION":
-                by_region = {c["choices"][0]["source"]["regionId"]: c
-                             for c in candidates.values()
-                             if c["choiceIds"][0].startswith("recruit:western_china:")}
-                a, b = by_region[left], by_region[right]
-            else:
-                a, b = candidates[left], candidates[right]
-            self.assertNotEqual(self.encoder.encode_candidate(obs, a),
-                                self.encoder.encode_candidate(obs, b))
-            if kind == "ACTION":
-                self.assertEqual(a["choices"][0]["source"]["regionId"], "eastern_china")
-                self.assertEqual(b["choices"][0]["source"]["regionId"], "southeast_asia")
-                equivalent = copy.deepcopy(b)
-                equivalent["choiceIds"] = ["recruit:western_china:unit:999:999"]
-                self.assertEqual(self.encoder.encode_candidate(obs, b),
-                                 self.encoder.encode_candidate(obs, equivalent))
+        snapshot = self.reset_as("united_states", 929600)
+        _, obs = self.choose_source(snapshot, "special_98")
+        self.assertEqual(obs["choiceKind"], "BUILD_ORDER")
+        candidates = {c["choiceIds"][0]: c for c in obs["candidates"] if c.get("choiceIds")}
+        a = candidates["build_army|british_isles"]
+        b = candidates["build_navy|sea_north_sea"]
+        self.assertNotEqual(self.encoder.encode_candidate(obs, a),
+                            self.encoder.encode_candidate(obs, b))
+        # Recycling a different existing unit is a different action, even when
+        # both options recruit at the same destination. The instance ID alone is not a feature.
+        recycle = copy.deepcopy(self.encoder._dummy())
+        recycle.update(node="ENGINE_CHOICE", choiceKind="ACTION", choiceField="option")
+        def option(source, instance):
+            return {"kind": "choice", "choiceIds": [f"recruit:western_china:{instance}"],
+                    "choices": [{"kind": "action_plan", "action": "recruit_army",
+                                 "country": "china", "regionId": "western_china",
+                                 "source": {"country": "china", "type": "army", "regionId": source}}]}
+        east, southeast = option("eastern_china", "unit:1"), option("southeast_asia", "unit:2")
+        self.assertNotEqual(self.encoder.encode_candidate(recycle, east),
+                            self.encoder.encode_candidate(recycle, southeast))
+        equivalent = option("southeast_asia", "unit:999")
+        self.assertEqual(self.encoder.encode_candidate(recycle, southeast),
+                         self.encoder.encode_candidate(recycle, equivalent))
 
     def test_unstructured_choice_is_rejected(self):
         obs = self.encoder._dummy()

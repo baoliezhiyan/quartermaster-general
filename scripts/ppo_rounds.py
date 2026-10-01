@@ -14,19 +14,19 @@ from pathlib import Path
 import torch
 
 from scripts import ppo_train as ppo
+from scripts.ppo_progress import ordinal
 
 UPDATES_PER_ROUND = 10
-EVALUATION_SEEDS = tuple(range(987650, 987670))
-# Keep checkpoints from older rule builds separate from the v1.7.6 experiment.
-DEFAULT_RESULTS = ppo.ROOT / "PPO训练"
+# Action/observation v4 cannot resume checkpoints produced by the old interface.
+DEFAULT_RESULTS = ppo.ROOT / "PPO训练" / "提交出牌实验"
 WEIGHTS_NAME = "模型.pt"
 RECORD_NAME = "AI训练记录.jsonl"
 
 
-def selected_game(training_seed: int, mode: str, round_number: int) -> tuple[int, str]:
+def selected_game(training_seed: int, mode: str, round_number: int) -> int:
     rng = random.Random((training_seed << 8) ^ (round_number << 1) ^
                         (0xA55A if mode == "A" else 0xB66B))
-    return rng.choice(EVALUATION_SEEDS), rng.choice(("axis", "allies"))
+    return rng.randrange(1_000_000_000, 2_147_483_647)
 
 
 def checkpoint_update(path: Path, mode: str, training_seed: int) -> int:
@@ -97,7 +97,7 @@ def export_weights(checkpoint: Path, target: Path, mode: str,
 
 def record_game(checkpoint: Path, target: Path, mode: str, round_number: int,
                 training_seed: int, model_sha256: str, max_decisions: int = 3000):
-    seed, learner_side = selected_game(training_seed, mode, round_number)
+    seed = selected_game(training_seed, mode, round_number)
     raw_target = target.with_name(".training-raw.jsonl")
     client = ppo.ArenaClient(log_path=raw_target, log_snapshots=True)
     try:
@@ -112,24 +112,21 @@ def record_game(checkpoint: Path, target: Path, mode: str, round_number: int,
             raise ValueError("记录所用模型与目标轮数不符")
         model.eval()
         metadata = {"round": round_number, "policyVersion": saved["policyVersion"],
-                    "trainingSeed": training_seed, "evaluationSeed": seed,
-                    "evaluationSeedSet": list(EVALUATION_SEEDS),
-                    "learnerSide": learner_side,
-                    "opponent": "frozen-weighted-legal-baseline-v1",
+                    "trainingSeed": training_seed, "recordSeed": seed,
+                    "controller": "same-policy-self-play-both-teams",
                     "actionSampling": "stochastic-per-game-seed", "modelSha256": model_sha256,
                     "recordScope": "full-training-scene-replay-v1"}
         result = ppo.play_episode(client, encoder, model, device, mode, seed,
                                   max_decisions, trace="full",
-                                  baseline_side="allies" if learner_side == "axis" else "axis",
                                   rng=random.Random(seed + 19), card_set="events",
                                   record_metadata=metadata)
     finally:
         client.close()
     if result["outcome"]["termination"] != "natural":
-        raise RuntimeError("抽样评估局未自然结束；不输出本轮结果")
+        raise RuntimeError("抽样自我对打局未自然结束；不输出本轮结果")
     digest = validate_record(raw_target, result["decisions"], seed)
     summary = {"recordType": "trainingSummary", "round": round_number,
-               "seed": seed, "learnerSide": learner_side,
+               "seed": seed, "controller": "same-policy-self-play-both-teams",
                "decisions": result["decisions"], "countryTurns": result["countryTurns"],
                "winner": result["outcome"]["winner"],
                "allianceScores": result["outcome"]["allianceScores"],
@@ -147,8 +144,7 @@ def run_training(mode: str, update_count: int, resume: bool, workers: int,
     command = [sys.executable, "scripts/ppo_train.py", "--mode", mode,
                "--card-set", "events", "--workers", str(workers),
                "--updates", str(update_count), "--seed", str(seed),
-               "--checkpoint", str(checkpoint), "--report", str(report),
-               "--eval-seeds", str(len(EVALUATION_SEEDS))]
+               "--checkpoint", str(checkpoint), "--report", str(report)]
     if resume:
         command.append("--resume")
     subprocess.run(command, cwd=ppo.ROOT, check=True)
@@ -175,11 +171,12 @@ def complete_round(mode: str, number: int, args) -> None:
         return
     if finished < target:
         state_dir.mkdir(parents=True, exist_ok=True)
-        print(f"{mode} 第 {number} 轮：执行 {target - finished} 次更新，{args.workers} 个环境共享模型。",
+        print(f"\n{mode} {ordinal(number, '轮')}：执行 {target - finished} 次更新，{args.workers} 个环境共享模型。",
               flush=True)
         run_training(mode, target - finished, finished > 0, args.workers,
                      args.seed, checkpoint, report)
     course_root.mkdir(parents=True, exist_ok=True)
+    print(f"{mode} {ordinal(number, '轮')}：生成模型文件和抽样对局记录...", flush=True)
     with tempfile.TemporaryDirectory(prefix=f".stage-{mode}-{number:03d}-",
                                      dir=course_root) as temporary:
         stage = Path(temporary)
@@ -188,7 +185,7 @@ def complete_round(mode: str, number: int, args) -> None:
         summary = record_game(checkpoint, stage / RECORD_NAME, mode, number,
                               args.seed, model_sha256)
         os.replace(stage, output)
-    print(f"{mode} 第 {number} 轮完成：{output}\n"
+    print(f"{mode} {ordinal(number, '轮')}完成：{output}\n"
           f"  {WEIGHTS_NAME}\n  {RECORD_NAME}"
           f"（记录种子 {summary['seed']}，{summary['decisions']} 次决策）", flush=True)
 
