@@ -23,14 +23,14 @@
 ## 回放与联机
 
 - [回放规范v2.0](match-log-spec-v2.0.md)、[使用说明](match-log-guide.md)、[实现验收边界](match-log-validation.md)。协议formatVersion=3，文档版本v2.0。
-- 实现字段契约位于 `src/actionReplay/contract.ts`；训练场面/独立牌区适配器另见 [训练端输出规范v1](training-replay-output-v1.md) 与 `src/actionReplay/trainingContract.ts`。暂未进行真实训练端联调。
+- 实现字段契约位于 `src/actionReplay/contract.ts`；训练场面/独立牌区适配器另见 [训练端输出规范v1](training-replay-output-v1.md) 与 `src/actionReplay/trainingContract.ts`。训练端 A/B 完整抽样局已完成短测和客户端逐步重演；正式长期训练所得文件仍需逐批验收。
 - [本地资源客户端](local-client.md)、[联机架构历史说明](v3-local-multiplayer.md)、[Cloudflare测试说明](cloudflare-testing.md)、[cpolar说明](cpolar-start.md)。第三方隧道工具/账户配置不上传仓库。
 
 ## 训练文档
 
 - [PPO第一步方案v0.3](training/战场军需官PPO第一步实施方案-v0.3.md)：已验收的事件课程、观察/动作、奖励与优势计算基线。
 - [PPO并行采集实施补充v0.4](training/战场军需官PPO第一步并行采集实施补充-v0.4.md)：已实现的40局完整批次、多环境采集与恢复边界，覆盖v0.3的4096决策采集条件。
-- [PPO轮次训练启动说明](training/PPO训练轮次启动说明.md)：10环境、每轮10次更新，先A后B及每轮权重与训练日志的保存位置。
+- [PPO轮次训练启动说明](training/PPO训练轮次启动说明.md)：v1.7.6 构建入口、10环境、每轮10次更新，先A后B及每轮权重与训练回放的保存位置。
 - [并行与40局完整批次更新要求](training/parallel-plan.md)：本轮需求原文。
 - [第二轮独立复验](training/PPO第一步第二轮返工独立复验报告-20260930.md)：只对报告实际受测构建有效。
 - [并行性能测量与建议](training/训练环境并行与性能建议-20260930.md)：环境吞吐不等于完整PPO吞吐。

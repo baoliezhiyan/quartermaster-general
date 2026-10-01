@@ -41,7 +41,7 @@ export function applyBoardEffect(s:GameState,e:BoardEffect,queueRemoval?:(id:str
     s.events.push({type:'TRAINING_BOARD_APPLIED',revision:s.revision,country:e.country,
       action:e.action,regionId:o.regionId,...(o.attackerId?{attackerId:o.attackerId}:{}),
       ...(o.defenderId?{defenderId:o.defenderId}:{}),...(o.airId?{airId:o.airId}:{}),
-      ...(o.recycleId?{recycleId:o.recycleId}:{}),mode:o.mode,
+      ...((o.recycleId??e.trainingRecycleId)?{recycleId:o.recycleId??e.trainingRecycleId}:{}),mode:o.mode,
       ...(created?{newUnitId:created.id}:{}),...(e.airDefense===false?{airDefense:false}:{})});
   };
   if(o.mode==='build') {

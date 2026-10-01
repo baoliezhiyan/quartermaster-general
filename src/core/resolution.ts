@@ -586,6 +586,7 @@ export function runResolution(s:GameState) {
       }
       if(e.kind==='action'&&e.option?.recycleId) {
         const unit=s.units.find(u=>u.id===e.option?.recycleId)!;e.recycledId=unit.id;
+        if(s.trainingCourse?.captureReplay)e.trainingRecycleId=unit.id;
         pushFrame(s,'库存不足：先回收部队',f.owner,[{kind:'remove',unit:{...unit},supplied:suppliedUnits(s).has(unit.id),cause:'recycle',label:'回收部队'}],undefined,'discardPile',{originEventId:f.currentEventId!} as TriggerWindow);continue;
       }
       event.started=true;

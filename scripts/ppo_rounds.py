@@ -17,7 +17,8 @@ from scripts import ppo_train as ppo
 
 UPDATES_PER_ROUND = 10
 EVALUATION_SEEDS = tuple(range(987650, 987670))
-DEFAULT_RESULTS = ppo.ROOT / "outputs" / "ppo-training"
+# Keep checkpoints from older rule builds separate from the v1.7.6 experiment.
+DEFAULT_RESULTS = ppo.ROOT / "outputs" / "ppo-training-v1.7.6"
 WEIGHTS_NAME = "模型.pt"
 RECORD_NAME = "AI训练记录.jsonl"
 

@@ -32,6 +32,12 @@ describe('PPO event curriculum',()=>{
   it('freezes exactly 58 balanced event IDs and A/B opening boundaries',()=>{
     expect(TRAINING_EVENT_IDS.size).toBe(58);
     expect(TRAINING_EVENT_IDS.has('special_227')).toBe(false);
+    expect(regularCatalog(true,false).some(card=>card.id==='special_260')).toBe(true);
+    expect(TRAINING_EVENT_IDS.has('special_260')).toBe(false);
+    const arena=new PpoTrainingArena(176,'v176-stable-ids',{mode:'A',buildFingerprint:fingerprint});
+    expect(arena.header.eventIds).not.toContain('special_260');
+    expect(arena.header.eventIds.every(id=>/^special_\d+$/.test(id))).toBe(true);
+    expect(arena.exportSnapshot().state.decks.united_states.hand.some(card=>card.definitionId==='special_260')).toBe(false);
     expect(Object.values(TRAINING_EVENT_IDS_BY_SEAT).map(ids=>ids.length)).toEqual([12,13,0,10,10,13]);
     expect([0,5,6,8,10,11,20].map(openSpecialCount)).toEqual([0,5,6,6,6,7,12]);
     expect([0,1,2,3,4].map(basicOpenProbability)).toEqual([0,0.4,0.7,0.9,1]);
