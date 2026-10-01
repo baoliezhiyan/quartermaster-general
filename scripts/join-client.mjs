@@ -33,12 +33,12 @@ export async function startClient(input,{port=4184,openBrowser=false}={}){
    if(!['/api/identity','/api/identity-status','/api/request'].includes(url.pathname)||req.method!=='POST'||!req.headers['content-type']?.toLowerCase().startsWith('application/json')){res.writeHead(400).end();return;}
    // Fixed destination and explicit headers: never a general proxy and never forwards browser cookies.
    const remote=new URL(url.pathname,target.origin),transport=remote.protocol==='https:'?https:http;
-   const upstream=transport.request(remote,{method:'POST',headers:{'Content-Type':'application/json',Origin:target.origin,...(req.headers.authorization?{Authorization:req.headers.authorization}:{})}},response=>{
+   const upstream=transport.request(remote,{method:'POST',headers:{'Content-Type':'application/json',Origin:target.origin,...(req.headers['x-qm-history-import']==='1'?{'X-QM-History-Import':'1'}:{}),...(req.headers.authorization?{Authorization:req.headers.authorization}:{})}},response=>{
     res.writeHead(response.statusCode,{'Content-Type':'application/json'});response.pipe(res);
    });requests.add(upstream);upstream.on('close',()=>requests.delete(upstream));
    upstream.on('error',()=>{if(!res.headersSent)res.writeHead(502,{'Content-Type':'application/json'});res.end(JSON.stringify({ok:false,error:'连接房主失败，请检查网络和房主服务。'}));});
-   upstream.setTimeout(120000,()=>upstream.destroy());
-   let size=0;req.on('data',chunk=>{size+=chunk.length;if(size>70*1024*1024){upstream.destroy();req.destroy();}});
+   upstream.setTimeout(req.headers['x-qm-history-import']==='1'?1800000:120000,()=>upstream.destroy());
+   let size=0;req.on('data',chunk=>{size+=chunk.length;if(size>70*1024*1024&&req.headers['x-qm-history-import']!=='1'){upstream.destroy();req.destroy();}});
    req.on('aborted',()=>upstream.destroy());res.on('close',()=>{if(!res.writableFinished)upstream.destroy();});req.pipe(upstream);return;
   }
   try{assets.serve(req,res,url,{origin:target.origin,roomId:info.roomId});}catch{res.writeHead(400).end();}

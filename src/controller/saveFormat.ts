@@ -15,8 +15,11 @@ export function recoverRecord(record:RecoveryRecord):GameState {
   }
   return state;
 }
-export interface Checkpoint { id:string; round:number; seat:SeatId; createdAt:string; state:GameState; stage?:'prelude' }
+export interface Checkpoint { id:string; round:number; seat:SeatId; createdAt:string; state:GameState; historyKey?:string; stage?:'prelude' }
 export interface SaveSession {
+  historyArchivePoints?:Record<string,import('../actionReplay/historySave').SavePoint[]>;
+  historyArchives?:Record<string,import('../actionReplay/recorder').Recording>;
+  historyPoints?:import('../actionReplay/historySave').SavePoint[];
   actionRecording?:import('../actionReplay/recorder').Recording;
   matchRecording?:import('../matchLog/recorder').Recording;
   format:'quartermaster-save'; version:1; updatedAt:string;

@@ -26,7 +26,7 @@ const id=()=>crypto.randomUUID();
 export const actions=(root:Action):Action[]=>[root,...root.interventions.flatMap(x=>actions(x.action))];
 export function groupOrder(g:ActionGroup,records:Recording['records']){return Math.max(0,...actions(g.root).flatMap(a=>[...a.choices.map(c=>c.order),...a.interventions.map(i=>i.order)]),...records.filter((r):r is Shuffle=>r.type==='shuffle'&&r.groupId===g.groupId).map(r=>r.order));}
 function group(s:GameState,input:Command|{type:'CONTINUE_BOUNDARY';boundary:ReplayBoundary},seat:SeatId):ActionGroup {
- const c=input as Command,card='cardId'in c?Object.values(s.decks).flatMap(d=>Object.values(d).flat()).concat(s.prelude?Object.values(s.prelude.decks).flatMap(d=>Object.values(d).flat()):[]).find(x=>x.id===c.cardId):undefined;
+ const c=input as Command,rootChoice=c.type==='RESOLVE_ENGINE_CHOICE'&&c.ids.length?selectedRule(s,c.ids[0]):undefined,rootCardId=rootChoice?.sourceInstanceId??(c.type==='RESOLVE_ENGINE_CHOICE'&&s.resolution?.choice?.kind==='EXTRA_CARD'?c.ids[0]:undefined),card=('cardId'in c||rootCardId)?Object.values(s.decks).flatMap(d=>Object.values(d).flat()).concat(s.prelude?Object.values(s.prelude.decks).flatMap(d=>Object.values(d).flat()):[]).find(x=>x.id===('cardId'in c?c.cardId:rootCardId)):undefined;
  const kind:Action['kind']=c.type==='KEEP_OPENING'?'opening_keep':c.type==='DISCARD_HAND'||c.type==='DISCARD_PRELUDE_TOP'?'discard':c.type==='REDISTRIBUTE'?'resource_reorganize':c.type==='STATUS_ACTION'?'activate':card?'play_card':'phase_advance';
  return {type:'action_group',seq:0,groupId:id(),stage:s.prelude?.active?'prelude':s.phase==='SETUP'?'opening':'formal',round:s.round,root:{actionId:id(),kind,decisionSeat:seat,...(card?{cardInstanceId:card.id,cardDefinitionId:card.definitionId,unitCountry:card.country}:{}),input:compactCommand(s,c),choices:[],interventions:[],summary:card?`${COUNTRY_NAMES[seat]}${kind==='activate'?'发动':'打出'}【${cardName(card)}】`:c.type==='KEEP_OPENING'?`${COUNTRY_NAMES[seat]}选择起手牌`:c.type==='DISCARD_HAND'?`${COUNTRY_NAMES[seat]}弃牌`:c.type==='DISCARD_PRELUDE_TOP'?`${COUNTRY_NAMES[seat]}弃置序章牌库顶`:c.type==='REDISTRIBUTE'?`${COUNTRY_NAMES[seat]}资源重整`:`${COUNTRY_NAMES[seat]}推进阶段`},status:'pending',frontier:{at:anchor(s,''),decisionKind:'idle'}};
 }
@@ -35,7 +35,7 @@ export async function createRecording(s:GameState,origin:Header['origin']='snaps
  const state=snapshot(s),r:Recording={records:[header,{type:'start',seq:1,checkpointId:id(),state,stateHash:await hash(state)}],cursors:{}};
  r.cursors[await stateHash(s)]={seq:1,order:0};return r;
 }
-function activeAction(g:ActionGroup,s:GameState):Action {
+export function activeAction(g:ActionGroup,s:GameState):Action {
  const q=s.resolution?.choice,r=s.resolution,rule=r?.rules.find(x=>x.id===q?.triggerId),frame=r?.frames.find(x=>x.id===q?.frameId)??r?.frames.find(x=>x.id===[...(r?.stack??[])].reverse().find(x=>x.kind==='frame')?.id);
  const effect=frame?.effects[frame.nextEffectIndex],selected=effect?.kind==='extraPlay'?effect.selectedCardId:undefined;
  const all=actions(g.root);return [...all].reverse().find(a=>a.cardInstanceId&&(a.cardInstanceId===selected||a.cardInstanceId===rule?.sourceInstanceId||a.cardInstanceId===frame?.cardId))??g.root;
@@ -44,7 +44,7 @@ export async function recordCommand(old:Recording|undefined,base:GameState|null,
  if(!base||c.type==='CREATE_GAME')return createRecording(next,'creation');
  const r:Recording=old?{records:[...old.records],cursors:{...old.cursors},groupStarts:{...old.groupStarts}}:await createRecording(base);
  const skipInput=omitted(base,c)&&!(c.type==='ACK_RESPONSE_NOTICE'&&base.resolution?.revealGroup);
- if(skipInput&&!captures.length){
+ if(skipInput&&!captures.length&&(r.records.at(-1)?.type==='action_group'&&(r.records.at(-1) as ActionGroup).status==='pending'||await stateHash(base)===await stateHash(next))){
   if(c.type!=='SET_VIEW')await finish(r,next);
   return r;
  }
@@ -71,7 +71,16 @@ export async function recordCommand(old:Recording|undefined,base:GameState|null,
    g=group(s,{type:'CONTINUE_BOUNDARY',boundary:capture.boundary!},s.activeSeat);
   }
  }
- g.seq=r.records.length;r.records.push(g);await finish(r,next);return r;
+ g.seq=r.records.length;r.records.push(g);await finish(r,next);
+ // A national turn boundary closes the previous action group, even if the next
+ // nation's start-of-turn question is already present in the engine state.
+ if(base.activeSeat!==next.activeSeat||base.round!==next.round||base.prelude?.turn!==next.prelude?.turn){
+  const last=r.records.at(-1);if(last?.type==='action_group'){
+   const digest=await stateHash(next),{frontier:_frontier,...previous}=last;r.records[r.records.length-1]={...previous,status:'complete',afterHash:digest};
+   r.cursors[digest]={seq:last.seq,groupId:last.groupId,order:groupOrder(last,r.records)};
+  }
+ }
+ return r;
 }
 async function finish(r:Recording,s:GameState){
  const last=r.records.at(-1);if(last?.type==='action_group'){
@@ -84,14 +93,18 @@ async function finish(r:Recording,s:GameState){
  }
 }
 export async function restoreRecording(old:Recording|undefined,s:GameState,edit=false):Promise<Recording>{
- const cursor=old?.cursors[await stateHash(s)];if(!old||!cursor||edit)return createRecording(s);
+ const digest=await stateHash(s);if(!old||!old.cursors[digest]||edit)return createRecording(s);
+ return recordingPrefix(old,digest);
+}
+export function recordingPrefix(old:Recording,digest:string):Recording {
+ const cursor=old.cursors[digest];if(!cursor)throw Error('历史定位不存在');
  const targetIndex=cursor.groupId?old.records.findIndex(r=>r.type==='action_group'&&r.groupId===cursor.groupId):cursor.seq;
  if(targetIndex<1)throw Error('回退动作前缀不存在');
  const records=old.records.slice(0,targetIndex+1).filter(r=>r.type!=='shuffle'||r.order<=cursor.order||r.groupId!==cursor.groupId);
  const last=records.at(-1);if(last?.type==='action_group'){
   const g=structuredClone(last);function trim(a:Action){a.choices=a.choices.filter(c=>c.order<=cursor!.order);a.interventions=a.interventions.filter(i=>i.order<=cursor!.order);a.interventions.forEach(i=>trim(i.action));}trim(g.root);
-  if(cursor.frontier){g.status='pending';(g as any).frontier=cursor.frontier;delete (g as any).afterHash;}else{g.status='complete';delete (g as any).frontier;(g as any).afterHash=await stateHash(s);}records[records.length-1]=g;
+  if(cursor.frontier){g.status='pending';(g as any).frontier=cursor.frontier;delete (g as any).afterHash;}else{g.status='complete';delete (g as any).frontier;(g as any).afterHash=digest;}records[records.length-1]=g;
  }
  records.forEach((r,i)=>{records[i]={...r,seq:i} as any;});records[0]={...records[0],recordingRevision:(records[0] as Header).recordingRevision+1} as Header;
- return {records,groupStarts:old.groupStarts,cursors:Object.fromEntries(Object.entries(old.cursors).filter(([,c])=>{const n=c.groupId?old.records.findIndex(r=>r.type==='action_group'&&r.groupId===c.groupId):c.seq;return n<targetIndex||n===targetIndex&&c.order<=cursor.order;}))};
+ return {records,groupStarts:old.groupStarts,cursors:Object.fromEntries(Object.entries(old.cursors).filter(([,c])=>{const n=c.groupId?old.records.findIndex(r=>r.type==='action_group'&&r.groupId===c.groupId):c.seq;return n<targetIndex||n===targetIndex&&c.order<=cursor.order;}).map(([key,c])=>[key,{...c,seq:c.groupId?records.findIndex(r=>r.type==='action_group'&&r.groupId===c.groupId):c.seq}]))};
 }

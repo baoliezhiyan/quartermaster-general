@@ -1,3 +1,4 @@
+import {stateHash} from '../src/actionReplay/state';
 import {it,expect} from 'vitest';
 import {createGame} from '../src/core/game';
 import {startResolution,resolveChoice} from '../src/core/resolution';
@@ -118,7 +119,7 @@ it('multiplayer batch survives reconnect/save/reload and duplicate commands do n
  const s=uk.snapshot.state!,c=s.resolution!.choice!;expect(c.options).toHaveLength(2);
  const request=uk.request('dispatch',{type:'RESOLVE_ENGINE_CHOICE',seat:'united_kingdom',expectedRevision:s.revision,choiceId:c.id,ids:[]});
  expect(await uk.raw(request)).toMatchObject({ok:true});expect(await uk.raw(request)).toMatchObject({ok:true});expect(uk.snapshot.state!.scores.germany).toBe(2);
- const save=await gm.call('exportSave');await gm.call('importSave',save);expect(uk.snapshot.state!.resolution!.choice!.options).toHaveLength(2);
+ const hashBefore=await stateHash(gm.snapshot.state! as GameState);const save=await gm.call('exportSave');await gm.call('importSave',save);expect(await stateHash(gm.snapshot.state! as GameState)).toBe(hashBefore);expect(uk.snapshot.state!.resolution!.choice!.options).toHaveLength(2);
  const next=uk.snapshot.state!,choice=next.resolution!.choice!;expect(await uk.call('dispatch',{type:'RESOLVE_ENGINE_CHOICE',seat:'united_kingdom',expectedRevision:next.revision,choiceId:choice.id,ids:[choice.options[0].id]})).toMatchObject({ok:true});
  expect(uk.snapshot.state!.scores.germany).toBe(2);expect(await gm.call('checkReplay')).toBe(true);
 });

@@ -1,8 +1,9 @@
+import {parseReplay,seal} from '../src/actionReplay/codec';
+import {stateHash} from '../src/actionReplay/state';
 import { describe, expect, it } from 'vitest';
 import { LocalGameController } from '../src/controller/LocalGameController';
 import type { SessionStore } from '../src/controller/SessionStore';
 import type { SaveSession } from '../src/controller/saveFormat';
-import { validateSession } from '../src/controller/saveFormat';
 import type { Command } from '../src/core';
 
 class MemoryStore implements SessionStore {
@@ -72,16 +73,16 @@ describe('automatic saves and bounded undo',()=>{
   it('exports/imports a pending full-deck trigger with the undo stack and rejects incompatible or broken saves atomically',async()=>{
     const c=await ready('FULL');
     const before=c.getSnapshot()!;expect(before.resolution?.choice?.kind).toBe('TRIGGER');
-    const text=c.exportSave();
+    const text=await c.exportSave();
     const target=new LocalGameController();await target.importSave(text);
-    expect(target.getSnapshot()!.resolution).toEqual(before.resolution);
+    expect(await stateHash(target.getSnapshot()!)).toBe(await stateHash(before));
     expect(target.getSnapshot()!.decks).toEqual(before.decks);
-    const bad=JSON.parse(text);bad.state.rulesVersion='9.9';
-    const intact=target.getSnapshot();await expect(target.importSave(JSON.stringify(bad))).rejects.toThrow('版本');expect(target.getSnapshot()).toBe(intact);
-    const duplicate=JSON.parse(text);duplicate.state.decks.germany.hand.push(duplicate.state.decks.germany.hand[0]);
-    await expect(target.importSave(JSON.stringify(duplicate))).rejects.toThrow('重复');
+    const archive=await parseReplay(text),bad=structuredClone(archive.records.slice(0,-1));(bad[0] as any).gameVersion='9.9';
+    const intact=target.getSnapshot();await expect(target.importSave(await seal(bad as any))).rejects.toThrow('版本');expect(target.getSnapshot()).toBe(intact);
+    const duplicate=structuredClone(archive.records.slice(0,-1));const start=duplicate[1] as any;start.state.ruleState.decks.germany.hand.push(start.state.ruleState.decks.germany.hand[0]);
+    await expect(target.importSave(await seal(duplicate as any))).rejects.toThrow();expect(target.getSnapshot()).toBe(intact);
     await send(target,{type:'RESOLVE_ENGINE_CHOICE',choiceId:target.getSnapshot()!.resolution!.choice!.id,ids:[]});
-    expect(target.getSnapshot()!.phase).toBe('PLAY');await target.undo();expect(target.getSnapshot()!.resolution).toEqual(before.resolution);
+    expect(target.getSnapshot()!.phase).toBe('PLAY');await target.undo();expect(await stateHash(target.getSnapshot()!)).toBe(await stateHash(before));
     expect(target.checkReplay()).toBe(true);
   });
   it('restores current progress and undo after reopening, replaces previous games, and surfaces storage failures',async()=>{
@@ -99,17 +100,17 @@ describe('automatic saves and bounded undo',()=>{
     const c=await ready();await send(c,{type:'ADVANCE_PHASE'});
     const draft=structuredClone(c.getSnapshot()!);draft.scores.germany=23;
     await c.editScene(draft);expect(c.getSnapshot()!.scores.germany).toBe(23);
-    expect(c.checkReplay()).toBe(true);expect(()=>validateSession(JSON.parse(c.exportSave()))).not.toThrow();
+    expect(c.checkReplay()).toBe(true);await expect(parseReplay(await c.exportSave())).resolves.toBeDefined();
     await c.undo();expect(c.getSnapshot()!.scores.germany).toBe(0);
-    const corrupt=JSON.parse(c.exportSave());corrupt.state.scores.germany=123;
-    expect(()=>validateSession(corrupt)).toThrow('回放');
+    const corrupt=await c.exportSave();
+    await expect(c.importSave(corrupt.replace('"seed":1940','"seed":123'))).rejects.toThrow();
   });
   it('restores a target choice, undoes its placement, and can make a different choice without redo',async()=>{
     const c=await ready('FULL');
     await send(c,{type:'RESOLVE_ENGINE_CHOICE',choiceId:c.getSnapshot()!.resolution!.choice!.id,ids:[]});
     const card=c.getSnapshot()!.decks.germany.hand.find(v=>v.definitionId==='build_army')!;
     await send(c,{type:'PLAY_CARD',cardId:card.id,effectIndices:[0],targetIds:[]});
-    const saved=c.exportSave(),original=c.getSnapshot()!;
+    const saved=await c.exportSave(),original=c.getSnapshot()!;
     expect(original.resolution!.choice!.kind).toBe('ACTION');
     await send(c,{type:'RESOLVE_ENGINE_CHOICE',choiceId:original.resolution!.choice!.id,ids:['eastern_europe']});
     expect(c.getSnapshot()!.units).toHaveLength(original.units.length+1);
@@ -118,14 +119,14 @@ describe('automatic saves and bounded undo',()=>{
     await send(c,{type:'RESOLVE_ENGINE_CHOICE',choiceId:c.getSnapshot()!.resolution!.choice!.id,ids:['balkans']});
     expect(c.getSnapshot()!.units.some(u=>u.country==='germany'&&u.regionId==='balkans')).toBe(true);
     expect(c.getSnapshot()!.units.some(u=>u.country==='germany'&&u.regionId==='eastern_europe')).toBe(false);
-    expect(c.checkReplay()).toBe(true);expect(()=>validateSession(JSON.parse(c.exportSave()))).not.toThrow();
+    expect(c.checkReplay()).toBe(true);await expect(parseReplay(await c.exportSave())).resolves.toBeDefined();
   });
   it('can import a file into memory when browser storage is unavailable',async()=>{
     const source=await ready('FULL');
     const unavailable:SessionStore={read:async()=>{throw new Error('存储不可用');},write:async()=>{throw new Error('存储不可用');},list:async()=>[]};
     const target=new LocalGameController(unavailable);
-    await target.importSave(source.exportSave());
-    expect(target.getSnapshot()!.resolution).toEqual(source.getSnapshot()!.resolution);
+    await target.importSave(await source.exportSave());
+    expect(await stateHash(target.getSnapshot()!)).toBe(await stateHash(source.getSnapshot()!));
     expect(target.getSessionInfo().storageError).toContain('保存失败');
     expect(target.checkReplay()).toBe(true);
   });

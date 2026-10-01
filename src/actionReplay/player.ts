@@ -16,7 +16,7 @@ export interface Entry {id:string;groupId:string;round:number;stage:string;seat:
 export function entries(a:Archive):Entry[]{return a.groups.flatMap(g=>actions(g.root).map(x=>({id:x.actionId,groupId:g.groupId,round:g.round,stage:g.stage,seat:x.decisionSeat,summary:x.summary??'规则动作',kind:x.kind})));}
 interface Step {at:Anchor;order:number;seat:SeatId;input:ObjectData;action?:Action;}
 function steps(root:Action):Step[]{return [...root.choices.map(c=>({at:c.at,order:c.order,seat:c.decisionSeat,input:c.answer as ObjectData})),...root.interventions.flatMap(i=>[{at:i.at,order:i.order,seat:i.action.decisionSeat,input:i.action.input,action:i.action},...steps(i.action)])].sort((a,b)=>a.order-b.order);}
-export async function playGroup(initial:GameState,g:ActionGroup,shuffles:Shuffle[],target?:{id:string;after:boolean},details:Detail[]=[],narrative?:Narrative):Promise<{state:GameState;selected?:GameState}> {
+export async function playGroup(initial:GameState,g:ActionGroup,shuffles:Shuffle[],target?:{id:string;after:boolean},details:Detail[]=[],narrative?:Narrative,onState?:(state:GameState,order:number)=>void):Promise<{state:GameState;selected?:GameState}> {
  let s=structuredClone(initial),selected:GameState|undefined,randomIndex=0,boundaryState:GameState|undefined;
  const scheduled=steps(g.root);let currentAction=g.root,consumedOrder=0;
  const automaticAck=()=>{const reveal=s.resolution?.revealGroup;if(!reveal)return false;for(const item of reveal.items){for(const id of [item.requestId,item.resultId]){const notice=s.responseNotices?.find(n=>n.id===id);if(notice&&!notice.readBy.includes(item.seat)){execute({type:'ACK_RESPONSE_NOTICE',noticeId:id},item.seat);return true;}}}throw Error('缺少必要翻牌确认上下文');};
@@ -43,13 +43,14 @@ export async function playGroup(initial:GameState,g:ActionGroup,shuffles:Shuffle
    }else{const result=transition(s,liveCommand(s,input,seat));if(!result.ok)throw Error(`动作 ${currentAction.actionId} 无法重演：${result.error}`);s=result.state;}
   }));
   if(boundaryState)s=boundaryState;
-  observer(s);
+  observer(s);onState?.(s,consumedOrder);
  }
  if(target?.id===g.root.actionId&&!target.after)selected=structuredClone(s);
  execute(g.root.input,g.root.decisionSeat);
  let guard=0,index=0;
  while(++guard<20000){
   const next=scheduled[index];
+  if(!next&&g.status==='complete'&&g.afterHash&&randomIndex===shuffles.length&&await stateHash(s)===g.afterHash)break;
   if(g.status==='pending'&&sameAnchor(anchor(s,g.frontier.at.actionId),g.frontier.at)&&!next)break;
   if(boundaryState)break;
   if(automaticAck())continue;

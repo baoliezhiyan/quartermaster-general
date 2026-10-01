@@ -48,6 +48,7 @@ export class Room {
   const identities=this.identities();await this.saveIdentities([...identities,i]);
   this.users.set(i.token,{...i,access:{kind:'public'},online:false,connection:'',view:'germany',results:new Map()});return i;
  });}
+ authorizeHistoryImport(token:string){const u=this.user(token);if(u.access.kind!=='gm'||!u.online)throw Error('仅在线 GM 可导入存档。');}
  private user(token:string){const u=this.users.get(token);if(!u)throw new Error('身份链接无效，请从房间入口创建用户。');return u;}
  connect(token:string,connection:string,send:User['send']) {return this.serial(async()=>{
   const u=this.user(token);u.send?.({replaced:true});u.connection=connection;u.send=send;u.online=true;if(u.bindings?.length){u.access={kind:'player',seat:u.bindings[0]};u.view=u.bindings[0];}await this.broadcast();
@@ -59,7 +60,7 @@ export class Room {
   const source=this.engine.getSnapshot(),view=u.access.kind==='player'||u.access.kind==='observer'?u.access.seat:u.view,key=JSON.stringify([u.access,view]);
   if(!u.projection||u.projection.source!==source||u.projection.key!==key)u.projection={source,key,state:measure('project_view',()=>this.projectView(source,u.access,view))};
   const info=structuredClone({...this.engine.getSessionInfo(),replayEntries:[]});
-  if(u.access.kind!=='gm'){info.rounds=[];info.nations=[];info.replayEntries=[];info.canUndo=info.canUndo&&u.access.kind==='player'&&u.access.seat===this.engine.getSnapshot()?.activeSeat;}
+  if(u.access.kind!=='gm'){info.rounds=[];info.nations=[];info.savePoints=[];info.replayEntries=[];info.canUndo=info.canUndo&&u.access.kind==='player'&&u.access.seat===this.engine.getSnapshot()?.activeSeat;}
   return {state:u.projection.state,info,room:{chat:this.chat,sceneLocked:this.sceneLocked,userId:u.id,name:u.name,access:u.access,bindings:u.bindings??[],bindingAttention:u.access.kind==='player'&&source?(u.bindings??[]).flatMap(seat=>{const result:{seat:SeatId;key:string;kind:'response'|'turn'|'attack';text?:string}[]=[];if(this.responses(source).includes(seat))result.push({seat,key:`${this.epoch}:${source.gameId}:response:${seat}:${source.balanceResolutionSerial??0}:${source.resolution?.choice?.id??source.responseNotices?.filter(n=>n.recipients.includes(seat)&&!n.readBy.includes(seat)).map(n=>n.id).join(',')}`,kind:'response',text:source.resolution?.choice?.seat===seat?source.resolution.choice.prompt:undefined});if(source.activeSeat===seat&&source.phase!=='SETUP')result.push({seat,key:`${source.gameId}:turn:${seat}:${source.round}:${source.prelude?.active?source.prelude.turn:0}`,kind:'turn'});for(const n of source.responseNotices??[])if(n.title==='受到攻击'&&n.recipients.includes(seat)&&!n.readBy.includes(seat))result.push({seat,key:`${source.gameId}:attack:${seat}:${n.id}`,kind:'attack',text:n.text});return result;}):[],members:[...this.users.values()].filter(x=>x.online||seatKey(x.access)).map(({id,name,access,online,bindings})=>({id,name,access,online,bindings})),connected:true,recoveryAvailable:!!this.engine.getSnapshot()||await this.recoveryExists,epoch:this.epoch,decision:u.decision,serverId:this.serverId,sequence:this.sequence}};
  }
  private refreshDecision(u:User){
@@ -157,7 +158,7 @@ export class Room {
      case 'seekReplay':await this.engine.seekReplay(r.args[0] as number);break;
      case 'loadCheckpoint':await this.engine.loadCheckpoint(r.args[0] as string);this.epoch=crypto.randomUUID();break;
      case 'editScene':await this.engine.editScene(r.args[0],r.args[1] as {endPrelude?:boolean;endNeutrality?:'soviet_union'|'united_states'}|undefined);this.epoch=crypto.randomUUID();break;
-     case 'exportSave':value=this.engine.exportSave();break;
+     case 'exportSave':value=await this.engine.exportSave(r.args[0] as string|undefined);break;
      case 'exportReplay':value=await this.engine.exportReplay();break;
      case 'exportReplayNodeSave':value=this.engine.exportReplayNodeSave();break;
      case 'exportDiagnostics':value=this.engine.exportDiagnostics(r.args[0] as string);break;

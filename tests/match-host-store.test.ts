@@ -21,7 +21,7 @@ it('host appends live JSONL, atomically truncates suffix and retains an interrup
  for(let i=1;i<6;i++){const s=c.getSnapshot()!;await c.dispatch({type:'KEEP_OPENING',seat:SEATS[i],expectedRevision:s.revision,cardIds:s.decks[SEATS[i]].hand.slice(0,7).map(v=>v.id)});}
  while(c.getSnapshot()!.resolution?.choice){const s=c.getSnapshot()!,q=s.resolution!.choice!;expect(await c.dispatch({type:'RESOLVE_ENGINE_CHOICE',seat:q.seat,expectedRevision:s.revision,choiceId:q.id,ids:q.options.slice(0,q.min).map(o=>o.id)})).toEqual({ok:true});}
  const before=await c.exportReplay();expect(await c.dispatch({type:'ADVANCE_PHASE',seat:c.getSnapshot()!.activeSeat,expectedRevision:c.getSnapshot()!.revision})).toEqual({ok:true});await c.undo();const after=await parseReplay(await c.exportReplay());expect(after.groups).toEqual((await parseReplay(before)).groups);const disk=(await readFile(path,'utf8')).trim().split('\n').map(JSON.parse);expect(disk).toHaveLength(after.end.seq);expect(disk[0].recordingRevision).toBe(after.header.recordingRevision);
- const external=new LocalGameController();await external.dispatch({type:'CREATE_GAME',gameId:'other',seed:13});await c.importSave(external.exportSave());expect((await readdir(dir)).filter((s:string)=>s.endsWith('.jsonl'))).toHaveLength(2);expect(await readFile(path,'utf8')).toBe(disk.map(JSON.stringify).join('\n')+'\n');
+ const external=new LocalGameController();await external.dispatch({type:'CREATE_GAME',gameId:'other',seed:13});await c.importSave(await external.exportSave());expect((await readdir(dir)).filter((s:string)=>s.endsWith('.jsonl'))).toHaveLength(2);expect(await readFile(path,'utf8')).toBe(disk.map(JSON.stringify).join('\n')+'\n');
 
  }finally{await rm(dir,{recursive:true,force:true});}
 },60000);

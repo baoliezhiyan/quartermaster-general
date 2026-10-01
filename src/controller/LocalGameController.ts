@@ -1,4 +1,6 @@
-import {captureTransition,recordCommand,restoreRecording} from '../actionReplay/recorder';
+import {readHistorySave,restoreHistoryTail,turnPoint} from '../actionReplay/historySave';
+import {stateHash} from '../actionReplay/state';
+import {captureTransition,recordCommand,restoreRecording,recordingPrefix} from '../actionReplay/recorder';
 import type {Capture} from '../actionReplay/recorder';
 import {seal,validateRecords} from '../actionReplay/codec';
 import {endNeutrality} from '../core/neutrality';
@@ -26,7 +28,7 @@ function deepFreeze<T>(value: T): T {
 
 /** Committed snapshots are immutable; copy only containers changed by this operation. */
 function copySession(s:SaveSession):SaveSession {
- return {...s,rounds:[...s.rounds],nations:[...s.nations],undo:[...s.undo],commands:[...s.commands],
+ return {...s,rounds:[...s.rounds],nations:[...s.nations],historyPoints:[...(s.historyPoints??[])],historyArchives:{...s.historyArchives},historyArchivePoints:{...s.historyArchivePoints},undo:[...s.undo],commands:[...s.commands],
   recovery:s.recovery?{...s.recovery,steps:[...s.recovery.steps]}:undefined};
 }
 
@@ -61,7 +63,7 @@ export class LocalGameController implements GameController {
   subscribe=(listener:()=>void)=>{this.listeners.add(listener);return()=>{this.listeners.delete(listener);};};
   private publish() {
     const meta=(c:Checkpoint)=>({id:c.id,round:c.round,seat:c.seat,createdAt:c.createdAt,...(c.stage?{stage:c.stage}:{})});
-    this.info={...this.info,replayMode:!!this.playback,replayCursor:this.playback?.cursor??0,replayEntries:this.playback?.entries??[],canUndo:!this.playback&&!!this.session?.undo.length,undoCount:this.session?.undo.length??0,rounds:this.session?.rounds.map(meta)??[],nations:this.session?.nations.map(meta)??[]};
+    this.info={...this.info,replayMode:!!this.playback,replayCursor:this.playback?.cursor??0,replayEntries:this.playback?.entries??[],savePoints:this.session?.historyPoints??[],canUndo:!this.playback&&!!this.session?.undo.length,undoCount:this.session?.undo.length??0,rounds:this.session?.rounds.map(meta)??[],nations:this.session?.nations.map(meta)??[]};
     this.listeners.forEach(l=>l());
   }
   private enqueue<T>(action:()=>Promise<T>):Promise<T> {
@@ -133,6 +135,7 @@ export class LocalGameController implements GameController {
       session.state=next;
       delete session.matchRecording;
       if(input.type!=='SET_VIEW')session.actionRecording=await recordCommand(this.session?.actionRecording,base,next,input,captures);
+      if(session.nations.some(c=>c.state===next)){const point={...turnPoint(next),hash:await stateHash(next)};session.historyPoints=[...(session.historyPoints??[]).filter(p=>p.id!==point.id),point];}
       await this.commit(session,input.type==='CREATE_GAME');return {ok:true};
     });
   };
@@ -162,15 +165,36 @@ export class LocalGameController implements GameController {
     session.actionRecording=await restoreRecording(session.actionRecording,previous);delete session.matchRecording;
     this.restore(session,previous,'回退一步');await this.commit(session);
   });
+  private preserveSlotHistories(session:SaveSession){
+    if(session.actionRecording&&[...session.rounds,...session.nations].some(c=>!c.historyKey)){
+      const key=crypto.randomUUID();session.historyArchives={...session.historyArchives,[key]:session.actionRecording};session.historyArchivePoints={...session.historyArchivePoints,[key]:session.historyPoints??[]};
+      session.rounds=session.rounds.map(c=>c.historyKey?c:{...c,historyKey:key});session.nations=session.nations.map(c=>c.historyKey?c:{...c,historyKey:key});
+    }
+    const used=new Set([...session.rounds,...session.nations].map(c=>c.historyKey));
+    session.historyArchives=Object.fromEntries(Object.entries(session.historyArchives??{}).filter(([k])=>used.has(k)));
+    session.historyArchivePoints=Object.fromEntries(Object.entries(session.historyArchivePoints??{}).filter(([k])=>used.has(k)));
+  }
   loadCheckpoint=(id:string)=>this.enqueue(async()=>{
     if(!this.session)throw new Error('没有对局。');
     const session=copySession(this.session),checkpoint=[...session.rounds,...session.nations].find(c=>c.id===id);
     if(!checkpoint)throw new Error('存档不存在。');
     if(this.playback){this.playback=null;delete session.playback;this.access={kind:'gm'};}
-    session.actionRecording=await restoreRecording(session.actionRecording,checkpoint.state);delete session.matchRecording;
-    session.undo=[];this.restore(session,checkpoint.state,'读取行动起点');await this.commit(session);
+    const source=checkpoint.historyKey?session.historyArchives?.[checkpoint.historyKey]:session.actionRecording;
+    const points=checkpoint.historyKey?session.historyArchivePoints?.[checkpoint.historyKey]:session.historyPoints;
+    this.preserveSlotHistories(session);
+    session.actionRecording=await restoreRecording(source,checkpoint.state);delete session.matchRecording;
+    session.historyPoints=(points??[]).filter(p=>!!session.actionRecording?.cursors[p.hash]);
+    const restored=await restoreHistoryTail(session.actionRecording);if(await stateHash(restored)!==await stateHash(checkpoint.state))throw Error('存档槽与历史不一致。');
+    session.undo=[];this.restore(session,restored,'读取行动起点');await this.commit(session);
   });
-  exportSave=()=>{if(this.playback)throw new Error('回放模式请使用导出当前对局为存档。');if(!this.session)throw new Error('没有可导出的对局。');return JSON.stringify({...this.session,matchRecording:undefined,actionRecording:undefined},null,2);};
+  exportSave=(pointId?:string)=>this.enqueue(async()=>{
+    if(!this.session)throw Error('没有可导出的对局。');
+    let r=this.session.actionRecording??await restoreRecording(undefined,this.session.state);
+    if(pointId){const p=this.session.historyPoints?.find(p=>p.id===pointId);if(!p)throw Error('该行动前存档不存在。');
+      r=recordingPrefix(r,p.hash);
+    }
+    return seal(r.records,!pointId&&this.session.state.status==='FINISHED',!pointId?this.session.state.winner??undefined:undefined);
+  });
   exportReplay=()=>this.enqueue(async()=>{
     if(!this.session)throw new Error('没有可导出的对局。');
     const recording=this.session.actionRecording??await restoreRecording(undefined,this.session.state);
@@ -205,15 +229,21 @@ export class LocalGameController implements GameController {
     await this.commit(session);
   });
   importSave=(json:string)=>this.enqueue(async()=>{
-    if(json.length>64*1024*1024)throw new Error('存档超过 64 MB。');
+    if(json.trimStart().startsWith('{')&&json.split('\n',1)[0].includes('quartermaster-match-log')){
+      const loaded=await readHistorySave(json),session=this.fresh(loaded.state);
+      session.actionRecording=loaded.recording;session.rounds=loaded.rounds;session.nations=loaded.nations;session.historyPoints=loaded.points;
+      this.playback=null;this.access={kind:'gm'};this.restore(session,loaded.state);await this.commit(session,true);return;
+    }
     const session=validateSession(JSON.parse(json));
     if(session.playback)throw new Error('请通过导入回放查看该文件，或导出节点存档后再读档。');
+    delete session.historyArchives;delete session.historyArchivePoints;session.historyPoints=[];
+    session.rounds=session.rounds.map(({historyKey:_key,...cp})=>cp);session.nations=session.nations.map(({historyKey:_key,...cp})=>cp);
     try {
       const existing=await this.store?.read(session.state.gameId);
       if(existing&&typeof existing==='object'&&'updatedAt' in existing&&typeof existing.updatedAt==='string')this.persistedVersions.set(session.state.gameId,existing.updatedAt);
     } catch { /* Import remains usable in memory; commit reports the storage failure. */ }
     session.actionRecording=await restoreRecording(this.session?.actionRecording,session.state);delete session.matchRecording;
-    this.playback=null;this.access={kind:'gm'};this.restore(session,session.state);await this.commit(session,true);
+    this.playback=null;this.access={kind:'gm'};this.restore(session,session.state);if(!session.actionRecording?.cursors[await stateHash(session.state)])session.actionRecording=await restoreRecording(undefined,session.state);await this.commit(session,true);
   });
   checkReplay=()=>!!this.session&&verifyReplay(this.session);
   exportDiagnostics=(note:string)=>JSON.stringify({format:'quartermaster-diagnostic',appVersion:'1.6.1',note,failures:this.failures,session:this.session},null,2);
@@ -246,7 +276,7 @@ export class LocalGameController implements GameController {
       if(options?.endPrelude)finishPrelude(next);
       validateState(next);
       const session=measure('clone_session',()=>copySession(this.session!));session.undo.push(structuredClone(this.state));
-      session.actionRecording=await restoreRecording(session.actionRecording,next,true);delete session.matchRecording;
+      this.preserveSlotHistories(session);session.historyPoints=[];session.actionRecording=await restoreRecording(session.actionRecording,next,true);delete session.matchRecording;
       this.restore(session,next,'GM 编辑局面');await this.commit(session);
     });
   };

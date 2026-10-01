@@ -1,3 +1,4 @@
+import {seal} from '../src/actionReplay/codec';
 import {it,expect} from 'vitest';
 import {mkdtemp,readFile,writeFile,appendFile} from 'node:fs/promises';
 import {join} from 'node:path';import {tmpdir} from 'node:os';
@@ -38,7 +39,7 @@ it('preserves exported game, undo and deterministic replay through actual contro
  for(const seat of ['germany','united_kingdom','japan','soviet_union','italy','united_states']){const state=c.getSnapshot();await c.dispatch({type:'KEEP_OPENING',seat,expectedRevision:state.revision,cardIds:state.decks[seat].hand.slice(0,7).map(c=>c.id)});}
  const recovered=await createJournalStore(d,options).read();expect(()=>validateSession(recovered)).not.toThrow();expect(verifyReplay(recovered)).toBe(true);
  const {actionRecording,...save}=recovered;expect(actionRecording.records.length).toBeGreaterThan(2);
- expect(JSON.stringify(save)===JSON.stringify(JSON.parse(c.exportSave()))).toBe(true);
+ expect(await c.exportSave()).toBe(await seal(actionRecording.records));
  const reloaded=new LocalGameController(createJournalStore(d,options),true);await reloaded.exportReplay();
  expect(await reloaded.exportReplay()===await c.exportReplay()).toBe(true);
 });
