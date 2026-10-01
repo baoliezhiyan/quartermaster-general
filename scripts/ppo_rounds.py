@@ -14,6 +14,7 @@ from pathlib import Path
 import torch
 
 from scripts import ppo_train as ppo
+from scripts.ppo_progress import ordinal
 
 UPDATES_PER_ROUND = 10
 EVALUATION_SEEDS = tuple(range(987650, 987670))
@@ -175,11 +176,12 @@ def complete_round(mode: str, number: int, args) -> None:
         return
     if finished < target:
         state_dir.mkdir(parents=True, exist_ok=True)
-        print(f"{mode} 第 {number} 轮：执行 {target - finished} 次更新，{args.workers} 个环境共享模型。",
+        print(f"\n{mode} {ordinal(number, '轮')}：执行 {target - finished} 次更新，{args.workers} 个环境共享模型。",
               flush=True)
         run_training(mode, target - finished, finished > 0, args.workers,
                      args.seed, checkpoint, report)
     course_root.mkdir(parents=True, exist_ok=True)
+    print(f"{mode} {ordinal(number, '轮')}：生成模型文件和抽样对局记录...", flush=True)
     with tempfile.TemporaryDirectory(prefix=f".stage-{mode}-{number:03d}-",
                                      dir=course_root) as temporary:
         stage = Path(temporary)
@@ -188,7 +190,7 @@ def complete_round(mode: str, number: int, args) -> None:
         summary = record_game(checkpoint, stage / RECORD_NAME, mode, number,
                               args.seed, model_sha256)
         os.replace(stage, output)
-    print(f"{mode} 第 {number} 轮完成：{output}\n"
+    print(f"{mode} {ordinal(number, '轮')}完成：{output}\n"
           f"  {WEIGHTS_NAME}\n  {RECORD_NAME}"
           f"（记录种子 {summary['seed']}，{summary['decisions']} 次决策）", flush=True)
 

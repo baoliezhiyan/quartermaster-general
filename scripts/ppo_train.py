@@ -61,6 +61,12 @@ TRAINER_SOURCE_HASH = hashlib.sha256(Path(__file__).read_bytes() +
     (Path(__file__).with_name("ppo_parallel.py").read_bytes()
      if Path(__file__).with_name("ppo_parallel.py").exists() else b"") +
     Path(__file__).with_name("ppo-arena-server.mjs").read_bytes()).hexdigest()
+# ccb81d4 used the same training rules. Its only successor changes here are
+# terminal progress and report presentation, so completed-update checkpoints
+# may resume after all other schema, rules, course and seed checks still pass.
+CONSOLE_ONLY_PREDECESSOR_HASHES = frozenset({
+    "3f0ff2c6491001bf3c3bd144712b2d055c2d15f750a6bf9229e5e68f5b350e0e",
+})
 
 
 _ONEHOT_CACHE = {}
@@ -690,7 +696,7 @@ def restore_checkpoint(path, model, optimizer, encoder, client, mode, rng, card_
                        training_seed=None):
     saved = torch.load(path, map_location="cpu", weights_only=False)
     expected = {"format": "quartermaster-ppo-checkpoint-v1", "encoderVersion": ENCODER_VERSION,
-                "trainerVersion": TRAINER_VERSION, "trainerSourceSha256": TRAINER_SOURCE_HASH,
+                "trainerVersion": TRAINER_VERSION,
                 "encoderDictionarySha256": ENCODER_DICTIONARY_HASH,
                 "observationSchemaVersion": client.schema["observationSchemaVersion"],
                 "actionSchemaVersion": client.schema["actionSchemaVersion"],
@@ -702,6 +708,9 @@ def restore_checkpoint(path, model, optimizer, encoder, client, mode, rng, card_
                 "episodesPerUpdate": 40}
     if any(saved.get(key) != value for key, value in expected.items()):
         raise ValueError("Checkpoint schema, mode, or rules build differs")
+    if saved.get("trainerSourceSha256") not in ({TRAINER_SOURCE_HASH} |
+                                                 CONSOLE_ONLY_PREDECESSOR_HASHES):
+        raise ValueError("Checkpoint trainer source differs")
     if saved.get("completedEpisodes") != saved.get("update", -1) * 40:
         raise ValueError("Checkpoint complete-episode count differs from update boundary")
     if training_seed is not None and saved.get("trainingSeed") != training_seed:
@@ -715,7 +724,8 @@ def restore_checkpoint(path, model, optimizer, encoder, client, mode, rng, card_
     return saved
 
 
-def evaluation(client, encoder, model, device, mode, seeds, max_decisions, card_set="events"):
+def evaluation(client, encoder, model, device, mode, seeds, max_decisions, card_set="events",
+               on_progress=None):
     output = []
     for seed in seeds:
         for baseline in ("axis", "allies"):
@@ -739,6 +749,8 @@ def evaluation(client, encoder, model, device, mode, seeds, max_decisions, card_
                            "consumedEvents": episode["consumedEvents"],
                            "remainingBySeat": episode["remainingBySeat"],
                            "discardedBySeat": episode["discardedBySeat"]})
+            if on_progress:
+                on_progress(len(output))
     return output
 
 

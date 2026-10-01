@@ -21,6 +21,7 @@ from pathlib import Path
 import torch
 
 from scripts import ppo_train as ppo
+from scripts.ppo_progress import ProgressDisplay, ordinal
 
 BATCH_EPISODES = 40
 POLICY_SALT = 0x9E3779B97F4A7C15
@@ -204,7 +205,7 @@ def episode_summary(episode: Episode, snapshot: dict) -> dict:
 
 def collect_batch(clients, encoder, model, device, tasks, mode, card_set, training_seed,
                   max_decisions, inference_batch_size=8, inference_wait_ms=2.0,
-                  diagnostic_path: Path | None = None, trace="none"):
+                  diagnostic_path: Path | None = None, trace="none", on_progress=None):
     """No weight changes occur here. Each task is claimed once, then finishes naturally."""
     if len({task["jobId"] for task in tasks}) != len(tasks):
         raise ValueError("Duplicate episode jobs")
@@ -301,6 +302,8 @@ def collect_batch(clients, encoder, model, device, tasks, mode, card_set, traini
                         ppo.assign_advantages(episode.samples, episode.rewards, episode.elapsed)
                         summaries.append(episode_summary(episode, response["snapshot"]))
                         completed.append(episode)
+                        if on_progress:
+                            on_progress(len(completed))
                         del active[environment]
                         start_next(environment)
                     else:
@@ -440,6 +443,7 @@ def main():
     rng = random.Random(args.seed)
     torch.manual_seed(args.seed)
     with tempfile.TemporaryDirectory(prefix="ppo-parallel-") as directory:
+        print(f"{args.mode}：启动 {min(args.workers, BATCH_EPISODES)} 个环境并加载模型...", flush=True)
         startup_started = time.perf_counter()
         clients = open_clients(min(args.workers, BATCH_EPISODES), Path(directory))
         try:
@@ -447,6 +451,7 @@ def main():
             model = ppo.PpoNetwork(encoder.state_dim, encoder.candidate_dim).to(device)
             optimizer = torch.optim.Adam(model.parameters(), lr=3e-4)
             startup_seconds = time.perf_counter() - startup_started
+            print(f"{args.mode}：环境就绪，耗时 {startup_seconds:.1f}s。", flush=True)
             next_seed, completed_decisions, completed_episodes, start_update = args.seed, 0, 0, 0
             if args.resume:
                 saved = ppo.restore_checkpoint(args.checkpoint, model, optimizer, encoder,
@@ -487,6 +492,9 @@ def main():
                     not previous_updates or previous_updates[-1]["number"] != start_update):
                     raise ValueError("Existing report does not match the resumed checkpoint")
                 report = previous_report
+                if report.get("trainerSourceSha256") != ppo.TRAINER_SOURCE_HASH:
+                    report["priorTrainerSourceSha256"] = report.get("trainerSourceSha256")
+                    report["trainerSourceSha256"] = ppo.TRAINER_SOURCE_HASH
             warmup_started = time.perf_counter()
             dummy = encoder._dummy()
             dummy["candidates"] = [{"kind": "pass", "id": "warmup"}]
@@ -497,9 +505,14 @@ def main():
                     torch.cuda.synchronize()
             report["warmupSeconds"] = time.perf_counter() - warmup_started
             if not args.no_eval and args.eval_seeds and start_update == 0:
-                games = ppo.evaluation(clients[0], encoder, model, device,
-                    args.mode, range(987650, 987650 + args.eval_seeds),
-                    args.max_episode_decisions, args.card_set)
+                evaluation_started = time.perf_counter()
+                with ProgressDisplay(f"{args.mode} {ordinal(1, '轮')} · 基线评估",
+                                     2 * args.eval_seeds) as progress:
+                    games = ppo.evaluation(clients[0], encoder, model, device,
+                        args.mode, range(987650, 987650 + args.eval_seeds),
+                        args.max_episode_decisions, args.card_set,
+                        on_progress=progress.update)
+                report["baselineEvaluationSeconds"] = time.perf_counter() - evaluation_started
                 report["baselineEvaluation"] = {"summary": summarize_evaluation(games),
                                                 "games": games}
             for update in range(start_update + 1, start_update + args.updates + 1):
@@ -508,14 +521,19 @@ def main():
                 tasks = make_tasks(next_seed, BATCH_EPISODES, update, args.mode)
                 diagnostic = args.checkpoint.with_suffix(f".failed-update-{update}.json")
                 monitored_started = time.perf_counter()
-                with ProcessMonitor(clients) as monitor:
-                    samples, episodes, timing = collect_batch(clients, encoder, model, device,
-                        tasks, args.mode, args.card_set, args.seed, args.max_episode_decisions,
-                        args.inference_batch_size, args.inference_wait_ms, diagnostic, args.trace)
-                    optimization_started = time.perf_counter()
-                    model.train()
-                    metrics = ppo.ppo_update(model, optimizer, samples, device, rng)
-                    optimization_seconds = time.perf_counter() - optimization_started
+                label = (f"{args.mode} {ordinal((update - 1) // 10 + 1, '轮')} · "
+                         f"{ordinal((update - 1) % 10 + 1, '次更新')}")
+                with ProgressDisplay(label, BATCH_EPISODES) as progress:
+                    with ProcessMonitor(clients) as monitor:
+                        samples, episodes, timing = collect_batch(clients, encoder, model, device,
+                            tasks, args.mode, args.card_set, args.seed, args.max_episode_decisions,
+                            args.inference_batch_size, args.inference_wait_ms, diagnostic, args.trace,
+                            on_progress=progress.update)
+                        progress.set_stage("优化中")
+                        optimization_started = time.perf_counter()
+                        model.train()
+                        metrics = ppo.ppo_update(model, optimizer, samples, device, rng)
+                        optimization_seconds = time.perf_counter() - optimization_started
                 resource = monitor.report(time.perf_counter() - monitored_started)
                 completed_decisions += len(samples)
                 completed_episodes += BATCH_EPISODES
@@ -544,15 +562,18 @@ def main():
                           "gpuPeakReservedBytes": torch.cuda.max_memory_reserved()
                           if device.type == "cuda" else 0}
                 report["updates"].append(result)
-                print(json.dumps({"updateSummary": {k: v for k, v in result.items()
-                     if k not in ("episodes", "tasks")}}, ensure_ascii=False), flush=True)
                 if not args.no_eval and args.eval_seeds and update % 10 == 0:
-                    games = ppo.evaluation(
-                        clients[0], encoder, model, device, args.mode,
-                        range(987650, 987650 + args.eval_seeds),
-                        args.max_episode_decisions, args.card_set)
+                    evaluation_started = time.perf_counter()
+                    with ProgressDisplay(f"{args.mode} {ordinal((update - 1) // 10 + 1, '轮')} · 更新后评估",
+                                         2 * args.eval_seeds) as progress:
+                        games = ppo.evaluation(
+                            clients[0], encoder, model, device, args.mode,
+                            range(987650, 987650 + args.eval_seeds),
+                            args.max_episode_decisions, args.card_set,
+                            on_progress=progress.update)
                     report.setdefault("evaluations", {})[str(update)] = {
-                        "summary": summarize_evaluation(games), "games": games}
+                        "summary": summarize_evaluation(games), "games": games,
+                        "seconds": time.perf_counter() - evaluation_started}
                 if args.report:
                     args.report.parent.mkdir(parents=True, exist_ok=True)
                     temporary_report = args.report.with_suffix(args.report.suffix + ".tmp")
@@ -562,8 +583,8 @@ def main():
             if args.report:
                 args.report.parent.mkdir(parents=True, exist_ok=True)
                 args.report.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
-            print(json.dumps({"checkpoint": str(args.checkpoint),
-                              "updates": len(report["updates"])}, ensure_ascii=False), flush=True)
+            print(f"{args.mode}：本轮训练检查点已保存；详细指标见 {args.report or args.checkpoint.parent}。",
+                  flush=True)
         finally:
             for client in clients:
                 client.close()
