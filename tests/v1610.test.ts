@@ -18,18 +18,18 @@ function answer(s:GameState,ids?:string[]){const q=s.resolution!.choice!;expect(
 function finish(s:GameState){for(let i=0;s.resolution?.running&&i<60;i++)answer(s);expect(s.resolution?.running).toBe(false);}
 const phase=(p:string):Effect=>({kind:'signal',tag:'PHASE:'+p,label:p});
 const frame={id:'probe',currentEventId:'event'} as ResolutionFrame;
-it('Hawaii counts twice toward US entry but keeps ordinary territorial points',()=>{
+it('Three distinct supply points end US neutrality and Hawaii keeps ordinary territorial points',()=>{
  const s=createGame('hawaii',4,'FULL',false,true,true);s.units=['hawaii','ukraine'].map((regionId,i)=>({id:String(i),country:'japan',type:'army',regionId}));checkNeutralitySupply(s);expect(s.neutrality!.united_states.neutral).toBe(true);
  const before=countryScore(s,'japan');s.units.push({id:'third',country:'germany',type:'army',regionId:'western_europe'});expect(occupiedNeutralitySupply(s)).toHaveLength(3);checkNeutralitySupply(s);expect(s.neutrality!.united_states.neutral).toBe(false);expect(countryScore(s,'japan')).toBe(before);
 });
 it('catalog restores Panay and replaces Chinese cooperation with American trade company',()=>{
  const p=preludeCatalog(true);expect(p.find(c=>c.id==='prelude_US-14')!.name).toBe('帕奈号事件');expect(p.find(c=>c.id==='prelude_US-06')!.name).toBe('阿姆托尔格贸易公司');expect(p.find(c=>c.id==='prelude_US-06')!.country).toBe('united_states');expect(p.some(c=>c.name==='第二次国共合作')).toBe(false);expect(regularCatalog(true,true).some(c=>c.id==='special_252')).toBe(false);expect(regularCatalog(true,false).filter(c=>['special_258','special_259'].includes(c.id))).toHaveLength(2);
 });
-it.each([['prelude_JP-16',2,2],['prelude_JP-11',4,2],['prelude_IT-08',3,2],['prelude_IT-09',1,2],['prelude_US-14',4,0]])('history %s applies actual discard and score', (id,count,points)=>{
+it.each([['prelude_JP-16',2,2],['prelude_JP-11',3,1],['prelude_IT-08',4,1],['prelude_IT-09',1,1],['prelude_US-14',4,0]])('history %s applies actual discard and score', (id,count,points)=>{
  const s=game(),effects=historyEffects(s,card(id as string));expect(effects.filter(e=>e.kind==='prelude'&&e.op==='discard').every(e=>e.kind==='prelude'&&e.count===count)).toBe(true);expect(effects.filter(e=>e.kind==='score').reduce((n,e)=>n+(e.kind==='score'?e.amount:0),0)).toBe(points);
 });
 it('updated tension and Stalins recruitment are executable',()=>{
- const s=game();for(const [id,n] of [['prelude_IT-15',1],['prelude_JP-11',1],['prelude_SU-17',1],['prelude_US-10',-1]] as const)expect(preludeCardEffects(s,card(id)).effects[0]).toMatchObject({count:n});expect(historyEffects(s,card('prelude_SU-19'))[0]).toMatchObject({action:'recruit_army',regions:['ukraine']});
+ const s=game();for(const [id,n] of [['prelude_IT-15',1],['prelude_JP-11',0],['prelude_SU-17',1],['prelude_US-10',-1]] as const)expect(preludeCardEffects(s,card(id)).effects[0]).toMatchObject({count:n});expect(historyEffects(s,card('prelude_SU-19'))[0]).toMatchObject({action:'recruit_army',regions:['ukraine']});
 });
 it('Hyde restores UK discard/play and US normal-panel extra play independently',()=>{
  const s=game('united_states');s.prelude!.active=true;s.prelude!.played=true;s.prelude!.discarded=3;s.prelude!.decks.united_kingdom.hand=[];

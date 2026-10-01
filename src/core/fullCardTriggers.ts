@@ -33,7 +33,7 @@ export function fullTrigger(s:GameState,card:CardInstance,e:Effect,timing:'Befor
 
     if(id===247&&phase('SUPPLY'))return extra(kamikazeEffects(s,card));
     if(id===259&&phase('SCORE'))return extra([top(1),{kind:'extraPlay',seat:owner,from:'hand',filter:'状态',label:'快速生产：打出一张手牌中的状态卡'}]);
-    if(id===79&&phase('SCORE'))return score(new Set(s.units.filter(u=>u.type==='army'&&allianceOf(u.country)==='allies'&&['eastern_europe','south_africa','latin_america','southeast_asia','western_china'].includes(u.regionId)).map(u=>u.regionId)).size);
+    if(id===79&&phase('SCORE'))return score(new Set(s.units.filter(u=>u.type==='army'&&allianceOf(u.country)==='allies'&&['eastern_europe','south_africa','latin_america','western_china'].includes(u.regionId)).map(u=>u.regionId)).size);
     if(id===85&&phase('DISCARD'))return extra([{kind:'cards',seat:owner,from:'hand',to:'drawPile',min:1,max:2,bottom:true,remember:'bottomed',label:'将一至两张手牌放到牌库底'},balanceEffect(owner,'draw-bottomed')],0,undefined,true);
     if(id===132&&phase('PLAY'))return extra([balanceEffect(owner,'scry')],0,undefined,true);
     if(id===87&&phase('DISCARD')&&s.decks[owner].hand.length>=1&&s.decks[owner].hand.some(c=>specialCard(c.definitionId,c.balance)?.type==='经济战'))return extra([balanceEffect(owner,'bomber-economy')],0,undefined,true);
@@ -161,7 +161,7 @@ export function fullTrigger(s:GameState,card:CardInstance,e:Effect,timing:'Befor
     case 146:if(is('air_deploy','air_move','air_power')&&e.kind==='action'&&e.option?.mode!=='supremacy')return extra([top(),a('land_battle',adj())]);break;
     case 147:if(phase('SCORE'))return extra([top(),a('recruit_army',['scandinavia']),{kind:'extraPlay',seat:owner,from:'hand',mention:'斯堪的纳维亚',label:'额外打出正文涉及斯堪的纳维亚的牌'}]);break;
     case 148:if(phase('PLAY'))return {...extra([{kind:'cards',seat:owner,from:'active',to:'discardPile',min:1,max:1,fee:true,label:'弃置一张生效中的德国状态牌'},{kind:'extraPlay',seat:owner,from:'hand',filter:'状态',label:'打出一张手牌中的状态牌'}]),atomic:true};break;
-    case 172:if(phase('SCORE'))return score(count('army',['vladivostok'])+(s.rules?.balanceEnabled?2:1)*count('army',['siberia']));break;
+    case 172:if(phase('SCORE'))return score(count('army',['vladivostok'])+count('army',['siberia']));break;
     case 173:if(phase('SCORE'))return score(Number(count('navy',['sea_central_pacific'])>0));break;
     case 174:if(phase('SCORE'))return score(Number(!s.units.some(u=>u.type==='army'&&u.regionId==='hawaii'&&allianceOf(u.country)==='allies')));break;
     case 175:if(phase('SCORE'))return score(Number(count('army',['iwo_jima','philippines'])>0));break;
@@ -174,7 +174,7 @@ export function fullTrigger(s:GameState,card:CardInstance,e:Effect,timing:'Befor
     case 187:if(phase('PLAY'))return extra([a('land_battle',near(s,c,'eastern_china'))]);break;
     case 189:if(phase('PLAY'))return extra([a('recruit_army',['eastern_china'])]);break;
     case 190:if(phase('PLAY'))return extra([{...a('destroy'),targetIds:s.units.filter(u=>u.country==='china'&&u.type==='army').map(u=>u.id)} as Effect]);break;
-    case 191:if(own){const regions=s.rules?.balanceEnabled?[...new Set([...near(s,c,'sea_east_china'),...near(s,c,'sea_south_china')])]:near(s,c,'sea_central_pacific');return extra([{kind:'flag',flag:'supplyRegions',ids:regions.map(id=>`japan:${id}`),label:s.rules?.balanceEnabled?'本回合东海、南海及与其任一相邻的日本部队有补给':'本回合中太平洋及相邻日本部队有补给'}]);}break;
+    case 191:if(own&&(!s.rules?.balanceEnabled||phase('TURN_START_WINDOW'))){const regions=s.rules?.balanceEnabled?[...new Set([...near(s,c,'sea_east_china'),...near(s,c,'sea_south_china')])]:near(s,c,'sea_central_pacific');return extra([{kind:'flag',flag:'supplyRegions',ids:regions.map(id=>`japan:${id}`),label:s.rules?.balanceEnabled?'本回合东海、南海及与其任一相邻的日本部队有补给':'本回合中太平洋及相邻日本部队有补给'}]);}break;
     case 192:if(is('sea_battle'))return extra([a('sea_battle'),a('land_battle',s.rules?.balanceEnabled?REGIONS.filter(r=>r.type==='LAND'&&r.id!=='united_states').map(r=>r.id):undefined)]);break;
     case 194:if(phase('TURN_START_WINDOW'))return extra([a('recruit_navy',near(s,c,'sea_north_pacific'))]);break;
     case 197:if(is('land_battle')&&region==='southeast_asia')return extra([a('sea_battle',['sea_south_china']),a('recruit_army',['southeast_asia'])]);break;

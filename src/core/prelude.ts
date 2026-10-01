@@ -64,14 +64,16 @@ export function historyEffects(s:ReadState,card:CardInstance):Effect[]{
   case 'SU-14':return [{kind:'cards',seat,from:'hand',to:'discardPile',min:1,max:1,fee:true,label:'支付一张常规手牌'},balanceEffect(seat,'inspect-response')];
   case 'JP-13':return [a('destroy',['eastern_china'])];
   case 'JP-16':return [top('united_states',2),top('united_kingdom',2),score(2)];
-  case 'JP-11':return [top('united_kingdom',4),score(2)];
+  case 'DE-18':return (['united_kingdom','soviet_union','united_states'] as SeatId[]).map(v=>top(v,2));
+  case 'JP-15':return [a('recruit_navy',['sea_east_china'])];
+  case 'JP-11':return [top('united_kingdom',3),score(1)];
   case 'JP-19':return [a('recruit_army',['eastern_china'])];
   case 'SU-02':case 'IT-16':return [preludeEffect(seat,'purge-double',2)];
-  case 'IT-08':return [top('soviet_union',3),score(2)];
+  case 'IT-08':return [top('soviet_union',4),score(1)];
   case 'US-08':return (['germany','japan','italy'] as SeatId[]).map(v=>top(v,2));
   case 'US-06':return [preludeEffect('soviet_union','unplayed-from-discard',1)];
   case 'US-14':return [top('japan',4)];
-  case 'IT-09':return [...(['united_kingdom','soviet_union','united_states'] as SeatId[]).map(v=>top(v,1)),score(2)];
+  case 'IT-09':return [...(['united_kingdom','soviet_union','united_states'] as SeatId[]).map(v=>top(v,1)),score(1)];
   case 'IT-14':return [score(2)];
   case 'IT-15':return [{kind:'signal',tag:'INSTALL',label:'正面放置条约【意大利雄心】'}];
  }}

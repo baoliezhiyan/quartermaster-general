@@ -83,7 +83,7 @@ export function preludeTriggers(s:GameState,frame:ResolutionFrame,e:Effect,timin
   }
   if(timing==='After'&&action&&placed){
    const axis=allianceOf(action.country)==='axis',build=action.action==='build_army',navy=action.action==='build_navy';
-   const hit=id==='UK-01'&&axis&&['build_navy','recruit_navy'].includes(action.action)&&['sea_south_china','sea_arabian'].includes(region!)
+   const hit=id==='UK-01'&&axis&&(b?navy:['build_navy','recruit_navy'].includes(action.action))&&(b?['sea_south_china','sea_arabian','sea_south_pacific']:['sea_south_china','sea_arabian']).includes(region!)
     ||id==='UK-02'&&axis&&['build_army','recruit_army'].includes(action.action)&&region==='western_europe'&&(b||(s.events.slice(s.prelude.installedEvent?.[card.id]??0).find(v=>v.type==='UNIT_PLACED'&&v.regionId===region&&allianceOf(v.country)==='axis')===[...s.events].reverse().find(v=>v.type==='UNIT_PLACED'&&v.unitId===placed.id)))
     ||id==='UK-08'&&axis&&navy&&region==='sea_north_sea'||id==='UK-09'&&axis&&build&&region==='southeast_asia'
     ||id==='JP-07'&&!axis&&['build_army','recruit_army'].includes(action.action)&&region==='eastern_china'
@@ -106,7 +106,7 @@ export function preludeTriggers(s:GameState,frame:ResolutionFrame,e:Effect,timin
    if(id==='SU-07'&&mine('land_battle')&&region)effects=[a('land_battle',near(s,c,region))];
    if(id==='US-16'&&phase('SCORE'))effects=[a('recruit_army',['philippines','iwo_jima','indonesia'])];
    if(id==='SU-06')effects=own&&timing==='After'&&e.kind==='signal'&&(e.tag==='ARMAMENT_ANYTIME'||e.tag.startsWith('PHASE:'))?[choose([ {kind:'action',country:'france',action:'air_deploy',label:'法国部署一支空军'},{kind:'action',country:'soviet_union',action:'air_deploy',label:'苏联部署一支空军'}])]:[];
-   if(id==='SU-18'&&timing==='After'&&action&&s.balanceFirstAttacks?.[card.id]===`${s.balanceResolutionSerial}:${frame.currentEventId}`)effects=[balanceEffect(seat,'relocate-industry')];
+   if(id==='SU-18'&&timing==='Before'&&e.kind==='remove'&&e.unit.country==='soviet_union'&&e.unit.type==='army'&&e.unit.regionId==='moscow')effects=[balanceEffect(seat,'relocate-industry')];
    if(id==='UK-10')effects=phase('TURN_START_WINDOW')?[balanceEffect(seat,'exile-government')]:[];
    if(id==='UK-07'&&effects.length)effects=[score(1),a('air_deploy',['australia','india','canada','south_africa'])];
    if(id==='JP-01'){const seas=new Set(s.units.filter(u=>u.country===seat&&u.type==='navy'&&['sea_north_pacific','sea_central_pacific','sea_south_pacific','sea_east_pacific','sea_southeast_pacific'].includes(u.regionId)).map(u=>u.regionId));effects=phase('SCORE')&&seas.size>=2?[score(2),install]:[];}

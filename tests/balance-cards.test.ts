@@ -84,7 +84,7 @@ it('bomber cost selection cannot discard the economic card selected for extra pl
 });
 
 it('balance rollback tensions are separate from original cards',()=>{
- for(const [id,tension] of [['prelude_IT-15',1],['prelude_IT-08',1],['prelude_IT-09',1],['prelude_US-10',-1]] as const)expect(specialCard(id,true)?.tension).toBe(tension);
+ for(const [id,tension] of [['prelude_IT-15',1],['prelude_IT-08',1],['prelude_IT-09',0],['prelude_US-10',-1]] as const)expect(specialCard(id,true)?.tension).toBe(tension);
  expect(specialCard('prelude_US-10',false)?.tension).toBe(1);
 });
 it('steel pact discards two Italian cards, sets a remaining response, then lets Germany play a state',()=>{
@@ -102,7 +102,7 @@ it('retired Vichy statuses are absent from every new-game zone',()=>{
 });
 
 it.each([false,true])('southern resource route supply area follows the balance switch (%s)',balance=>{
- const s=game();s.rules!.balanceEnabled=balance;s.activeSeat='japan';const c=move(s,'special_191','faceDown');const rule=fullTrigger(s,c,{kind:'signal',tag:'PHASE:PLAY',label:'出牌阶段'},'After')!;
+ const s=game();s.rules!.balanceEnabled=balance;s.activeSeat='japan';const c=move(s,'special_191','faceDown');const rule=fullTrigger(s,c,{kind:'signal',tag:balance?'PHASE:TURN_START_WINDOW':'PHASE:PLAY',label:'阶段'},'After')!;
  startResolution(s,'补给航线','japan',rule.effects!,[]);finish(s);const regions=s.turnFlags!.supplyRegions;
  if(balance){expect(specialCard(c.definitionId,true)?.name).toBe('南方资源航线');expect(regions).toEqual(expect.arrayContaining(['japan:sea_east_china','japan:sea_south_china','japan:eastern_china','japan:philippines']));expect(regions).not.toContain('japan:hawaii');}
  else {expect(specialCard(c.definitionId,false)?.name).toBe('丘克群岛');expect(regions).toContain('japan:sea_central_pacific');expect(regions).not.toContain('japan:eastern_china');}
