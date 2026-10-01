@@ -13,6 +13,7 @@
 - [贡献、Bug与平衡讨论](CONTRIBUTING.md)
 - [回放说明](docs/match-log-guide.md) / [回放规范](docs/match-log-spec-v2.0.md)
 - [PPO训练方案](docs/training/战场军需官PPO第一步实施方案-v0.3.md) / [下一步并行优化要求](docs/training/parallel-plan.md)
+- [双击启动 PPO 训练](PPO训练/README.md)
 - [素材与许可状态](ASSETS.md)
 
 ## 从源码启动

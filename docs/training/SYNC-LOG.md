@@ -57,3 +57,5 @@
 回放短测另覆盖库存耗尽时的征召回收：共享结算器在训练捕获开启时保留所选回收部队 ID，供场面动作记录精确重演；关闭捕获时正式对局行为不变。该修复不改变出牌、征召合法性或 PPO 观察/动作 schema。
 
 本次验收（构建源码提交以 PR 为准）：`pnpm build`；`pnpm exec vitest run --testTimeout 20000 --maxWorkers 2`，88 文件 / 865 测试通过；`python -m unittest tests.test_ppo_semantics tests.test_ppo_parallel tests.test_ppo_rounds tests.test_training_replay_export`，13 测试通过。真实 A/B 随机合法策略完整局分别经训练文件导出、`validate-match-log --replay` 和六国/GM 视角检查；B 额外覆盖兵模耗尽后的回收征召，A 覆盖跨国额外出牌。`scripts/启动PPO训练.cmd --rounds 1 --dry-run` 完成构建并显示 A/B 输出计划，没有执行训练更新。未运行长时间 PPO 实验、未验证旧权重在新构建上复现（严格指纹检查会拒绝）。
+
+2026-10-01 启动器后续修正：用户双击 CMD 的 PATH 不包含 Codex 缓存里的 pnpm，因此旧入口无法启动。新根目录 `PPO训练/` 放双击 CMD、A/B 结果目录，`.runtime/` 在本机复制 Node/pnpm 并创建使用现有 CUDA PyTorch 的 Python 虚拟环境，`.state/` 放续训状态；这些本机资源和产物均忽略提交。旧 `scripts/启动PPO训练.cmd` 转发到新入口。默认结果根移至 `PPO训练/`，既有 `outputs/ppo-training-v1.7.6/` 不自动迁移。训练规则、课程、观察/动作和回放契约无变化；启动脚本内容改变构建指纹，旧检查点仍经严格校验拒绝。
