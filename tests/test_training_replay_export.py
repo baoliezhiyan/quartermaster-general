@@ -12,7 +12,8 @@ from scripts.ppo_train import ArenaClient, ROOT
 class TrainingReplayExportTests(unittest.TestCase):
     def test_complete_a_and_b_games_replay_with_explicit_resource_zones(self):
         for mode, seed, choice_seed in (("A", 987661, 44), ("B", 987651, 44),
-                                        ("A", 987650, 987669)):
+                                        ("A", 987650, 987669),
+                                        ("B", 987651, 987670)):
             with self.subTest(mode=mode, seed=seed), tempfile.TemporaryDirectory() as directory:
                 raw = Path(directory) / "raw.jsonl"
                 replay = Path(directory) / "replay.jsonl"
@@ -50,6 +51,12 @@ class TrainingReplayExportTests(unittest.TestCase):
                                     if zone["zone"] == "hand"))
                 all_changes = [op["change"] for line in lines if line["type"] == "training_action"
                                for op in line["operations"] if op["kind"] == "resource"]
+                if mode == "B" and choice_seed == 987670:
+                    self.assertTrue(any(op.get("kind") == "board" and
+                                        op.get("action") == "recruit_army" and
+                                        op.get("recycleId") for line in lines
+                                        if line["type"] == "training_action"
+                                        for op in line["operations"]))
                 self.assertTrue(any(op["op"] == "move" and
                                     op["to"]["zone"] == "discardPile" for op in all_changes))
                 if mode == "A":
@@ -63,6 +70,27 @@ class TrainingReplayExportTests(unittest.TestCase):
                                            str(replay), "--replay"], cwd=ROOT, check=True,
                                           capture_output=True, text=True, encoding="utf-8")
                 self.assertTrue(json.loads(verified.stdout)["sceneReexecuted"])
+                views = subprocess.run(["node", "--input-type=module", "-e", """
+                    import {readFile} from 'node:fs/promises';
+                    import {parseTrainingReplay,TrainingController} from './dist-server/Room.js';
+                    const seats=['germany','united_kingdom','japan','soviet_union','italy','united_states'];
+                    const archive=await parseTrainingReplay(await readFile(process.argv[1],'utf8'));
+                    const controller=new TrainingController(archive);
+                    await controller.seek(archive.steps.at(-1)?.id??null,true);
+                    for(const seat of seats){
+                      controller.setRoomAccess({kind:'player',seat});
+                      const state=controller.getSnapshot(),available=state.trainingReplay.available;
+                      if(state.decks[seat].hand.length||!available.includes(seat+':drawPile'))throw Error(seat+' own zones');
+                      for(const other of seats.filter(value=>value!==seat))
+                        if(available.includes(other+':drawPile')||state.resourcePool[other].length)
+                          throw Error(seat+' sees '+other+' private resources');
+                    }
+                    controller.setRoomAccess({kind:'gm'});
+                    if(controller.getSnapshot().trainingReplay.available.length!==24)throw Error('GM zones');
+                    console.log('six country views and GM verified');
+                    """, str(replay)], cwd=ROOT, check=True,
+                    capture_output=True, text=True, encoding="utf-8")
+                self.assertIn("six country views", views.stdout)
 
     def test_incomplete_game_cannot_be_exported(self):
         with tempfile.TemporaryDirectory() as directory:
