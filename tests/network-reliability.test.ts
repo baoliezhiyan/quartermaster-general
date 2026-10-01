@@ -78,3 +78,13 @@ it('retains chat on gameplay deltas and applies chat deletion without changing t
  f.ws.onmessage?.({data:JSON.stringify({room:{...f.snapshot.room,sequence:3},baseSequence:2,statePatch:[],infoPatch:[],chatPatch:diffValue(chat,[])})});
  expect(f.controller.getSessionInfo().room?.chat).toEqual([]);expect(f.controller.getSnapshot()).toEqual(f.snapshot.state);f.controller.close();
 });
+
+it('downloads host history outside command submission, without the 12-second timer or uncertainty state',async()=>{
+ vi.useFakeTimers();const f=fixture();let release!:()=>void;const gate=new Promise<void>(r=>release=r);let signal:AbortSignal|undefined;
+ vi.stubGlobal('fetch',vi.fn(async(url,options)=>{expect(url).toBe('/api/history-export');expect(JSON.parse(options.body)).toEqual({pointId:'nation:2:japan'});signal=options.signal;await gate;return {ok:true,text:async()=>'{"type":"header"}\n'};}));
+ const pending=f.controller.exportSave('nation:2:japan');await vi.advanceTimersByTimeAsync(13000);expect(signal?.aborted).toBe(false);release();expect(await pending).toBe('{"type":"header"}\n');expect(f.controller.getSessionInfo().room?.error).toBeUndefined();f.controller.close();
+});
+it('reports an export error as a download failure without marking game actions uncertain',async()=>{
+ const f=fixture();vi.stubGlobal('fetch',vi.fn(async()=>({ok:false,json:async()=>({error:'此功能仅GM可用。'})})));
+ await expect(f.controller.exportSave()).rejects.toThrow('仅GM');expect(f.controller.getSessionInfo().room?.error).toBeUndefined();f.controller.close();
+});

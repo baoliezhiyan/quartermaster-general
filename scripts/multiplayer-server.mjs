@@ -1,3 +1,4 @@
+import {sendText} from './http-response.mjs';
 import {MATCH_LOG_GAME_VERSION} from '../dist-server/Room.js';
 import {withMatchLogs} from './match-log-store.mjs';
 import http from 'node:http';
@@ -47,6 +48,7 @@ const server=http.createServer(async(req,res)=>{
    if(!req.headers['content-type']?.toLowerCase().startsWith('application/json'))throw new Error('请求必须使用 JSON 格式。');
    const token=(req.headers.authorization||'').replace(/^Bearer /,'');
    if(req.method!=='POST')throw new Error('请求方式无效。');
+   if(url.pathname==='/api/history-export'){const body=await readRequestJson(req,4096);const text=await room.exportHistory(token,body.pointId);await sendText(req,res,text,{contentType:'application/x-ndjson; charset=utf-8',filename:'quartermaster-history.qmreplay.jsonl'});return;}
    const historyImport=url.pathname==='/api/request'&&req.headers['x-qm-history-import']==='1';
    if(historyImport)room.authorizeHistoryImport(token);
    const body=await readRequestJson(req,historyImport?Infinity:undefined);
@@ -55,7 +57,7 @@ const server=http.createServer(async(req,res)=>{
     const start=performance.now();let result=url.pathname==='/api/identity-status'?room.identityStatus(body.tokens):url.pathname==='/api/identity'?await room.createIdentity(body.name):url.pathname==='/api/request'?await room.request(token,body):(()=>{throw new Error('未知接口。');})();
     if(url.pathname==='/api/request')diagnostics.clients(body.connection,body.clientTimings);
     if(url.pathname==='/api/request'&&body.method==='exportDiagnostics'){result=JSON.stringify({...JSON.parse(result),networkTiming:diagnostics.snapshot()},null,2);}
-    res.writeHead(200,{'Content-Type':'application/json'}).end(JSON.stringify({ok:true,result,serverTiming:{ms:performance.now()-start}}));
+    await sendText(req,res,JSON.stringify({ok:true,result,serverTiming:{ms:performance.now()-start}}));
    });return;
   }
   assets.serve(req,res,url);
@@ -63,6 +65,8 @@ const server=http.createServer(async(req,res)=>{
 });
 const sockets=new WebSocketServer({noServer:true,maxPayload:4096,perMessageDeflate:socketCompression});
 server.on('upgrade',(req,socket,head)=>{
+ const clientFingerprint=req.headers['x-qm-client-fingerprint'],clientRoom=req.headers['x-qm-client-room'];
+ if((clientFingerprint&&clientFingerprint!==assets.fingerprint)||(clientRoom&&clientRoom!==roomId)){socket.end('HTTP/1.1 409 Conflict\r\nConnection: close\r\nContent-Length: 0\r\n\r\n');return;}
  if(req.url!=='/api/socket'||!policy.hostAllowed(req.headers)||!policy.originAllowed(req.headers,true)){socket.destroy();return;}
  sockets.handleUpgrade(req,socket,head,ws=>sockets.emit('connection',ws));
 });

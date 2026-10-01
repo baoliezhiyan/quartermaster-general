@@ -12,9 +12,9 @@ const folder=join(root,'releases',name);await mkdir(folder);
 for(const dir of ['dist','dist-server'])await cp(join(root,dir),join(folder,dir),{recursive:true});
 await rename(join(folder,'dist-server/Room.js'),join(folder,'dist-server/Room.mjs'));
 await mkdir(join(folder,'scripts'));await writeFile(join(folder,'scripts/multiplayer-server.mjs'),(await readFile('scripts/multiplayer-server.mjs','utf8')).replaceAll('../dist-server/Room.js','../dist-server/Room.mjs'));
-for(const name of ['validate-match-log.mjs','match-log-store.mjs','join-client.mjs','static-assets.mjs','ws-compression.mjs','server-origin.mjs','request-json.mjs','journal-store.mjs','wire-snapshot.mjs','start-online.mjs','network-diagnostics.mjs','start-cloudflare.ps1','start-internet.ps1','start-cpolar.mjs','configure-cpolar.ps1','start-cpolar-game.ps1'])await cp(join('scripts',name),join(folder,'scripts',name));
+for(const name of ['validate-match-log.mjs','match-log-store.mjs','join-client.mjs','static-assets.mjs','ws-compression.mjs','server-origin.mjs','request-json.mjs','http-response.mjs','journal-store.mjs','wire-snapshot.mjs','start-online.mjs','network-diagnostics.mjs','start-cloudflare.ps1','start-internet.ps1','start-cpolar.mjs','configure-cpolar.ps1','start-cpolar-game.ps1'])await cp(join('scripts',name),join(folder,'scripts',name));
 await writeFile(join(folder,'加入联机版游戏.cmd'),'@echo off\r\nchcp 65001 >nul\r\n"%~dp0runtime\\node.exe" "%~dp0scripts\\join-client.mjs"\r\nif errorlevel 1 pause\r\n','ascii');
-await cp('docs/local-client.md',join(folder,'本地资源客户端说明.md'));
+
 await mkdir(join(folder,'对局记录'));
 await mkdir(join(folder,'回放接口'));
 await cp('src/actionReplay/contract.ts',join(folder,'回放接口/contract.ts'));
@@ -23,8 +23,8 @@ await cp('docs/training-replay-output-v1.md',join(folder,'回放接口/训练端
 await cp('docs/action-replay-adapter.md',join(folder,'回放接口/adapter.md'));
 await cp('docs/match-log-spec-v2.0.md',join(folder,'回放接口/spec-v2.0.md'));
 await cp('outputs/match-log-samples',join(folder,'回放样例'),{recursive:true});
-await cp('docs/match-log-guide.md',join(folder,'对局记录与回放说明.md'));
-await cp('docs/match-log-validation.md',join(folder,'对局记录与回放验收.md'));
+
+
 await mkdir(join(folder,'cloudflare'));
 await cp('.tools/cloudflared/cloudflared-windows-amd64.exe',join(folder,'cloudflare/cloudflared-windows-amd64.exe'));
 for(const [name,script] of [['1-启动Cloudflare隧道.cmd','start-cloudflare.ps1'],['2-启动联机游戏服务.cmd','start-internet.ps1']])await writeFile(join(folder,'cloudflare',name),'@echo off\r\npowershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0..\\scripts\\'+script+'"\r\nif errorlevel 1 pause\r\n','ascii');
