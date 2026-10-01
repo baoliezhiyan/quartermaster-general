@@ -267,6 +267,29 @@ describe('PPO event curriculum',()=>{
       expect(accepted.state.decks.united_kingdom.faceDown.some(c=>c.id===response.id)).toBe(false);
     }
   });
+  it('records a genuine countered card as cancelled while consuming it',()=>{
+    const state=new PpoTrainingArena(7,'countered-card',{mode:'A',buildFingerprint:fingerprint})
+      .exportSnapshot().state;
+    const card=state.decks.germany.hand.find(c=>c.definitionId==='special_158')!;
+    const response=state.decks.united_kingdom.hand.shift()!;
+    state.decks.united_kingdom.faceDown.push(response);
+    expect(startResolution(state,'受反制出牌','germany',
+      [{kind:'trace',label:'将被取消的子效果'}],[{
+        id:'training-counter',label:'真实反制',sourceInstanceId:response.id,
+        owner:'united_kingdom',timing:'Before',on:'将被取消的子效果',mandatory:false,
+        source:'response',effects:[{kind:'cancel',label:'取消此效果'}],
+      }],card.id,'discardPile',true)).toBe(true);
+    const choice=state.resolution!.choice!;
+    expect(choice.kind).toBe('TRIGGER');
+    const accepted=transition(state,{type:'RESOLVE_ENGINE_CHOICE',seat:choice.seat,
+      expectedRevision:state.revision,choiceId:choice.id,ids:[choice.options[0].id],guided:true});
+    expect(accepted.ok).toBe(true);
+    if(accepted.ok){
+      expect(accepted.state.trainingCourse?.cardOutcomes?.find(v=>v.id===card.id)?.outcome)
+        .toBe('cancelled');
+      expect(accepted.state.decks.germany.discardPile.some(c=>c.id===card.id)).toBe(true);
+    }
+  });
   it('consumes only the committed card from B openness without rerolling other cards',()=>{
     const original=new PpoTrainingArena(81,'b-empty-event',{mode:'B',buildFingerprint:fingerprint});
     const snapshot=original.exportSnapshot();
