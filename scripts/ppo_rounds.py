@@ -17,8 +17,8 @@ from scripts import ppo_train as ppo
 from scripts.ppo_progress import ordinal
 
 UPDATES_PER_ROUND = 10
-# Keep checkpoints from older rule builds separate from the v1.7.6 experiment.
-DEFAULT_RESULTS = ppo.ROOT / "PPO训练"
+# Action/observation v4 cannot resume checkpoints produced by the old interface.
+DEFAULT_RESULTS = ppo.ROOT / "PPO训练" / "提交出牌实验"
 WEIGHTS_NAME = "模型.pt"
 RECORD_NAME = "AI训练记录.jsonl"
 

@@ -27,8 +27,8 @@ ROOT = Path(__file__).resolve().parents[1]
 GAMMA = 1.0
 LAMBDA_ROUND = 0.95
 POTENTIAL_SCALE = 0.3
-ENCODER_VERSION = "ppo-vector-v3"
-TRAINER_VERSION = "ppo-trainer-v4-parallel40"
+ENCODER_VERSION = "ppo-vector-v4"
+TRAINER_VERSION = "ppo-trainer-v5-committed-actions"
 EFFECT_KINDS = ["action", "score", "draw", "deckTop", "forceHand", "signal", "choose", "cards",
                 "extraPlay", "rebuild", "remove", "flag", "balance", "trace", "cancel", "randomReturn",
                 "randomPlay", "frameChange", "countChange", "reallocate", "prelude", "copyStatus"]

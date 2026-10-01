@@ -45,7 +45,7 @@ function sourceZone(rule:TriggerRule): 'active'|'hand'|'faceDown' {
 }
 const isHandFee=(e:Effect):e is Extract<Effect,{kind:'cards'}> & {fee:true;from:'hand';to:'discardPile'}=>e.kind==='cards' && !!e.fee && !e.deferredFee && e.from==='hand' && e.to==='discardPile';
 /** Match all immediate hand fees together so one card cannot pay two costs. */
-function canPayEffectFees(s:ReadState,effects:Effect[]):boolean {
+export function canPayEffectFees(s:ReadState,effects:Effect[]):boolean {
   for(const seat of SEATS) {
     const fees=effects.filter((e):e is Extract<Effect,{kind:'cards'}>=>isHandFee(e)&&e.seat===seat);
     const slots=fees.flatMap(e=>(e.requirements??Array(e.min).fill('*')).map((requirement:string)=>
@@ -153,11 +153,13 @@ function pushFrame(s:GameState, source:string, owner:SeatId,effects:Effect[],car
     }
   }
   const f:ResolutionFrame={noticeKind:parentEvent?.effect?.kind==='extraPlay'?'extra':undefined,publicSourceZone,id:uid(r,'frame'),source,cardId,owner,effects:structuredClone(effects),nextEffectIndex:0,stage:'Validate',status:'RUNNING',parentEventId:parentEvent?.id??null,ancestorIds:parentEvent?[...parentEvent.ancestorIds,parentEvent.id]:[],sourceAncestors:[...(parent?.sourceAncestors??[]),...(cardId?[cardId]:[])],currentEventId:null,finalZone};
-  if(r.guided && cardId){f.guided=true;f.rollback=rollback;f.committed=committed;f.effects=f.effects.map(e=>({...e,optional:!e.fee && (e.kind!=='signal'||e.tag==='INSTALL')}));}
+  if(r.guided && cardId){const trainingCommitted=!!s.trainingCourse;
+    f.guided=true;f.rollback=trainingCommitted?undefined:rollback;f.committed=committed||trainingCommitted;
+    f.effects=f.effects.map(e=>({...e,optional:trainingCommitted?false:!e.fee && (e.kind!=='signal'||e.tag==='INSTALL')}));}
   if(cardId && s.decks[owner].resolving.some(c=>c.id===cardId&&specialCard(c.definitionId,c.balance)) && !effects.some(e=>e.kind==='signal'&&e.tag==='INSTALL'))f.effects.unshift({kind:'signal',tag:'CARD_EFFECT',label:`【${source}】开始生效`});
   if(cardId&&s.decks[owner].resolving.some(c=>c.id===cardId&&specialCard(c.definitionId,c.balance))&&finalZone==='active'&&!effects.some(e=>e.kind==='signal'&&e.tag==='INSTALL'))f.effects.push({kind:'signal',tag:'CARD_EFFECT_DONE',label:`【${source}】效果已结算`});
   if(f.guided){f.declarationPending=f.effects.some(e=>e.kind==='signal'&&e.tag==='CARD_EFFECT');f.effects=f.effects.filter(e=>e.kind!=='signal'||e.tag!=='CARD_EFFECT');}
-  if(f.guided&&cardId&&s.decks[owner].resolving.some(c=>c.id===cardId&&c.definitionId==='special_98'))f.effects=f.effects.map(e=>e.kind==='choose'?{kind:'action',country:'united_kingdom',action:'build_army',buildEither:true,optional:true,label:'请选择建设陆军或海军'}:e);
+  if(f.guided&&cardId&&s.decks[owner].resolving.some(c=>c.id===cardId&&c.definitionId==='special_98'))f.effects=f.effects.map(e=>e.kind==='choose'?{kind:'action',country:'united_kingdom',action:'build_army',buildEither:true,optional:!s.trainingCourse,label:'请选择建设陆军或海军'}:e);
   r.frames.push(f); r.stack.push({kind:'frame',id:f.id});
   if(!f.guided||f.committed)declarePublicCard(s,f);
   record(s,'FRAME_STARTED',`开始结算【${source}】${cardId?'，卡牌进入结算中区域':''}。`);
@@ -257,6 +259,11 @@ function finishFrame(s:GameState,f:ResolutionFrame) {
     }
   }
   f.status='COMPLETE'; engine(s).stack.pop();
+  if(f.cardId&&s.trainingCourse){const events=engine(s).events.filter(event=>event.frameId===f.id&&event.effect?.kind!=='signal');
+    const appliedEffects=events.filter(event=>event.applied).length;
+    const cancelled=!!f.cancelled||events.some(event=>event.cancelled)&&!appliedEffects&&
+      events.every(event=>event.cancelled||event.outcome==='invalid');
+    (s.trainingCourse.cardOutcomes??=[]).push({id:f.cardId,outcome:cancelled?'cancelled':'resolved',appliedEffects});}
   checkNeutralitySupply(s);
   record(s,'FINISH_CARD_RESOLUTION',`【${f.source}】及其子结算完成${f.cardId?`；最终去向：${({discardPile:'弃牌堆',active:'持续生效区',hand:'手牌',drawPile:'牌库随机位置',removed:'移出游戏',faceDown:'暗置区'})[f.finalZone]}`:''}。`);
 }
@@ -496,6 +503,7 @@ export function runResolution(s:GameState) {
       finishFrame(s,f); continue;
     }
     const e=f.effects[f.nextEffectIndex];
+    if(s.trainingCourse&&f.guided&&f.committed&&e.optional&&!e.fee)e.optional=false;
     if(f.scoreBatchId&&e.kind==='signal'&&['CARD_EFFECT','CARD_EFFECT_DONE'].includes(e.tag)){f.nextEffectIndex++;continue;}
     if(e.kind==='signal'&&e.tag==='CARD_EFFECT_DONE'&&f.effectCompletionNotified){f.nextEffectIndex++;continue;}
     if(f.guided&&!f.committed&&e.kind==='signal'&&['CARD_PLAYED','CARD_EFFECT_DONE','STANDARD_CARD_PLAYED'].includes(e.tag)){f.nextEffectIndex++;continue;}
@@ -503,7 +511,7 @@ export function runResolution(s:GameState) {
     if(f.stage==='Validate') {
       if(f.guided&&e.kind==='action'&&e.buildEither){
         const options=(['build_army','build_navy'] as const).flatMap(action=>[...new Set(boardOptions(s,{...e,action}).map(o=>o.regionId))].map(id=>({id:`${action}|${id}`,label:REGION_BY_ID[id].name})));
-        if(options.length){ask(s,{kind:'BUILD_ORDER',seat:seatOf(e.country),prompt:e.label,min:1,max:1,options,frameId:f.id,canSkip:true});continue;}
+        if(options.length){ask(s,{kind:'BUILD_ORDER',seat:seatOf(e.country),prompt:e.label,min:1,max:1,options,frameId:f.id,canSkip:!s.trainingCourse});continue;}
         e.buildEither=false;
       }
       if((f.guided||r.guided)&&e.selectedIds===undefined&&validEffect(s,e,f)&&selectionRequest(s,f,e))continue;
@@ -519,6 +527,7 @@ export function runResolution(s:GameState) {
         record(s,'EFFECT_INVALID',`${e.label}当前条件不满足${e.fee?'，不能支付费用，停止后续效果':'，跳过此效果'}。`); if(e.fee)f.nextEffectIndex=f.effects.length;else f.nextEffectIndex++; continue;
       }
       if(e.kind==='extraPlay') {
+        if(s.trainingCourse&&f.committed)e.allowSkip=false;
         if(e.optional&&!e.accepted)e.allowSkip=true;
         if(!e.selectedCardId){ask(s,{kind:'EXTRA_CARD',seat:e.seat,prompt:e.label,min:e.allowSkip?0:1,max:1,options:extraCandidates(s,e).filter(c=>!e.onlyRemember||f.memory?.[e.onlyRemember]?.includes(c.id)).map(c=>({id:c.id,label:c.definitionId})),frameId:f.id});continue;}
         const card=s.decks[e.seat][e.from].find(c=>c.id===e.selectedCardId)!;
@@ -621,7 +630,8 @@ export function startResolution(s:GameState,source:string,owner:SeatId,effects:E
   if(s.resolution?.running || !SEATS.includes(owner)) return false;
   effects=effects.flatMap((e):Effect[]=>e.kind!=='signal'?[e]:e.tag==='PHASE:TURN_START_WINDOW'?[{...e,tag:'PHASE:EARLY_TURN_START',label:'回合最开始：一日之狮'},e]:e.tag==='PHASE:SCORE'?[e,{...e,tag:'PHASE:SCORE_STATUS',label:'计分阶段末：结算加分状态'}]:[e]);
   const probe=cardId?{...s,decks:{...s.decks,[owner]:{...s.decks[owner],hand:s.decks[owner].hand.filter(c=>c.id!==cardId)}}}:s;
-  if(!canExecuteEffects(probe,effects)&&!(guided&&effects.some(e=>!e.fee)&&canPayEffectFees(probe,effects)))return false;
+  if(!canExecuteEffects(probe,effects)&&!(guided&&canPayEffectFees(probe,effects)&&
+    (effects.some(e=>!e.fee)||!!s.trainingCourse&&!!cardId&&effects.length===0)))return false;
   if(cardId && !(['hand','active','faceDown'] as const).some(zone=>s.decks[owner][zone].some(c=>c.id===cardId && c.deckOwner===owner))) return false;
   // Battle protection belongs only to events in this resolution, whose IDs restart at zero.
   if(s.turnFlags)s.turnFlags.battleProtected=[];
@@ -677,7 +687,7 @@ export function resolveChoice(s:GameState,seat:SeatId,choiceId:string,ids:string
     const f=frameById(r,c.frameId!),e=f.effects[f.nextEffectIndex];
     if(e.kind!=='extraPlay')return false;
     if(c.kind==='EXTRA_CARD') {
-      if(r.guided&&ids.length)f.extraRollback=structuredClone(s);
+      if(r.guided&&ids.length&&!s.trainingCourse)f.extraRollback=structuredClone(s);
       if(!ids.length&&e.allowSkip){
         if(e.returnOnSkip){const deck=s.decks[e.seat],card=deck[e.from].find(c=>c.id===e.onlyCardIds?.[0]);if(card){deck[e.from]=deck[e.from].filter(c=>c.id!==card.id);deck.drawPile.unshift(card);}}
         f.nextEffectIndex++;f.stage='Validate';f.currentEventId=null;f.extraRollback=undefined;

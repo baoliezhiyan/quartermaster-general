@@ -358,7 +358,7 @@ function transitionInternal(state: GameState | null, command: Command): Transiti
       const effects=cardEffects(state,card,command.targetIds).map(e=>e.kind==='action'&&e.action==='air_power'&&state.airAction&&state.airAction!=='move'?{...e,airMode:state.airAction}:e);
       if(state.phase==='AIR'&&state.airAction==='move')return illegal;
       const ids=command.effectIndices;
-      if(!Array.isArray(ids) || !ids.length || new Set(ids).size!==ids.length || ids.some(i=>!Number.isInteger(i) || i<0 || i>=effects.length))return illegal;
+      if(!Array.isArray(ids) || (!ids.length&&!state.trainingCourse) || new Set(ids).size!==ids.length || ids.some(i=>!Number.isInteger(i) || i<0 || i>=effects.length))return illegal;
       if(!resolveCard(next,card.id,effects.filter((e,i)=>e.fee || ids.includes(i)),command.guided,command.guided?structuredClone(state):undefined))return illegal;
       break;
     }

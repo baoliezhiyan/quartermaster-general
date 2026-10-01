@@ -38,6 +38,13 @@ class TrainingReplayExportTests(unittest.TestCase):
                                 str(raw), str(replay)], cwd=ROOT, check=True,
                                capture_output=True, text=True, encoding="utf-8")
                 lines = [json.loads(line) for line in replay.read_text(encoding="utf-8").splitlines()]
+                actions = [line for line in lines if line["type"] == "training_action"]
+                self.assertTrue(any("打出【" in line.get("summary", "") and line.get("cardId")
+                                    for line in actions))
+                self.assertFalse(any("RESOLVE_ENGINE_CHOICE" in line.get("summary", "") or
+                                     "取消退回" in line.get("summary", "") for line in actions))
+                self.assertTrue(all("第" in line["summary"] and "轮" in line["summary"]
+                                    for line in actions if "打出【" in line.get("summary", "")))
                 self.assertEqual(lines[0]["mode"], "resource_pool")
                 self.assertEqual(lines[0]["training"]["configuration"]["mode"], mode)
                 self.assertEqual(lines[0]["training"]["configuration"]["recordKind"], "AI训练记录")
