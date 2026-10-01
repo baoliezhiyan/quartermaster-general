@@ -47,7 +47,10 @@ const server=http.createServer(async(req,res)=>{
    if(!req.headers['content-type']?.toLowerCase().startsWith('application/json'))throw new Error('请求必须使用 JSON 格式。');
    const token=(req.headers.authorization||'').replace(/^Bearer /,'');
    if(req.method!=='POST')throw new Error('请求方式无效。');
-   const body=await readRequestJson(req);
+   const historyImport=url.pathname==='/api/request'&&req.headers['x-qm-history-import']==='1';
+   if(historyImport)room.authorizeHistoryImport(token);
+   const body=await readRequestJson(req,historyImport?Infinity:undefined);
+   if(historyImport&&body.method!=='importSave')throw new Error('大文件接口仅用于导入存档。');
    await diagnostics.run(body.id,body.method,async entry=>{
     const start=performance.now();let result=url.pathname==='/api/identity-status'?room.identityStatus(body.tokens):url.pathname==='/api/identity'?await room.createIdentity(body.name):url.pathname==='/api/request'?await room.request(token,body):(()=>{throw new Error('未知接口。');})();
     if(url.pathname==='/api/request')diagnostics.clients(body.connection,body.clientTimings);

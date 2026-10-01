@@ -39,7 +39,7 @@ export class NetworkGameController implements GameController {
    while(!this.info.room?.connected&&!this.stopped&&Date.now()<until)await new Promise(r=>setTimeout(r,100));
    if(!this.info.room?.connected){failure=new Error('连接尚未恢复');continue;}
    const started=performance.now();let body:{ok:boolean;result:unknown;error?:string;serverTiming?:{ms:number}};
-   try{const response=await fetch('/api/request',{method:'POST',headers:{Authorization:`Bearer ${this.token}`,'Content-Type':'application/json'},body:JSON.stringify({...request,connection:this.connection}),signal:AbortSignal.timeout(12000)});body=await response.json();this.note({kind:'http',ms:performance.now()-started,serverMs:body.serverTiming?.ms,requestId:request.id});}
+   try{const response=await fetch('/api/request',{method:'POST',headers:{Authorization:`Bearer ${this.token}`,'Content-Type':'application/json',...(request.method==='importSave'?{'X-QM-History-Import':'1'}:{})},body:JSON.stringify({...request,connection:this.connection}),signal:AbortSignal.timeout(request.method==='importSave'?1800000:12000)});body=await response.json();this.note({kind:'http',ms:performance.now()-started,serverMs:body.serverTiming?.ms,requestId:request.id});}
    catch(e){this.note({kind:'http',ms:performance.now()-started,requestId:request.id});failure=e;continue;}
    if(!body.ok)throw new Error(body.error??'操作未被接受');
    return body.result;
@@ -101,7 +101,7 @@ export class NetworkGameController implements GameController {
  setRoomAccess=(access:RoomAccess)=>{if(JSON.stringify(access)===JSON.stringify(this.info.room?.access))return;void this.request('seat',access).catch(e=>{this.info={...this.info,room:{...this.info.room!,error:String(e)}};this.emit();});};
  dispatch=async(command:Command):Promise<DispatchResult>=>{if(command.type==='SET_VIEW'){await this.request('view',command.seat);return {ok:true};}return this.request('dispatch',command);};
  undo=()=>this.request('undo');loadCheckpoint=(id:string)=>this.request('loadCheckpoint',id);
- exportSave=()=>this.request<string>('exportSave');exportReplay=()=>this.request<string>('exportReplay');
+ exportSave=(pointId?:string)=>this.request<string>('exportSave',pointId);exportReplay=()=>this.request<string>('exportReplay');
  exportReplayNodeSave=()=>this.request<string>('exportReplayNodeSave');exportDiagnostics=async(note:string)=>{await this.flushTimings();return this.request<string>('exportDiagnostics',note);};
  checkReplay=()=>this.request<boolean>('checkReplay');
  importSave=(json:string)=>this.request('importSave',json);importReplay=(json:string)=>this.request('importReplay',json);

@@ -2,6 +2,7 @@ import type { Command, CommandError, DeepReadonly, GameState } from '../core';
 import type { Checkpoint } from './saveFormat';
 
 export interface SessionInfo {
+  savePoints?:import('../actionReplay/historySave').SavePoint[];
   room?:import('../network/protocol').RoomInfo;
   replayMode:boolean; replayCursor:number; replayEntries:readonly import('./replay').ReplayEntry[];
   ready:boolean; canUndo:boolean; undoCount:number; savedAt:string|null; storageError:string;
@@ -20,7 +21,7 @@ export interface GameController {
   setSceneLocked?(locked:boolean):Promise<void>;
   undo():Promise<void>;
   loadCheckpoint(id:string):Promise<void>;
-  exportSave():string|Promise<string>;
+  exportSave(pointId?:string):string|Promise<string>;
   exportReplay():string|Promise<string>;
   importReplay(json:string):Promise<void>;
   loadReplayEntries?():Promise<void>;

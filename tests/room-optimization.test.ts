@@ -39,10 +39,10 @@ it('room dispatch evaluates actions once and matches former view/action commands
 it('invalid and failed durable room actions commit neither view changes nor gameplay',async()=>{
  let fail=false,writes=0;const controller=new LocalGameController({read:async()=>null,list:async()=>[],write:async()=>{writes++;if(fail)throw Error('disk');}},true);
  const save=responsePreset('guided-battle','failure-room');save.state.viewSeat='united_kingdom';save.replayBase=structuredClone(save.state);await controller.importSave(JSON.stringify(save));
- const before=controller.getSnapshot()!,session=controller.exportSave(),count=writes;
+ const before=controller.getSnapshot()!,session=await controller.exportSave(),count=writes;
  expect((await controller.dispatchFromRoom({type:'PLAY_CARD',seat:'germany',expectedRevision:before.revision,cardId:'missing',guided:true,targetIds:[],effectIndices:[0]})).ok).toBe(false);
- expect(controller.getSnapshot()).toBe(before);expect(controller.exportSave()).toBe(session);expect(writes).toBe(count);
+ expect(controller.getSnapshot()).toBe(before);expect(await controller.exportSave()).toBe(session);expect(writes).toBe(count);
  const card=before.decks.germany.hand.find(c=>c.definitionId==='land_battle')!;fail=true;
  await expect(controller.dispatchFromRoom({type:'PLAY_CARD',seat:'germany',expectedRevision:before.revision,cardId:card.id,guided:true,targetIds:[],effectIndices:[0]})).rejects.toThrow('未提交');
- expect(controller.getSnapshot()).toBe(before);expect(controller.exportSave()).toBe(session);
+ expect(controller.getSnapshot()).toBe(before);expect(await controller.exportSave()).toBe(session);
 });

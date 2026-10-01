@@ -1,3 +1,4 @@
+import {parseReplay} from '../src/actionReplay/codec';
 import {it,expect} from 'vitest';
 import {LocalGameController} from '../src/controller/LocalGameController';
 import {validateSession,validateState} from '../src/controller/saveFormat';
@@ -18,7 +19,7 @@ it('makes prelude opening checkpoints, preserves big saves, and replaces nationa
  await send(c,{type:'SET_VIEW',seat:'japan'});expect(c.getSessionInfo().nations).toHaveLength(1);
  for(let i=0;i<6;i++)await play(c);
  expect(c.getSnapshot()!.prelude?.round).toBe(2);expect(c.getSessionInfo().rounds.map(cp=>cp.id)).toEqual(['prelude:round:1','prelude:round:2']);expect(c.getSessionInfo().nations).toHaveLength(6);
- const exported=c.exportSave();expect(()=>validateSession(JSON.parse(exported))).not.toThrow();
+ const exported=await c.exportSave();await expect(parseReplay(exported)).resolves.toBeDefined();
  await c.loadCheckpoint('prelude:round:1');expect(c.getSnapshot()!.prelude).toMatchObject({turn:1,round:1,played:false});expect(c.getSessionInfo().rounds).toHaveLength(2);expect(c.checkReplay()).toBe(true);
  await c.importSave(exported);
  for(let i=0;c.getSnapshot()!.prelude?.active&&i<150;i++)await play(c);
@@ -26,8 +27,8 @@ it('makes prelude opening checkpoints, preserves big saves, and replaces nationa
  for(const seat of SEATS){await send(c,{type:'SET_VIEW',seat});await send(c,{type:'KEEP_OPENING',cardIds:c.getSnapshot()!.decks[seat].hand.slice(0,7).map(v=>v.id)});}await settle(c);
  expect(c.getSessionInfo().rounds.map(cp=>cp.id)).toEqual([...preludeBig,'round:1']);expect(c.getSessionInfo().nations.find(cp=>cp.seat==='germany')?.stage).toBeUndefined();expect(c.getSessionInfo().nations.filter(cp=>cp.stage==='prelude')).toHaveLength(5);
  for(let i=0;c.getSnapshot()!.activeSeat==='germany'&&i<40;i++){const s=c.getSnapshot()!;if(s.resolution?.running)await settle(c);else if(s.phase==='DISCARD')await send(c,{type:'DISCARD_HAND',cardIds:[]});else await send(c,{type:'ADVANCE_PHASE'});}await settle(c);
- expect(c.getSessionInfo().nations.filter(cp=>cp.stage==='prelude')).toHaveLength(4);expect(c.getSessionInfo().rounds.map(cp=>cp.id)).toContain('prelude:round:1');expect(()=>validateSession(JSON.parse(c.exportSave()))).not.toThrow();
- const restored=new LocalGameController();await restored.importSave(c.exportSave());await restored.loadCheckpoint('prelude:round:2');expect(restored.getSnapshot()!.phase).toBe('PRELUDE');expect(restored.checkReplay()).toBe(true);
+ expect(c.getSessionInfo().nations.filter(cp=>cp.stage==='prelude')).toHaveLength(4);expect(c.getSessionInfo().rounds.map(cp=>cp.id)).toContain('prelude:round:1');await expect(parseReplay(await c.exportSave())).resolves.toBeDefined();
+ const restored=new LocalGameController();await restored.importSave(await c.exportSave());await restored.loadCheckpoint('prelude:round:2');expect(restored.getSnapshot()!.phase).toBe('PRELUDE');expect(restored.checkReplay()).toBe(true);
 });
 
 it('historical cards finish in their owner’s prelude discard, including extra top-card plays',async()=>{
@@ -49,5 +50,5 @@ it('keeps legacy replay deterministic and upgrades played history when importing
  while(s.resolution?.running){const q=s.resolution.choice!;apply({type:'RESOLVE_ENGINE_CHOICE',seat:q.seat,expectedRevision:s.revision,choiceId:q.id,ids:q.options.slice(0,q.min).map(v=>v.id)});}
  expect(s.decks.germany.removed.some(c=>c.id===card.id)).toBe(true);
  const old:SaveSession={format:'quartermaster-save',version:1,updatedAt:new Date().toISOString(),state:s,rounds:[],nations:[],undo:[],replayBase:base,commands};expect(()=>validateSession(old)).not.toThrow();
- const controller=new LocalGameController();await controller.importSave(JSON.stringify(old));expect(controller.getSnapshot()!.prelude!.decks.germany.discardPile.some(c=>c.id===card.id)).toBe(true);expect(controller.getSnapshot()!.prelude!.historyDiscard).toBe(true);expect(controller.checkReplay()).toBe(true);expect(()=>validateSession(JSON.parse(controller.exportSave()))).not.toThrow();
+ const controller=new LocalGameController();await controller.importSave(JSON.stringify(old));expect(controller.getSnapshot()!.prelude!.decks.germany.discardPile.some(c=>c.id===card.id)).toBe(true);expect(controller.getSnapshot()!.prelude!.historyDiscard).toBe(true);expect(controller.checkReplay()).toBe(true);await expect(parseReplay(await controller.exportSave())).resolves.toBeDefined();
 });

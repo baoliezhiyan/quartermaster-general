@@ -1,3 +1,4 @@
+import {stateHash} from '../src/actionReplay/state';
 import {expect,it} from 'vitest';
 import {LocalGameController} from '../src/controller/LocalGameController';
 import {moveSceneCard,sceneCards} from '../src/core/sceneCards';
@@ -11,7 +12,7 @@ it('edits negative tension and moves prelude cards without touching regular card
  s.prelude!.tension=-4;moveSceneCard(s,'germany',true,id,'drawTop');await c.editScene(s);
  expect(c.getSnapshot()!.prelude!.tension).toBe(-4);expect(c.getSnapshot()!.prelude!.decks.germany.drawPile[0].id).toBe(id);
  expect(c.getSnapshot()!.decks).toEqual(before.decks);expect(c.checkReplay()).toBe(true);
- const restored=new LocalGameController();await restored.importSave(await c.exportSave());expect(restored.getSnapshot()!.prelude).toEqual(c.getSnapshot()!.prelude);
+ const restored=new LocalGameController();await restored.importSave(await c.exportSave());expect(await stateHash(restored.getSnapshot()!)).toBe(await stateHash(c.getSnapshot()!));
  await c.undo();expect(c.getSnapshot()!.prelude).toEqual(before.prelude);
  await expect(c.editScene({...snapshot(c),prelude:{...snapshot(c).prelude!,tension:0.5}})).rejects.toThrow();
 });

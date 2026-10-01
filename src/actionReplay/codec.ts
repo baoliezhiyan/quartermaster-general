@@ -63,7 +63,7 @@ export async function validateRecords(records:RecordLine[],requireEnd=true):Prom
  return {header:h,start,groups,records,end};
 }
 export async function parseReplay(text:string):Promise<Archive>{
- require(text.length<=96*1024*1024,'回放文件超过 96 MB');require(!text.includes('\r')&&text.endsWith('\n')&&text.charCodeAt(0)!==0xfeff,'要求 UTF-8/LF 完整尾行');
+ require(!text.includes('\r')&&text.endsWith('\n')&&text.charCodeAt(0)!==0xfeff,'要求 UTF-8/LF 完整尾行');
  const lines=text.slice(0,-1).split('\n');require(lines.length<=200000&&lines.every(l=>l.length<32*1024*1024),'行数或单行大小超限');const records=lines.map(l=>JSON.parse(l));const a=await validateRecords(records);require(await hashText(lines.slice(0,-1).join('\n')+'\n')===a.end.contentHash,'文件 SHA-256 校验失败');return a;
 }
 export async function seal(records:Exclude<RecordLine,End>[],finished=false,winner?:End['winner']):Promise<string>{
