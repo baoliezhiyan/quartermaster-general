@@ -6,7 +6,7 @@ import {createPortal} from 'react-dom';
 import type {CSSProperties} from 'react';
 import type {Command,ReadState} from '../core';
 import {COUNTRY_NAMES,cardName} from '../core/basic';
-import {airMoveOptions} from '../core/actions';
+import {seatAirMoveOptions} from '../core/actions';
 import {CardResponseToggle} from './CardResponseToggle';
 import {CardFace} from './CardFace';
 import {playableCard} from './playAvailability';
@@ -24,7 +24,7 @@ export function TableHand({state,busy,dispatch,choiceCards,chosenCards,onChoiceC
  const setup=state.phase==='SETUP'&&!state.setupCompleted.includes(seat);
  const discard=own&&state.phase==='DISCARD';
  const air=own&&state.phase==='AIR';
- const moves=useMemo(()=>airMoveOptions(state,seat),[state,seat]);
+ const moves=useMemo(()=>seatAirMoveOptions(state,seat),[state,seat]);
  const airOptions=useMemo(()=>airActionOptions(state),[state]);
  const playable=useMemo(()=>new Set(deck.hand.filter(card=>playableCard(state,card)).map(card=>card.id)),[state]);
  const [airChoice,setAirChoice]=useState<string|null>(null);

@@ -11,7 +11,7 @@ export type Effect = { label: string; selectedIds?:readonly string[]; attackNoti
   | { kind:'cancel' }
   | { kind:'signal'; tag:string; completedFrameId?:string }
   | { kind:'reallocate'; seat:SeatId }
-  | { kind:'choose'; seat:SeatId; min:number; max:number; options:{id:string;label:string;effects:Effect[]}[] }
+  | { kind:'choose'; autoSingle?:boolean; seat:SeatId; min:number; max:number; options:{id:string;label:string;effects:Effect[]}[] }
   | { kind:'rebuild'; country:CountryId; withdrawnIds?:string[] }
   | { kind:'remove'; unit:Unit; supplied:boolean; cause:string }
   | { kind:'flag'; flag:'protected'|'battleProtected'|'supplied'|'supplyCountries'|'supplyRegions'|'suppressed'|'noAirDefense'; ids:string[] }
@@ -72,7 +72,7 @@ export interface ResolutionFrame {
 export interface TriggerWindow {
   lane?:'immediate'|'followup';
   batchId?:string;
-  closeReason?:'exhausted'|'cancelled'|'legacy-branch';
+  closeReason?:'exhausted'|'cancelled'|'legacy-branch'|'branch-left';
   opportunities?:Record<string,'available'|'temporarily-illegal'|'declined'|'fired'>;
   id:string; originEventId:string; parentWindowId:string | null; depth:number;
   timing:'Before' | 'After'; initialCandidates:string[]; remaining:string[];

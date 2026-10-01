@@ -1,10 +1,10 @@
+import {compareCardIdentity} from '../core/cardChoiceOrder';
 import {RoomRecord} from './RoomRecord';
 import type {RoomInfo} from '../network/protocol';
 import type { CardInstance, Command, ReadState, SeatId } from '../core';
 import {PreludeHand} from './PreludeHand';
 import {UnitArt} from './UnitArt';
-import { BASIC_NAMES, COUNTRY_NAMES, UNIT_NAMES, phaseCountries, reserve } from '../core/basic';
-import { specialCard } from '../core/cardCatalog';
+import {  COUNTRY_NAMES, UNIT_NAMES, phaseCountries, reserve } from '../core/basic';
 import { CardResponseToggle } from './CardResponseToggle';
 import { CardFace } from './CardFace';
 import { activePanelCards } from './triggerContext';
@@ -28,12 +28,11 @@ export function panelLabel(state:ReadState,panel:MapPanel) {
  const label=MAP_PANELS.find(p=>p[0]===panel)![1],count=panelCount(state,panel);
  return count===undefined?label:`${label}(${count})`;
 }
-// Sort a copy by catalog code only. Never expose the shuffled order or instance IDs.
+// Sort a copy by stable definition and instance IDs, never by live pile position.
 export function catalogCards(cards:readonly CardInstance[]) {
- const basics=Object.keys(BASIC_NAMES);
- const order=(c:CardInstance)=>specialCard(c.definitionId,c.balance)?.sourceIndex ?? basics.indexOf(c.definitionId)-100;
- return [...cards].sort((a,b)=>order(a)-order(b)||a.country.localeCompare(b.country)||a.definitionId.localeCompare(b.definitionId));
+ return [...cards].sort(compareCardIdentity);
 }
+
 export function MapPanelContent({panel,state,choiceCards={},chosenCards=[],onCard,dispatch,busy,infoSeat,onInfoSeat,readOnly=false,room,roomRequest,replay=false}:{replay?:boolean;room?:RoomInfo;roomRequest?:(method:string,...args:unknown[])=>Promise<unknown>;readOnly?:boolean;infoSeat?:SeatId|null;onInfoSeat?:(seat:SeatId)=>void;dispatch:(c:Command)=>Promise<void>;busy:boolean;panel:Exclude<MapPanel,'hand'>;state:ReadState;choiceCards?:Record<string,string[]>;chosenCards?:string[];onCard?:(id:string)=>void}) {
  if(panel==='record')return <RoomRecord state={state} room={room} request={roomRequest} infoSeat={infoSeat} onInfoSeat={onInfoSeat}/>;
  const availability=(state as ReadState&{trainingReplay?:{available:string[]}}).trainingReplay;

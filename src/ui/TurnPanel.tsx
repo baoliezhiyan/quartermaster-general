@@ -9,7 +9,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { PHASE_NAMES, SEATS } from '../core';
 import type { Command, ReadState } from '../core';
 import { BASIC_NAMES, REALLOCATION_CARD_IDS, COUNTRY_NAMES, cardName } from '../core/basic';
-import { airDestinations, airMoveOptions, cardOptions } from '../core/actions';
+import { airDestinations, seatAirMoveOptions, cardOptions } from '../core/actions';
 import { REGION_BY_ID } from '../core/map';
 
 export function TurnPanel({ state, dispatch, busy, onMapAction, pickedRegion, choiceCards={}, chosenCards=[], onChoiceCard, onPlayCard, playCardId }: {
@@ -26,7 +26,7 @@ export function TurnPanel({ state, dispatch, busy, onMapAction, pickedRegion, ch
   const setup = state.phase === 'SETUP';
   const multi = setup || state.phase === 'DISCARD' || state.phase === 'TURN_START_WINDOW';
   const canOperate = !busy && !state.resolution?.running && !state.pendingDiscard && state.status !== 'FINISHED' && (setup || active || !!state.pendingAir.length);
-  const options = useMemo(() => moveAir && state.phase === 'AIR' && active ? airMoveOptions(state,seat) : state.mode!=='BASIC_DEBUG' ? [] : cardOptions(state,cardId),[state,cardId,moveAir,active,seat]);
+  const options = useMemo(() => moveAir && state.phase === 'AIR' && active ? seatAirMoveOptions(state,seat) : state.mode!=='BASIC_DEBUG' ? [] : cardOptions(state,cardId),[state,cardId,moveAir,active,seat]);
   const destinations = useMemo(() => state.pendingAir.length ? airDestinations(state,state.pendingAir[0]) : [],[state]);
   useEffect(() => {
     const common = { seat, expectedRevision:state.revision };

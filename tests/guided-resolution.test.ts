@@ -23,7 +23,8 @@ it('Top four ordering is temporary and leaves the rest of the deck intact',()=>{
  let s=ready('special_132');s.decks.germany.active.push(...s.decks.germany.hand);const before=[...s.decks.germany.drawPile];
  startResolution(s,'出牌开始','germany',[{kind:'signal',tag:'PHASE:PLAY',label:'出牌开始'}],[]);
  s=choose(s,[s.resolution!.choice!.options.find(o=>o.label==='卓越规划')!.id]);expect(s.resolution!.choice!.kind).toBe('CARDS');expect(s.resolution!.choice!.options).toHaveLength(4);
- s=choose(s,s.resolution!.choice!.options.map(o=>o.id).reverse());expect(s.decks.germany.drawPile.map(c=>c.id)).toEqual([...before.slice(0,4).reverse(),...before.slice(4)].map(c=>c.id));
+ const selected=s.resolution!.choice!.options.map(o=>o.id).reverse();expect(new Set(selected)).toEqual(new Set(before.slice(0,4).map(c=>c.id)));
+ s=choose(s,selected);expect(s.decks.germany.drawPile.map(c=>c.id)).toEqual([...selected,...before.slice(4).map(c=>c.id)]);
 });
 it('an all-skipped restored state stays serializable',()=>{let s=ready('special_235');s=play(s);expect(()=>validateState(JSON.parse(JSON.stringify(s)))).not.toThrow();s=choose(s,[]);s=JSON.parse(JSON.stringify(s));s=choose(s,[]);expect(()=>validateState(s)).not.toThrow();});
 it('declining all effects of an optional trigger restores its original window and usage',()=>{
