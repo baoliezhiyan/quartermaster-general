@@ -12,6 +12,12 @@ dist-server/
 
 # Local experiments, downloaded tools, model weights, and private match archives
 /outputs/
+/PPO训练/.runtime/
+/PPO训练/.state/
+/PPO训练/A/*
+!/PPO训练/A/.gitkeep
+/PPO训练/B/*
+!/PPO训练/B/.gitkeep
 /.pnpm-store/
 /对局记录/*
 !/对局记录/.gitkeep

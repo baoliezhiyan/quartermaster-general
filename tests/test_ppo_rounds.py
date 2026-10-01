@@ -8,10 +8,13 @@ from unittest.mock import patch
 import torch
 
 from scripts import ppo_rounds
-from scripts.ppo_train import ArenaClient
+from scripts.ppo_train import ArenaClient, ROOT
 
 
 class RoundRunnerTests(unittest.TestCase):
+    def test_default_results_live_beside_root_launcher(self):
+        self.assertEqual(ppo_rounds.DEFAULT_RESULTS, ROOT / "PPO训练")
+
     def test_training_record_contains_real_decision_and_state_snapshots(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "record.jsonl"
