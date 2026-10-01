@@ -56,7 +56,7 @@ export function checkNeutralitySupply(s:GameState){
    for(const seat of NEUTRAL_SEATS)endNeutrality(s,seat,'轴心国占领了英、美、苏的大本营');
  }
 
- if(isNeutral(s,'united_states')&&occupiedNeutralitySupply(s).reduce((n,region)=>n+(region==='hawaii'?2:1),0)>=4)endNeutrality(s,'united_states',`轴心国合计占领了至少四个大本营之外的补给点`);
+ if(isNeutral(s,'united_states')&&(s.rules?.balanceEnabled?occupiedNeutralitySupply(s).length>=3:occupiedNeutralitySupply(s).reduce((n,region)=>n+(region==='hawaii'?2:1),0)>=4))endNeutrality(s,'united_states',`轴心国合计占领了至少${s.rules?.balanceEnabled?'三个':'四个'}大本营之外的补给点`);
 }
 export function checkNeutralityTurn(s:GameState){
  if(!s.prelude?.active&&s.round>=8)endNeutrality(s,'united_states','正式游戏第8轮开始');

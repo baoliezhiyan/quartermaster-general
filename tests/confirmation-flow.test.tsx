@@ -27,7 +27,7 @@ it.each([false,true])('wash-back pays the selected build card in one confirmatio
  expect(restored.decks.united_states.drawPile.some(c=>c.id===source.id)).toBe(pay);expect(restored.decks.united_states.discardPile.some(c=>c.id===cost.id)).toBe(pay);expect(restored.decks.united_states.hand.some(c=>c.id===cost.id)).toBe(!pay);expect(fee).toBeTruthy();
 });
 it.each([false,true])('kamikaze supply trigger can be used or declined without another air action (%s)',use=>{
- let s=game();add(s,'special_247','active');s.activeSeat=s.viewSeat=s.operatorSeat='japan';s.phase='AIR';s.units=[{id:'a',country:'japan',type:'army',regionId:'eastern_china'},{id:'air',country:'japan',type:'air',regionId:'eastern_china'},{id:'target',country:'soviet_union',type:'army',regionId:'vladivostok'}];
+ let s=game();add(s,'special_247','active');s.activeSeat=s.viewSeat=s.operatorSeat='japan';s.phase='AIR';s.units=[{id:'a',country:'japan',type:'army',regionId:'eastern_china'},{id:'air',country:'japan',type:'air',regionId:'eastern_china'},{id:'target',country:'united_states',type:'navy',regionId:'sea_east_china'}];
  const send=(payload:Record<string,unknown>)=>{const r=transition(s,{seat:s.operatorSeat,expectedRevision:s.revision,...payload} as Command);expect(r.ok).toBe(true);if(r.ok)s=r.state;};send({type:'ADVANCE_PHASE'});
  expect(s.phase).toBe('SUPPLY');let q=s.resolution!.choice!;send({type:'RESOLVE_ENGINE_CHOICE',choiceId:q.id,ids:use?[q.options.find(o=>o.label==='神风敢死队')!.id]:[],guided:true});
  if(use){expect(s.resolution!.choice).toMatchObject({kind:'SELECT',options:[{id:'air'}]});expect(disabled(markup(s))).toBe(true);expect(disabled(markup(s,['air']))).toBe(false);}

@@ -41,11 +41,15 @@ export function applyBalanceEffect(s:GameState,f:ResolutionFrame,e:Extract<Effec
  case 'return-source':insert([{kind:'frameChange',frameId:f.id,finalZone:'drawPile',label:'将本牌洗回牌库'}]);break;
  case 'scry':{const ids=deck.drawPile.slice(0,4).map(c=>c.id);f.memory??={};f.memory.scry=ids;insert([{kind:'cards',seat:e.seat,from:'drawPile',to:'drawPile',allowedIds:ids,min:0,max:ids.length,bottom:true,order:true,remember:'scry-bottom',label:'依次选择放到牌库底的牌，其余留在顶端。无论置于顶或底，排序数字越小越靠近牌库顶'},next('scry-top')]);break;}
  case 'scry-top':{const ids=(f.memory?.scry??[]).filter(id=>!f.memory?.['scry-bottom']?.includes(id));insert([{kind:'cards',seat:e.seat,from:'drawPile',to:'drawPile',allowedIds:ids,min:ids.length,max:ids.length,order:true,label:'依次排列留在牌库顶的牌，排序数字越小越靠近牌库顶'}]);break;}
- case 'exile-government':case 'relocate-industry':{
-  const definitionId=e.op==='exile-government'?'special_5':'special_42';
+ case 'exile-government':{
+  const choices=(['hand','drawPile'] as const).flatMap(from=>deck[from].filter(c=>['special_5','special_9'].includes(c.definitionId)).map(c=>({id:c.id,label:`${from==='hand'?'手牌':'牌库'}：${specialCard(c.definitionId,c.balance)!.name}`,effects:[{kind:'extraPlay' as const,seat:e.seat,from,selectedCardId:c.id,onlyCardIds:[c.id],label:'打出所选法国状态'},...(from==='hand'?[action('france',c.definitionId==='special_5'?'british_isles':'south_africa')]:[])]})));
+  insert([{kind:'choose',seat:e.seat,min:1,max:1,label:'选择从手牌或牌库打出流亡政府或自由法国；从手牌打出另征召法国陆军',options:choices}]);break;
+ }
+ case 'relocate-industry':{
+  const definitionId='special_42';
   const hand=deck.hand.find(c=>c.definitionId===definitionId),draw=deck.drawPile.find(c=>c.definitionId===definitionId),effects:Effect[]=[];
   if(hand||draw)effects.push({kind:'extraPlay',seat:e.seat,from:hand?'hand':'drawPile',onlyCardIds:[(hand??draw)!.id],label:'打出指定状态牌'});
-  if(e.op==='relocate-industry'||hand)effects.push(action(e.op==='exile-government'?'france':'soviet_union',e.op==='exile-government'?'british_isles':'siberia'));
+  effects.push(action('soviet_union','siberia'));
   insert(effects);break;
  }
  case 'inspect-response':{const ids=inspectTen(s,e.seat,'响应').map(c=>c.id);f.memory??={};f.memory.inspected=ids;insert([{kind:'cards',seat:e.seat,from:'drawPile',to:'faceDown',allowedIds:ids,filter:'响应',min:1,max:1,label:'选择检视牌中的一张响应暗置'},next('inspect-take')]);break;}

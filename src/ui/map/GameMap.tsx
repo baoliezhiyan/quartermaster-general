@@ -1,3 +1,4 @@
+import {CardEncyclopedia} from '../CardEncyclopedia';
 import {UnitArt} from '../UnitArt';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { PointerEvent, ReactNode } from 'react';
@@ -19,6 +20,7 @@ const COUNTRY_NAMES: Record<CountryId, string> = {
 const ALL_SHAPES = MAP_SHAPES;
 
 export function GameMap({ alliance, game, legalRegions = [], onChooseRegion, selectedRegion, selectedRegions=[], targeting=false, children, footer, scoreboard, legalUnitIds=[],selectedUnitIds=[],onChooseUnit,onStandardView }: { alliance: Alliance; game?: ReadState | null; legalRegions?: readonly string[]; onChooseRegion?: (regionId: string | null) => void; selectedRegion?:string|null; selectedRegions?:readonly string[]; targeting?:boolean; children?:ReactNode; footer?:ReactNode; scoreboard?:ReactNode;legalUnitIds?:string[];selectedUnitIds?:string[];onChooseUnit?:(id:string)=>void;onStandardView?:()=>void }) {
+  const [encyclopedia,setEncyclopedia]=useState(false);
   const [localSelected, setSelected] = useState<string | null>(null);
   const selected = selectedRegion === undefined ? localSelected : selectedRegion;
   const [info, setInfo] = useState<{id:string;left:string}|null>(null);
@@ -184,7 +186,7 @@ export function GameMap({ alliance, game, legalRegions = [], onChooseRegion, sel
   return (
     <section ref={fullscreenRoot} className={`game-map${fullscreen?' map-fullscreen':''}`} aria-label="战略地图模块">
       <div className="map-toolbar" ref={toolbar}>
-        <div><h3>战略地图</h3><span className="map-subtitle">左键选择 · 右键选择并查看详情／按住拖动</span></div>
+        <div><h3>战略地图</h3><button className="map-tool encyclopedia-toggle" aria-expanded={encyclopedia} onClick={()=>setEncyclopedia(v=>!v)}>全卡图鉴</button><span className="map-subtitle">左键选择 · 右键选择并查看详情／按住拖动</span></div>
         {scoreboard}
         <div className="map-tools">
           <div className="map-search">
@@ -210,6 +212,7 @@ export function GameMap({ alliance, game, legalRegions = [], onChooseRegion, sel
         {fullscreenError&&<p role="alert">{fullscreenError}</p>}
       </div>
       <div className="map-stage" ref={stage}>
+        {encyclopedia&&<CardEncyclopedia balance={game?.rules?.balanceEnabled??true}/> }
       <div className="map-viewport" ref={viewport} data-zoom={Math.round(zoom*100)} onPointerDown={beginPan} onPointerMove={movePan}
         onPointerUp={endPan} onPointerCancel={()=>{drag.current=null;}} onLostPointerCapture={()=>{drag.current=null;}}
         onContextMenu={event=>event.preventDefault()}

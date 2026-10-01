@@ -41,7 +41,7 @@ it('air-start enhancement resolves before deciding that no standard air action i
  s=send(s,{type:'RESOLVE_ENGINE_CHOICE',choiceId:q.id,ids:[q.options.find(o=>o.label.includes('喷火'))?.id??q.options[0].id],guided:true});s=complete(s);expect(s.units.some(u=>u.country==='united_kingdom'&&u.type==='air')).toBe(true);expect(s.phase).toBe('DISCARD');
 });
 it('kamikaze triggers at supply start and runs to the mandatory discard stop',()=>{
- let s=game('japan');add(s,'special_247','active');s.units=[{id:'a',country:'japan',type:'army',regionId:'eastern_china'},{id:'air',country:'japan',type:'air',regionId:'eastern_china'},{id:'target',country:'soviet_union',type:'army',regionId:'vladivostok'}];s=send(s,{type:'ADVANCE_PHASE'});expect(s.phase).toBe('SUPPLY');expect(airActionOptions(s).map(o=>o.id)).not.toContain('kamikaze');
+ let s=game('japan');add(s,'special_247','active');s.units=[{id:'a',country:'japan',type:'army',regionId:'eastern_china'},{id:'air',country:'japan',type:'air',regionId:'eastern_china'},{id:'target',country:'united_states',type:'navy',regionId:'sea_east_china'}];s=send(s,{type:'ADVANCE_PHASE'});expect(s.phase).toBe('SUPPLY');expect(airActionOptions(s).map(o=>o.id)).not.toContain('kamikaze');
  const q=s.resolution!.choice!;s=send(s,{type:'RESOLVE_ENGINE_CHOICE',choiceId:q.id,ids:[q.options.find(o=>o.label==='神风敢死队')!.id],guided:true});s=complete(s);expect(s.units.some(u=>u.id==='air'||u.id==='target')).toBe(false);expect(s.phase).toBe('DISCARD');
 });
 it('a selected air mode can return to the menu or skip with the original phase button',()=>{

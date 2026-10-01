@@ -49,7 +49,7 @@ act(['DE-01','DE-07','JP-04','JP-14','SU-08','SU-10','UK-17'],'Before','land_bat
 act(['SU-06','SU-15'],'Before','land_battle');
 act(['DE-05','DE-12','SU-01','SU-07'],'After','land_battle');
 act(['JP-05'],'After','sea_battle');act(['JP-08'],'After','build_navy');
-act(['SU-16'],'After','land_battle','sea_battle');add(['SU-18'],'After','action:*');
+act(['SU-16'],'After','land_battle','sea_battle');add(['SU-18'],'Before','remove');
 add(['SU-03'],'After','remove');
 act(['UK-01'],'After','build_navy','recruit_navy');
 act(['UK-02','JP-07'],'After','build_army','recruit_army');

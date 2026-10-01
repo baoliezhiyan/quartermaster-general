@@ -10,6 +10,8 @@
 
 ## 牌表及游戏规则
 
+- [平衡补丁v2.1 / 客户端v1.7.6](balance-v2.1.md)：当前新增规则、ID对照、全卡图鉴与验证范围。
+
 - [原版卡面表](cards/standard.md) / [平衡卡面表](cards/balanced.md)：从源码生成的浏览表，按稳定ID讨论；不同模式不能混用。
 - `src/data/all-cards.json`、`prelude-cards.json`、`balance-cards.json` 与 `src/core/cardCatalog.ts`：实际牌面及组合入口。并非所有历史override文件都会自动参与当前运行，以代码引用为准。
 - [结算架构](resolution-scheduler-v1.3.16.md)、[费用与攻击责任](rules-v1.4.0.md)：核心结算基线；后续裁定仍须叠加。

@@ -581,7 +581,6 @@ export function runResolution(s:GameState) {
       }
       if(!validEffect(s,e,f)) {event.outcome='invalid';event.ended=true; event.resultText=`${e.label}因响应后的局面变化无法执行`;record(s,'EFFECT_INVALID',`${e.label}在响应后已不合法，跳过且不产生成功后的触发。`); f.stage='Resume'; continue; }
       if(e.kind==='action'&&(['land_battle','sea_battle'].includes(e.action)||e.option?.mode==='supremacy')){
-        if(s.rules?.balanceEnabled&&['germany','italy'].includes(e.country)&&s.units.find(u=>u.id===e.option?.defenderId)?.country==='soviet_union'){for(const card of s.decks.soviet_union.faceDown.filter(c=>c.definitionId==='prelude_SU-18'))(s.balanceFirstAttacks??={})[card.id]??=`${s.balanceResolutionSerial}:${event.id}`;}
         checkNeutralityAttack(s,e.country,s.units.find(u=>u.id===e.option?.defenderId)?.country);
         if(s.neutralityStatusPending)continue;
       }
