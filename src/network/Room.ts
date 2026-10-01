@@ -73,6 +73,12 @@ export class Room {
   if(signature!==u.decisionSignature){u.decisionSignature=signature;u.decision=crypto.randomUUID();}
  }
  private async broadcast(){this.sequence++;for(const u of this.users.values())if(u.online)u.send?.(await this.snapshot(u));}
+ exportHistory(token:string,pointId?:string){return this.serial(async()=>{
+  const u=this.user(token);if(u.access.kind!=='gm')throw Error('此功能仅GM可用。');
+  if(pointId!==undefined&&(typeof pointId!=='string'||pointId.length>100))throw Error('存档位置无效。');
+  // Take an immutable export inside the authority queue; HTTP transmission happens outside.
+  return this.engine.exportSave(pointId);
+ });}
  request(token:string,r:RoomRequest){const queuedAt=performance.now();return measureAsync('request_total',()=>this.serial(async()=>{recordPerformance({name:'request_queue',ms:performance.now()-queuedAt});
   const u=this.user(token);if(!u.online||r.connection!==u.connection)throw new Error('此页面已断开或在另一页面接管。');
   if(typeof r.id!=='string'||r.id.length>100||!Array.isArray(r.args))throw new Error('请求格式无效。');
@@ -168,6 +174,7 @@ export class Room {
    }
    if(!read&&r.method!=='release'){const next=this.engine.getSnapshot();for(const other of this.users.values())if(other.access.kind==='gm'&&next)other.view=next.viewSeat;}
   }
+  if(['exportSave','exportReplay','exportReplayNodeSave','exportDiagnostics','checkReplay'].includes(r.method))return value??null;
   value??=null;u.results.set(r.id,{fingerprint,value});await measureAsync('broadcast',()=>this.broadcast());return value;
  }));}
 }

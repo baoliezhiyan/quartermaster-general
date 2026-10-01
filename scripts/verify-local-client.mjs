@@ -52,6 +52,14 @@ try{
  check((await player.call('dispatch',{type:'DISCARD_PRELUDE_TOP',seat:'germany',expectedRevision:player.snapshot.state.revision})).result.ok);
  // Disconnect/reconnect and use the same identity through the localized route.
  const connection=crypto.randomUUID(),reconnect=new WebSocket(local.replace('http:','ws:')+'/api/socket',{origin:local});peers.push(reconnect);await once(reconnect,'open');reconnect.send(JSON.stringify({token:player.identity.token,connection}));const [raw]=await once(reconnect,'message');check(JSON.parse(raw).room.name==='本地德国');
+ // A GM using the localized route downloads raw, compressed host history.
+ check((await gm.call('seat',{kind:'public'})).ok);
+ const localGM=await join(local,'本地GM');check((await localGM.call('seat',{kind:'gm'})).ok);await until(()=>localGM.snapshot.room.access.kind==='gm');
+ const full=await fetch(local+'/api/history-export',{method:'POST',headers:{'Content-Type':'application/json',Origin:local,Authorization:'Bearer '+localGM.identity.token},body:'{}'});
+ check(full.ok);check(full.headers.get('content-encoding')==='gzip');const exported=await full.text();check(JSON.parse(exported.split('\n')[0]).format==='quartermaster-match-log');
+ const denied=await fetch(local+'/api/history-export',{method:'POST',headers:{'Content-Type':'application/json',Origin:local,Authorization:'Bearer '+player.identity.token},body:'{}'});check(!denied.ok);
+ check((await localGM.call('seat',{kind:'public'})).ok);
+ check((await gm.call('seat',{kind:'gm'})).ok);await until(()=>gm.snapshot.room.access.kind==='gm');
  check((await gm.call('sceneLock',true)).ok);gm.ws.terminate();await until(()=>observer.snapshot.room.sceneLocked===false);
  const incompatible=http.createServer((req,res)=>res.end(JSON.stringify({protocol:1,fingerprint:'different',roomId:'wrong'})));incompatible.listen(0,'127.0.0.1');await once(incompatible,'listening');try{await assert.rejects(startClient(`http://127.0.0.1:${incompatible.address().port}`,{port:0}),/不一致/);count++;}finally{await new Promise(ok=>incompatible.close(ok));}
  // With host gone, local assets must remain available; no remote resource fallback.

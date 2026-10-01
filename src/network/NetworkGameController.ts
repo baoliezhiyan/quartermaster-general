@@ -101,7 +101,12 @@ export class NetworkGameController implements GameController {
  setRoomAccess=(access:RoomAccess)=>{if(JSON.stringify(access)===JSON.stringify(this.info.room?.access))return;void this.request('seat',access).catch(e=>{this.info={...this.info,room:{...this.info.room!,error:String(e)}};this.emit();});};
  dispatch=async(command:Command):Promise<DispatchResult>=>{if(command.type==='SET_VIEW'){await this.request('view',command.seat);return {ok:true};}return this.request('dispatch',command);};
  undo=()=>this.request('undo');loadCheckpoint=(id:string)=>this.request('loadCheckpoint',id);
- exportSave=(pointId?:string)=>this.request<string>('exportSave',pointId);exportReplay=()=>this.request<string>('exportReplay');
+ private async downloadHistory(pointId?:string):Promise<string>{
+  const response=await fetch('/api/history-export',{method:'POST',headers:{Authorization:`Bearer ${this.token}`,'Content-Type':'application/json'},body:JSON.stringify({pointId}),signal:AbortSignal.timeout(1800000)});
+  if(!response.ok){let message='存档下载失败，请稍后重试。';try{message=(await response.json()).error??message;}catch{/* Tunnel returned a non-JSON failure. */}throw Error(message);}
+  return response.text();
+ }
+ exportSave=(pointId?:string)=>this.downloadHistory(pointId);exportReplay=()=>this.downloadHistory();
  exportReplayNodeSave=()=>this.request<string>('exportReplayNodeSave');exportDiagnostics=async(note:string)=>{await this.flushTimings();return this.request<string>('exportDiagnostics',note);};
  checkReplay=()=>this.request<boolean>('checkReplay');
  importSave=(json:string)=>this.request('importSave',json);importReplay=(json:string)=>this.request('importReplay',json);
