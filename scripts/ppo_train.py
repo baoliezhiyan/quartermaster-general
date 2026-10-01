@@ -566,7 +566,8 @@ def weighted_baseline(observation, rng):
 
 
 def play_episode(client, encoder, model, device, mode, seed, max_decisions, trace="none",
-                 baseline_side=None, rng=None, card_set="events", record_metadata=None):
+                 baseline_side=None, rng=None, card_set="events", record_metadata=None,
+                 deterministic=False):
     rng = rng or random.Random(seed)
     response = client.request(op="reset", seed=seed, mode=mode, cardSet=card_set,
                               trace=trace, recordMetadata=record_metadata)
@@ -582,7 +583,8 @@ def play_episode(client, encoder, model, device, mode, seed, max_decisions, trac
             index = weighted_baseline(observation, rng)
             logprob, value = 0.0, 0.0
         else:
-            index, logprob, value = select_action(model, state, candidates, device, rng=rng)
+            index, logprob, value = select_action(model, state, candidates, device,
+                                                  deterministic=deterministic, rng=rng)
         chosen = observation["candidates"][index]
         if chosen["kind"] == "source":
             sources[chosen.get("definitionId") or "unknown"] += 1

@@ -14,7 +14,6 @@ dist-server/
 /outputs/
 /PPO训练/.runtime/
 /PPO训练/.state/
-/PPO训练/提交出牌实验/
 /PPO训练/A/*
 !/PPO训练/A/.gitkeep
 /PPO训练/B/*

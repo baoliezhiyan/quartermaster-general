@@ -2,7 +2,7 @@
 setlocal
 chcp 65001 >nul
 set "PPO_HOME=%~dp0"
-set "RESULT_ROOT=%PPO_HOME%提交出牌实验"
+set "RESULT_ROOT=%PPO_HOME:~0,-1%"
 for %%I in ("%PPO_HOME%..") do set "PROJECT_ROOT=%%~fI"
 set "PYTHONUTF8=1"
 set "PYTHONIOENCODING=utf-8"
