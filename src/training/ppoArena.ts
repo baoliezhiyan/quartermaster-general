@@ -15,7 +15,7 @@ import type {Effect,ChoiceRequest} from '../core/resolutionTypes';
 import {BASIC_ACTIONS,type BasicAction,type DecisionContext,type TraceLevel} from './basicArena';
 
 export const PPO_ARENA_FORMAT='quartermaster-ppo-arena-v2';
-export const PPO_OBSERVATION_SCHEMA_VERSION='ppo-observation-v4';
+export const PPO_OBSERVATION_SCHEMA_VERSION='ppo-observation-v5';
 export const PPO_ACTION_SCHEMA_VERSION='ppo-actions-v4';
 export const PPO_STATIC_SCHEMA={observationSchemaVersion:PPO_OBSERVATION_SCHEMA_VERSION,
   actionSchemaVersion:PPO_ACTION_SCHEMA_VERSION,
@@ -62,6 +62,8 @@ export type PpoEnd={termination:'natural'|'truncated';reason?:string;winner:Game
 export type PpoStepInfo={decision:DecisionContext;nextDecision:DecisionContext|null;
   scoreDelta:{axis:number;allies:number;bySeat:GameState['scores']};turnsAdvanced:number;
   submittedCardDefinitions:string[];resolvedCardDefinitions:string[];cancelledCardDefinitions:string[];
+  wasteCheck?:{seat:SeatId;definitionId:string;regionId:string;repeated:boolean;
+    penalty:boolean;reason:string};
   termination:'ongoing'|'natural'|'truncated';winner:GameState['winner']};
 export type PpoSnapshot={format:typeof PPO_ARENA_FORMAT;header:PpoTrainingArena['header'];state:GameState;
   decisionCount:number;pendingCardId:string|null;terminationReason:string|null;
@@ -328,7 +330,8 @@ export class PpoTrainingArena {
             country:card.country,regionId:option.regionId,unitType:option.unitType,
             source:option.attackerId?this.unitFact(option.attackerId):undefined,
             target:option.defenderId?this.unitFact(option.defenderId):undefined,
-            intercept:!!option.intercept}],effects:effectSequence(s,card,this.unitFact)});
+            repeated:!!option.existingId,intercept:!!option.intercept}],
+          effects:effectSequence(s,card,this.unitFact)});
         continue;
       }
       if(!basicType(card.definitionId)){
@@ -523,6 +526,14 @@ export class PpoTrainingArena {
     const selected=obs.candidates.find(c=>c.id===request.actionId);
     if(!selected)throw new Error('Invalid PPO candidate');
     const s=this.state,beforeScore=scoreCopy(s),beforeTotals=allianceScores(s),beforeT=turnClock(s);
+    const basicBuild=selected.kind==='source'&&!!selected.optionId&&
+      (selected.definitionId==='build_army'||selected.definitionId==='build_navy');
+    const buildPlan=basicBuild?selected.choices?.[0]:undefined;
+    const validAlternative=basicBuild&&obs.candidates.some(candidate=>candidate.kind==='source'&&
+      (candidate.definitionId==='build_army'||candidate.definitionId==='build_navy')&&
+      candidate.choices?.[0]?.kind==='action_plan'&&!candidate.choices[0].repeated&&
+      candidate.optionId?.endsWith(':'));
+    let wasteCheck:PpoStepInfo['wasteCheck'];
     this.submittedThisStep=[];
     this.completedThisStep=[];
     this.replayCommits=[];
@@ -531,7 +542,27 @@ export class PpoTrainingArena {
       if(selected.definitionId==='special_162'&&barbarossaTargets(s).length)this.pendingCardId=selected.cardId!;
       else if(selected.optionId){this.commit({type:'PLAY_BASIC',seat:s.activeSeat,
         expectedRevision:s.revision,cardId:selected.cardId!,optionId:selected.optionId});
-        this.submittedThisStep.push({id:selected.cardId!,definitionId:selected.definitionId!});}
+        this.submittedThisStep.push({id:selected.cardId!,definitionId:selected.definitionId!});
+        if(basicBuild){
+          const repeated=!!buildPlan?.repeated,now=this.state;
+          const placed=now.events.slice(s.events.length).some(event=>event.type==='UNIT_PLACED'&&
+            event.repeated&&event.country===s.activeSeat&&event.regionId===buildPlan?.regionId);
+          const resolved=this.completedThisStep.some(outcome=>outcome.id===selected.cardId&&
+            outcome.outcome==='resolved');
+          const plain=selected.effects?.length===1&&selected.effects[0].kind==='action'&&
+            selected.effects[0].action===selected.definitionId&&
+            Object.values(s.decks).every(deck=>!deck.active.length&&!deck.faceDown.length);
+          // The basic play may enter SCORE before returning; routine scoring
+          // must not make an otherwise empty construction look productive.
+          const changed=JSON.stringify(s.units)!==JSON.stringify(now.units)||
+            Object.keys(s.decks).some(seat=>s.decks[seat as SeatId].drawPile.length!==
+              now.decks[seat as SeatId].drawPile.length);
+          const reason=!repeated?'not_repeated':!validAlternative?'no_valid_alternative':
+            !plain?'additional_effect_uncertain':!resolved||now.resolution?.running?'not_resolved':
+            !placed||changed?'other_effect_uncertain':'repeated_basic_build';
+          wasteCheck={seat:s.activeSeat,definitionId:selected.definitionId!,
+            regionId:buildPlan?.regionId??'',repeated,penalty:reason==='repeated_basic_build',reason};
+        }}
       else this.playCard(selected.cardId!,[]);
     }else if(selected.kind==='targets'){
       const cardId=this.pendingCardId!;this.pendingCardId=null;this.playCard(cardId,selected.targetIds!);
@@ -555,6 +586,7 @@ export class PpoTrainingArena {
       submittedCardDefinitions:this.submittedThisStep.map(card=>card.definitionId),
       resolvedCardDefinitions:resolved,
       cancelledCardDefinitions:cancelled,
+      ...(wasteCheck?{wasteCheck}:{}),
       winner:result?.winner??null};
     const record=this.trace==='none'?null:{type:'ppo-decision',decision:obs.decision,
       seat:obs.decisionSeat,activeSeat:obs.activeSeat,round:obs.round,choiceKind:obs.choiceKind,

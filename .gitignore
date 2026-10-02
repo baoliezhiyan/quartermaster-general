@@ -15,6 +15,7 @@ dist-server/
 /PPO训练/.runtime/
 /PPO训练/.state/
 /PPO训练/.trajectory-temp/
+/PPO训练/归档/
 /PPO训练/A/*
 !/PPO训练/A/.gitkeep
 /PPO训练/B/*

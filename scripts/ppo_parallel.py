@@ -137,6 +137,21 @@ def phase_resources(clients, store, device):
             "rssMeaning": "process resident set; liveTensorStorageBytes counts reachable tensor storages; residual RSS includes allocator/native retention; OS file cache not measured"}
 
 
+def decision_rewards(previous, after, outcome, info):
+    natural = bool(outcome and outcome["termination"] == "natural")
+    base = {team: ppo.shaped_reward(previous["allianceScores"], after, team, natural,
+                                   outcome["winner"] if outcome else None)
+            for team in ("axis", "allies")}
+    adjusted = dict(base)
+    waste = info.get("wasteCheck")
+    if waste and waste["penalty"]:
+        if (waste["seat"] != previous["decisionSeat"] or not waste["repeated"] or
+                waste["reason"] != "repeated_basic_build"):
+            raise RuntimeError("Waste penalty does not belong to the initiating decision")
+        adjusted[ppo.team_of(waste["seat"])] += ppo.REWARD_CONFIG["actionWastePenalty"]
+    return base, adjusted
+
+
 @dataclass
 class Episode:
     task: dict
@@ -146,6 +161,9 @@ class Episode:
     started: float = field(default_factory=time.perf_counter)
     samples: list = field(default_factory=list)
     rewards: list = field(default_factory=list)
+    base_reward_totals: dict = field(default_factory=lambda: defaultdict(float))
+    waste_reasons: dict = field(default_factory=lambda: defaultdict(int))
+    waste_penalties: dict = field(default_factory=lambda: defaultdict(int))
     elapsed: list = field(default_factory=list)
     choices: dict = field(default_factory=lambda: defaultdict(int))
     sources: dict = field(default_factory=lambda: defaultdict(int))
@@ -216,8 +234,13 @@ def episode_summary(episode: Episode, snapshot: dict) -> dict:
             "actionSequenceSha256": action_digest,
             "choices": dict(episode.choices), "sources": dict(episode.sources),
             "submitted": dict(episode.submitted), "resolved": dict(episode.resolved),
-            "shaped": {team: sum(r[team] for r in episode.rewards)
-                       for team in ("axis", "allies")},
+            "shaped": dict(episode.base_reward_totals),
+            "trainingReward": {team: sum(r[team] for r in episode.rewards)
+                               for team in ("axis", "allies")},
+            "wasteCheckReasons": dict(episode.waste_reasons),
+            "wastePenaltiesBySeat": dict(episode.waste_penalties),
+            "wastePenaltyTotal": ppo.REWARD_CONFIG["actionWastePenalty"] *
+                sum(episode.waste_penalties.values()),
             "consumedEvents": consumed,
             "meanOpenFraction": statistics.fmean(episode.openness) if episode.openness else 0.0,
             "remainingBySeat": {seat: len(deck["hand"]) for seat, deck in decks.items()},
@@ -303,10 +326,17 @@ def collect_batch(clients, encoder, model, device, tasks, mode, card_set, traini
                         previous = episode.observation
                         outcome = response["result"]
                         after = outcome["allianceScores"] if outcome else response["observation"]["allianceScores"]
-                        natural = bool(outcome and outcome["termination"] == "natural")
-                        episode.rewards.append({team: ppo.shaped_reward(
-                            previous["allianceScores"], after, team, natural,
-                            outcome["winner"] if outcome else None) for team in ("axis", "allies")})
+                        base, reward = decision_rewards(previous, after, outcome, info)
+                        for team in ("axis", "allies"):
+                            episode.base_reward_totals[team] += base[team]
+                        waste = info.get("wasteCheck")
+                        if waste:
+                            if waste["seat"] != previous["decisionSeat"]:
+                                raise RuntimeError("Waste penalty seat differs from initiating decision")
+                            episode.waste_reasons[waste["reason"]] += 1
+                            if waste["penalty"]:
+                                episode.waste_penalties[waste["seat"]] += 1
+                        episode.rewards.append(reward)
                         episode.elapsed.append(info["turnsAdvanced"])
                         for name in info.get("submittedCardDefinitions", []):
                             episode.submitted[name] += 1
@@ -593,6 +623,16 @@ def main():
                               "trajectory": store.stats(),
                               "completedDecisionsPerSecond": batch_decisions / timing["collectionSeconds"],
                               "optimization": metrics,
+                              "actionWaste": {
+                                  "repeatedBasicBuilds": sum(sum(count for reason, count in
+                                      episode["wasteCheckReasons"].items() if reason != "not_repeated")
+                                      for episode in episodes),
+                                  "penaltiesBySeat": {seat: sum(episode["wastePenaltiesBySeat"].get(seat, 0)
+                                      for episode in episodes) for seat in encoder.seats},
+                                  "reasons": {reason: sum(episode["wasteCheckReasons"].get(reason, 0)
+                                      for episode in episodes) for reason in sorted({reason for episode in episodes
+                                      for reason in episode["wasteCheckReasons"]})},
+                                  "penaltyTotal": sum(episode["wastePenaltyTotal"] for episode in episodes)},
                               "gpuPeakAllocatedBytes": torch.cuda.max_memory_allocated()
                               if device.type == "cuda" else 0,
                               "gpuPeakReservedBytes": torch.cuda.max_memory_reserved()

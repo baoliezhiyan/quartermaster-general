@@ -27,8 +27,8 @@ ROOT = Path(__file__).resolve().parents[1]
 GAMMA = 1.0
 LAMBDA_ROUND = 0.95
 POTENTIAL_SCALE = 0.3
-ENCODER_VERSION = "ppo-vector-v4"
-TRAINER_VERSION = "ppo-trainer-v5-committed-actions"
+ENCODER_VERSION = "ppo-vector-v5-repeat-build"
+TRAINER_VERSION = "ppo-trainer-v6-action-waste"
 EFFECT_KINDS = ["action", "score", "draw", "deckTop", "forceHand", "signal", "choose", "cards",
                 "extraPlay", "rebuild", "remove", "flag", "balance", "trace", "cancel", "randomReturn",
                 "randomPlay", "frameChange", "countChange", "reallocate", "prelude", "copyStatus"]
@@ -51,7 +51,8 @@ CHOICE_FEATURE_KINDS = ["build_order", "action_region", "defenderId", "attackerI
                         "order_mandatory_triggers", "accept", "decline", "execute"]
 OPTIMIZER_CONFIG = {"lr": 3e-4, "epochs": 4, "minibatch": 256, "clip": 0.2,
                     "entropy": 0.01, "valueCoefficient": 0.5, "gradNorm": 0.5}
-REWARD_CONFIG = {"gamma": GAMMA, "lambdaRound": LAMBDA_ROUND, "potential": POTENTIAL_SCALE}
+REWARD_CONFIG = {"gamma": GAMMA, "lambdaRound": LAMBDA_ROUND, "potential": POTENTIAL_SCALE,
+                 "actionWasteVersion": "repeated-basic-build-v1", "actionWastePenalty": -0.01}
 ENCODER_DICTIONARY = {"effectKinds": EFFECT_KINDS, "actions": ACTIONS, "phases": PHASES,
                       "choiceKinds": CHOICE_KINDS, "choiceFields": CHOICE_FIELDS,
                       "targetSlots": TARGET_SLOTS, "choiceSlots": CHOICE_SLOTS,
