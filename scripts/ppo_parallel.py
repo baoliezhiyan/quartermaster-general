@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import ctypes
+import gc
 import hashlib
 import json
 import math
@@ -22,6 +23,7 @@ import torch
 
 from scripts import ppo_train as ppo
 from scripts.ppo_progress import ProgressDisplay, ordinal
+from scripts.ppo_trajectory import TrajectoryStore, ROOT as TRAJECTORY_ROOT, cleanup_stale
 
 BATCH_EPISODES = 40
 POLICY_SALT = 0x9E3779B97F4A7C15
@@ -113,6 +115,43 @@ class ProcessMonitor:
                 max(os.cpu_count() or 1, 1) * 100}
 
 
+def phase_resources(clients, store, device):
+    python = _process_sample(os.getpid())
+    workers = [_process_sample(client.process.pid) for client in clients]
+    live_storages = {}
+    for obj in gc.get_objects():
+        if not issubclass(type(obj), torch.Tensor):
+            continue
+        try:
+            storage = obj.untyped_storage()
+            live_storages[storage.data_ptr()] = storage.nbytes()
+        except (RuntimeError, TypeError, AttributeError):
+            continue
+    return {"pythonRssBytes": python[0] if python else None,
+            "workerRssBytes": sum(item[0] for item in workers if item),
+            "liveTensorStorageBytes": sum(live_storages.values()),
+            "writeBufferBytes": len(store.buffer) if store else 0,
+            "readCacheBytes": store.cache_bytes if store else 0,
+            "gpuAllocatedBytes": torch.cuda.memory_allocated() if device.type == "cuda" else 0,
+            "gpuReservedBytes": torch.cuda.memory_reserved() if device.type == "cuda" else 0,
+            "rssMeaning": "process resident set; liveTensorStorageBytes counts reachable tensor storages; residual RSS includes allocator/native retention; OS file cache not measured"}
+
+
+def decision_rewards(previous, after, outcome, info):
+    natural = bool(outcome and outcome["termination"] == "natural")
+    base = {team: ppo.shaped_reward(previous["allianceScores"], after, team, natural,
+                                   outcome["winner"] if outcome else None)
+            for team in ("axis", "allies")}
+    adjusted = dict(base)
+    waste = info.get("wasteCheck")
+    if waste and waste["penalty"]:
+        if (waste["seat"] != previous["decisionSeat"] or not waste["repeated"] or
+                waste["reason"] != "repeated_basic_build"):
+            raise RuntimeError("Waste penalty does not belong to the initiating decision")
+        adjusted[ppo.team_of(waste["seat"])] += ppo.REWARD_CONFIG["actionWastePenalty"]
+    return base, adjusted
+
+
 @dataclass
 class Episode:
     task: dict
@@ -122,6 +161,9 @@ class Episode:
     started: float = field(default_factory=time.perf_counter)
     samples: list = field(default_factory=list)
     rewards: list = field(default_factory=list)
+    base_reward_totals: dict = field(default_factory=lambda: defaultdict(float))
+    waste_reasons: dict = field(default_factory=lambda: defaultdict(int))
+    waste_penalties: dict = field(default_factory=lambda: defaultdict(int))
     elapsed: list = field(default_factory=list)
     choices: dict = field(default_factory=lambda: defaultdict(int))
     sources: dict = field(default_factory=lambda: defaultdict(int))
@@ -192,8 +234,13 @@ def episode_summary(episode: Episode, snapshot: dict) -> dict:
             "actionSequenceSha256": action_digest,
             "choices": dict(episode.choices), "sources": dict(episode.sources),
             "submitted": dict(episode.submitted), "resolved": dict(episode.resolved),
-            "shaped": {team: sum(r[team] for r in episode.rewards)
-                       for team in ("axis", "allies")},
+            "shaped": dict(episode.base_reward_totals),
+            "trainingReward": {team: sum(r[team] for r in episode.rewards)
+                               for team in ("axis", "allies")},
+            "wasteCheckReasons": dict(episode.waste_reasons),
+            "wastePenaltiesBySeat": dict(episode.waste_penalties),
+            "wastePenaltyTotal": ppo.REWARD_CONFIG["actionWastePenalty"] *
+                sum(episode.waste_penalties.values()),
             "consumedEvents": consumed,
             "meanOpenFraction": statistics.fmean(episode.openness) if episode.openness else 0.0,
             "remainingBySeat": {seat: len(deck["hand"]) for seat, deck in decks.items()},
@@ -205,7 +252,8 @@ def episode_summary(episode: Episode, snapshot: dict) -> dict:
 
 def collect_batch(clients, encoder, model, device, tasks, mode, card_set, training_seed,
                   max_decisions, inference_batch_size=8, inference_wait_ms=2.0,
-                  diagnostic_path: Path | None = None, trace="none", on_progress=None):
+                  diagnostic_path: Path | None = None, trace="none", on_progress=None,
+                  store: TrajectoryStore | None = None):
     """No weight changes occur here. Each task is claimed once, then finishes naturally."""
     if len({task["jobId"] for task in tasks}) != len(tasks):
         raise ValueError("Duplicate episode jobs")
@@ -213,6 +261,8 @@ def collect_batch(clients, encoder, model, device, tasks, mode, card_set, traini
         raise ValueError("Duplicate episode seeds")
     if len({task["policyVersion"] for task in tasks}) != 1:
         raise ValueError("Mixed policy versions in collection batch")
+    if store is None:
+        raise ValueError("A bounded trajectory store is required")
     waiting = deque(tasks)
     active: dict[int, Episode] = {}
     pending = {}
@@ -276,10 +326,17 @@ def collect_batch(clients, encoder, model, device, tasks, mode, card_set, traini
                         previous = episode.observation
                         outcome = response["result"]
                         after = outcome["allianceScores"] if outcome else response["observation"]["allianceScores"]
-                        natural = bool(outcome and outcome["termination"] == "natural")
-                        episode.rewards.append({team: ppo.shaped_reward(
-                            previous["allianceScores"], after, team, natural,
-                            outcome["winner"] if outcome else None) for team in ("axis", "allies")})
+                        base, reward = decision_rewards(previous, after, outcome, info)
+                        for team in ("axis", "allies"):
+                            episode.base_reward_totals[team] += base[team]
+                        waste = info.get("wasteCheck")
+                        if waste:
+                            if waste["seat"] != previous["decisionSeat"]:
+                                raise RuntimeError("Waste penalty seat differs from initiating decision")
+                            episode.waste_reasons[waste["reason"]] += 1
+                            if waste["penalty"]:
+                                episode.waste_penalties[waste["seat"]] += 1
+                        episode.rewards.append(reward)
                         episode.elapsed.append(info["turnsAdvanced"])
                         for name in info.get("submittedCardDefinitions", []):
                             episode.submitted[name] += 1
@@ -300,8 +357,9 @@ def collect_batch(clients, encoder, model, device, tasks, mode, card_set, traini
                         if episode.outcome is None:
                             raise RuntimeError("Snapshot before natural termination")
                         ppo.assign_advantages(episode.samples, episode.rewards, episode.elapsed)
+                        store.finish_episode(episode.samples)
                         summaries.append(episode_summary(episode, response["snapshot"]))
-                        completed.append(episode)
+                        completed.append(episode.task["seed"])
                         if on_progress:
                             on_progress(len(completed))
                         del active[environment]
@@ -322,10 +380,13 @@ def collect_batch(clients, encoder, model, device, tasks, mode, card_set, traini
                         if len(episode.samples) >= max_decisions:
                             raise RuntimeError(f"Episode {episode.task['jobId']} exceeded {max_decisions} decisions")
                         chosen = observation["candidates"][index]
-                        episode.samples.append({"seat": observation["decisionSeat"],
+                        sample = {"seat": observation["decisionSeat"],
                             "state": state, "candidates": candidates, "action": index,
-                            "logprob": math.log(probability),
-                            "value": value, "baseline": False})
+                            "logprob": math.log(probability), "value": value, "baseline": False}
+                        sample_id = store.append(sample)
+                        episode.samples.append({"seat": sample["seat"], "action": index,
+                            "logprob": sample["logprob"], "value": value,
+                            "baseline": False, "sampleId": sample_id})
                         episode.candidate_counts.append(len(observation["candidates"]))
                         episode.choices[chosen["kind"]] += 1
                         if chosen["kind"] == "source":
@@ -370,10 +431,11 @@ def collect_batch(clients, encoder, model, device, tasks, mode, card_set, traini
     timing["summedServerOperationSeconds"] = timing["transport"]["serverOperationSeconds"]
     timing["summedTransportAndQueueSecondsUpperBound"] = max(0.0,
         timing["transport"]["waitSeconds"] - timing["transport"]["serverOperationSeconds"])
-    if len(completed) != len(tasks) or sorted(ep.task["seed"] for ep in completed) != sorted(
-            task["seed"] for task in tasks):
+    if len(completed) != len(tasks) or sorted(completed) != sorted(task["seed"] for task in tasks):
         raise RuntimeError("Batch task accounting mismatch")
-    return [sample for episode in completed for sample in episode.samples], summaries, dict(timing)
+    store.seal()
+    timing["trajectory"] = store.stats()
+    return store, summaries, dict(timing)
 
 
 def open_clients(count: int, directory: Path):
@@ -417,7 +479,7 @@ def main():
     parser = argparse.ArgumentParser(description="Parallel complete-episode PPO training")
     parser.add_argument("--mode", choices=["A", "B"], required=True)
     parser.add_argument("--card-set", choices=["basics", "events"], default="events")
-    parser.add_argument("--workers", type=int, default=6)
+    parser.add_argument("--workers", type=int, default=8)
     parser.add_argument("--inference-batch-size", type=int, default=8)
     parser.add_argument("--inference-wait-ms", type=float, default=2.0)
     parser.add_argument("--updates", type=int, default=1)
@@ -444,6 +506,7 @@ def main():
     device = torch.device("cpu" if args.cpu or not torch.cuda.is_available() else "cuda")
     rng = random.Random(args.seed)
     torch.manual_seed(args.seed)
+    cleanup_stale(TRAJECTORY_ROOT)
     with tempfile.TemporaryDirectory(prefix="ppo-parallel-") as directory:
         print(f"{args.mode}：启动 {min(args.workers, BATCH_EPISODES)} 个环境并加载模型...", flush=True)
         startup_started = time.perf_counter()
@@ -517,51 +580,84 @@ def main():
                 monitored_started = time.perf_counter()
                 label = (f"{args.mode} {ordinal((update - 1) // 10 + 1, '轮')} · "
                          f"{ordinal((update - 1) % 10 + 1, '次更新')}")
-                with ProgressDisplay(label, BATCH_EPISODES) as progress:
-                    with ProcessMonitor(clients) as monitor:
-                        samples, episodes, timing = collect_batch(clients, encoder, model, device,
-                            tasks, args.mode, args.card_set, args.seed, args.max_episode_decisions,
-                            args.inference_batch_size, args.inference_wait_ms, diagnostic, args.trace,
-                            on_progress=progress.update)
-                        progress.set_stage("优化中")
-                        optimization_started = time.perf_counter()
-                        model.train()
-                        metrics = ppo.ppo_update(model, optimizer, samples, device, rng)
-                        optimization_seconds = time.perf_counter() - optimization_started
-                resource = monitor.report(time.perf_counter() - monitored_started)
-                completed_decisions += len(samples)
-                completed_episodes += BATCH_EPISODES
-                next_seed += BATCH_EPISODES
-                payload = ppo.checkpoint_payload(model, optimizer, encoder, clients[0],
-                    args.mode, update, completed_decisions, rng, next_seed, args.card_set,
-                    completed_episodes=completed_episodes, training_seed=args.seed)
-                args.checkpoint.parent.mkdir(parents=True, exist_ok=True)
-                temporary = args.checkpoint.with_suffix(".tmp")
-                torch.save(payload, temporary)
-                temporary.replace(args.checkpoint)
-                lengths = [episode["decisions"] for episode in episodes]
-                result = {"number": update, "episodeCount": len(episodes),
-                          "tasks": tasks, "episodes": sorted(episodes, key=lambda e: e["seed"]),
-                          "completedDecisions": len(samples),
-                          "completedCountryTurns": sum(e["countryTurns"] for e in episodes),
-                          "episodeLength": {"min": min(lengths), "max": max(lengths),
-                                            "mean": statistics.fmean(lengths),
-                                            "median": statistics.median(lengths)},
-                          "collection": timing, "optimizationSeconds": optimization_seconds,
-                          "resource": resource,
-                          "completedDecisionsPerSecond": len(samples) / timing["collectionSeconds"],
-                          "optimization": metrics,
-                          "gpuPeakAllocatedBytes": torch.cuda.max_memory_allocated()
-                          if device.type == "cuda" else 0,
-                          "gpuPeakReservedBytes": torch.cuda.max_memory_reserved()
-                          if device.type == "cuda" else 0}
-                report["updates"].append(result)
-                if args.report:
-                    args.report.parent.mkdir(parents=True, exist_ok=True)
-                    temporary_report = args.report.with_suffix(args.report.suffix + ".tmp")
-                    temporary_report.write_text(json.dumps(report, ensure_ascii=False, indent=2),
-                                                encoding="utf-8")
-                    temporary_report.replace(args.report)
+                store = TrajectoryStore(args.mode, update, root=TRAJECTORY_ROOT)
+                phases = {"beforeCollection": phase_resources(clients, store, device)}
+                result = None
+                try:
+                    with ProgressDisplay(label, BATCH_EPISODES) as progress:
+                        with ProcessMonitor(clients) as monitor:
+                            samples, episodes, timing = collect_batch(clients, encoder, model, device,
+                                tasks, args.mode, args.card_set, args.seed, args.max_episode_decisions,
+                                args.inference_batch_size, args.inference_wait_ms, diagnostic, args.trace,
+                                on_progress=progress.update, store=store)
+                            phases["afterCollection"] = phase_resources(clients, store, device)
+                            progress.set_stage("优化中")
+                            optimization_started = time.perf_counter()
+                            model.train()
+                            metrics = ppo.ppo_update(model, optimizer, store, device, rng)
+                            optimization_seconds = time.perf_counter() - optimization_started
+                            phases["afterUpdate"] = phase_resources(clients, store, device)
+                    resource = monitor.report(time.perf_counter() - monitored_started)
+                    batch_decisions = len(store)
+                    completed_decisions += batch_decisions
+                    completed_episodes += BATCH_EPISODES
+                    next_seed += BATCH_EPISODES
+                    payload = ppo.checkpoint_payload(model, optimizer, encoder, clients[0],
+                        args.mode, update, completed_decisions, rng, next_seed, args.card_set,
+                        completed_episodes=completed_episodes, training_seed=args.seed)
+                    args.checkpoint.parent.mkdir(parents=True, exist_ok=True)
+                    temporary = args.checkpoint.with_suffix(".tmp")
+                    torch.save(payload, temporary)
+                    temporary.replace(args.checkpoint)
+                    del payload
+                    lengths = [episode["decisions"] for episode in episodes]
+                    result = {"number": update, "episodeCount": len(episodes),
+                              "tasks": tasks, "episodes": sorted(episodes, key=lambda e: e["seed"]),
+                              "completedDecisions": batch_decisions,
+                              "completedCountryTurns": sum(e["countryTurns"] for e in episodes),
+                              "episodeLength": {"min": min(lengths), "max": max(lengths),
+                                                "mean": statistics.fmean(lengths),
+                                                "median": statistics.median(lengths)},
+                              "collection": timing, "optimizationSeconds": optimization_seconds,
+                              "resource": resource, "resourceStages": phases,
+                              "trajectory": store.stats(),
+                              "completedDecisionsPerSecond": batch_decisions / timing["collectionSeconds"],
+                              "optimization": metrics,
+                              "actionWaste": {
+                                  "repeatedBasicBuilds": sum(sum(count for reason, count in
+                                      episode["wasteCheckReasons"].items() if reason != "not_repeated")
+                                      for episode in episodes),
+                                  "penaltiesBySeat": {seat: sum(episode["wastePenaltiesBySeat"].get(seat, 0)
+                                      for episode in episodes) for seat in encoder.seats},
+                                  "reasons": {reason: sum(episode["wasteCheckReasons"].get(reason, 0)
+                                      for episode in episodes) for reason in sorted({reason for episode in episodes
+                                      for reason in episode["wasteCheckReasons"]})},
+                                  "penaltyTotal": sum(episode["wastePenaltyTotal"] for episode in episodes)},
+                              "gpuPeakAllocatedBytes": torch.cuda.max_memory_allocated()
+                              if device.type == "cuda" else 0,
+                              "gpuPeakReservedBytes": torch.cuda.max_memory_reserved()
+                              if device.type == "cuda" else 0}
+                    report["updates"].append(result)
+                    if args.report:
+                        args.report.parent.mkdir(parents=True, exist_ok=True)
+                        temporary_report = args.report.with_suffix(args.report.suffix + ".tmp")
+                        temporary_report.write_text(json.dumps(report, ensure_ascii=False, indent=2),
+                                                    encoding="utf-8")
+                        temporary_report.replace(args.report)
+                finally:
+                    cleanup_result = store.close()
+                    # `samples` aliases `store`; delete it before the next collect_batch call.
+                    if "samples" in locals() and samples is store:
+                        del samples
+                    del store
+                if result is not None:
+                    result["trajectoryCleanup"] = cleanup_result
+                    phases["afterCleanup"] = phase_resources(clients, None, device)
+                    if args.report:
+                        temporary_report = args.report.with_suffix(args.report.suffix + ".tmp")
+                        temporary_report.write_text(json.dumps(report, ensure_ascii=False, indent=2),
+                                                    encoding="utf-8")
+                        temporary_report.replace(args.report)
             if args.report:
                 args.report.parent.mkdir(parents=True, exist_ok=True)
                 args.report.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")

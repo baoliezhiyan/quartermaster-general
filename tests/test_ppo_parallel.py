@@ -1,34 +1,64 @@
 import json
+import gc
 import random
 import tempfile
 import unittest
+import weakref
 from pathlib import Path
 
 import torch
 
 from scripts.ppo_parallel import collect_batch, make_tasks, policy_rng
+from scripts.ppo_trajectory import TrajectoryStore
 from scripts.ppo_train import (ArenaClient, Encoder, PpoNetwork, checkpoint_payload,
-                               restore_checkpoint, CONSOLE_ONLY_PREDECESSOR_HASHES)
+                               restore_checkpoint, NON_SEMANTIC_PREDECESSOR_HASHES)
 
 
 class ParallelCollectionTests(unittest.TestCase):
+    def test_two_small_batches_release_prior_trajectory_before_next_collection(self):
+        client = ArenaClient()
+        try:
+            encoder = Encoder(client.schema)
+            model = PpoNetwork(encoder.state_dim, encoder.candidate_dim)
+            with tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                for update in (1, 2):
+                    with TrajectoryStore("A", update, root=root) as store:
+                        samples, episodes, timing = collect_batch(
+                            [client], encoder, model, torch.device("cpu"),
+                            make_tasks(987650 + update, 1, update, "A"),
+                            "A", "events", 42, 3000, store=store)
+                        self.assertEqual(len(samples), episodes[0]["decisions"])
+                        self.assertGreater(timing["trajectory"]["trajectoryFileBytes"], 0)
+                        directory_path = store.directory
+                        prior = weakref.ref(store)
+                    del samples, store
+                    gc.collect()  # test-only leak assertion; never called by the trainer
+                    self.assertIsNone(prior())
+                    self.assertFalse(directory_path.exists())
+        finally:
+            client.close()
+
     def test_completed_episode_notifies_progress_once(self):
         client = ArenaClient()
         try:
             encoder = Encoder(client.schema)
             model = PpoNetwork(encoder.state_dim, encoder.candidate_dim)
             seen = []
-            samples, episodes, _timing = collect_batch(
-                [client], encoder, model, torch.device("cpu"),
-                make_tasks(987650, 1, 1, "A"), "A", "events", 42, 3000,
-                on_progress=seen.append)
-            self.assertEqual(seen, [1])
-            self.assertEqual(len(episodes), 1)
-            self.assertEqual(len(samples), episodes[0]["decisions"])
+            with tempfile.TemporaryDirectory() as directory:
+                with TrajectoryStore("A", 1, root=Path(directory)) as store:
+                    samples, episodes, _timing = collect_batch(
+                        [client], encoder, model, torch.device("cpu"),
+                        make_tasks(987650, 1, 1, "A"), "A", "events", 42, 3000,
+                        on_progress=seen.append, store=store)
+                    self.assertIs(samples, store)
+                    self.assertEqual(seen, [1])
+                    self.assertEqual(len(episodes), 1)
+                    self.assertEqual(len(samples), episodes[0]["decisions"])
         finally:
             client.close()
 
-    def test_console_only_predecessor_checkpoint_keeps_strict_rule_checks(self):
+    def test_non_semantic_predecessor_checkpoint_keeps_strict_rule_checks(self):
         client = ArenaClient()
         try:
             encoder = Encoder(client.schema)
@@ -38,7 +68,9 @@ class ParallelCollectionTests(unittest.TestCase):
             payload = checkpoint_payload(model, optimizer, encoder, client, "A", 10, 1200,
                                          rng, 88, completed_episodes=400, training_seed=48)
             predecessor = "2b9778411434db42f2679a7c1e6a018d8b35d98a7789829c952f06309bcd7704"
-            self.assertIn(predecessor, CONSOLE_ONLY_PREDECESSOR_HASHES)
+            self.assertIn(predecessor, NON_SEMANTIC_PREDECESSOR_HASHES)
+            self.assertIn("31ad0efe38df4bceded8b45721c73153dcfc923b3895184d5c7b7ee2d7d8b7f8",
+                          NON_SEMANTIC_PREDECESSOR_HASHES)
             payload["trainerSourceSha256"] = predecessor
             with tempfile.TemporaryDirectory() as directory:
                 checkpoint = Path(directory) / "latest.pt"
@@ -79,10 +111,11 @@ class ParallelCollectionTests(unittest.TestCase):
             before = {key: value.clone() for key, value in model.state_dict().items()}
             with tempfile.TemporaryDirectory() as directory:
                 diagnostic = Path(directory) / "failed.json"
-                with self.assertRaisesRegex(RuntimeError, "exceeded 1 decisions"):
-                    collect_batch([client], encoder, model, torch.device("cpu"),
-                                  make_tasks(930930, 2, 1, "A"), "A", "events", 42, 1,
-                                  diagnostic_path=diagnostic)
+                with TrajectoryStore("A", 1, root=Path(directory)) as store:
+                    with self.assertRaisesRegex(RuntimeError, "exceeded 1 decisions"):
+                        collect_batch([client], encoder, model, torch.device("cpu"),
+                                      make_tasks(930930, 2, 1, "A"), "A", "events", 42, 1,
+                                      diagnostic_path=diagnostic, store=store)
                 failure = json.loads(diagnostic.read_text(encoding="utf-8"))
                 self.assertEqual(len(failure["tasks"]), 2)
                 self.assertEqual(failure["policyVersion"], 0)

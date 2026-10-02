@@ -27,8 +27,8 @@ ROOT = Path(__file__).resolve().parents[1]
 GAMMA = 1.0
 LAMBDA_ROUND = 0.95
 POTENTIAL_SCALE = 0.3
-ENCODER_VERSION = "ppo-vector-v4"
-TRAINER_VERSION = "ppo-trainer-v5-committed-actions"
+ENCODER_VERSION = "ppo-vector-v5-repeat-build"
+TRAINER_VERSION = "ppo-trainer-v6-action-waste"
 EFFECT_KINDS = ["action", "score", "draw", "deckTop", "forceHand", "signal", "choose", "cards",
                 "extraPlay", "rebuild", "remove", "flag", "balance", "trace", "cancel", "randomReturn",
                 "randomPlay", "frameChange", "countChange", "reallocate", "prelude", "copyStatus"]
@@ -51,7 +51,8 @@ CHOICE_FEATURE_KINDS = ["build_order", "action_region", "defenderId", "attackerI
                         "order_mandatory_triggers", "accept", "decline", "execute"]
 OPTIMIZER_CONFIG = {"lr": 3e-4, "epochs": 4, "minibatch": 256, "clip": 0.2,
                     "entropy": 0.01, "valueCoefficient": 0.5, "gradNorm": 0.5}
-REWARD_CONFIG = {"gamma": GAMMA, "lambdaRound": LAMBDA_ROUND, "potential": POTENTIAL_SCALE}
+REWARD_CONFIG = {"gamma": GAMMA, "lambdaRound": LAMBDA_ROUND, "potential": POTENTIAL_SCALE,
+                 "actionWasteVersion": "repeated-basic-build-v1", "actionWastePenalty": -0.01}
 ENCODER_DICTIONARY = {"effectKinds": EFFECT_KINDS, "actions": ACTIONS, "phases": PHASES,
                       "choiceKinds": CHOICE_KINDS, "choiceFields": CHOICE_FIELDS,
                       "targetSlots": TARGET_SLOTS, "choiceSlots": CHOICE_SLOTS,
@@ -60,15 +61,19 @@ ENCODER_DICTIONARY_HASH = hashlib.sha256(json.dumps(ENCODER_DICTIONARY, sort_key
 TRAINER_SOURCE_HASH = hashlib.sha256(Path(__file__).read_bytes() +
     (Path(__file__).with_name("ppo_parallel.py").read_bytes()
      if Path(__file__).with_name("ppo_parallel.py").exists() else b"") +
+    (Path(__file__).with_name("ppo_trajectory.py").read_bytes()
+     if Path(__file__).with_name("ppo_trajectory.py").exists() else b"") +
     Path(__file__).with_name("ppo-arena-server.mjs").read_bytes()).hexdigest()
-# These builds use the same training rules. Their successors change only
-# progress/evaluation presentation, the default worker count, and greedy
-# sampling for the separate review game. Training collection still samples
-# actions as before; all schema, rules, course and seed checks remain strict.
-CONSOLE_ONLY_PREDECESSOR_HASHES = frozenset({
+# These exact predecessors use the same observations, actions, rewards, policy
+# update and arena rules. Later changes affect progress/review presentation,
+# default worker count, or temporary trajectory storage only. All other
+# schema, rule-build, course, optimizer and seed checks remain strict.
+NON_SEMANTIC_PREDECESSOR_HASHES = frozenset({
     "3f0ff2c6491001bf3c3bd144712b2d055c2d15f750a6bf9229e5e68f5b350e0e",
     "02c6b3eb1c4a692fccbf9d7c1852b038b3ae14498a825ae8b064f46e94e129fb",
     "2b9778411434db42f2679a7c1e6a018d8b35d98a7789829c952f06309bcd7704",
+    "f77b4daddb66dbdf12f462fde55d9698911ec4d9d11d2542a5b057d7cf2f96f9",
+    "31ad0efe38df4bceded8b45721c73153dcfc923b3895184d5c7b7ee2d7d8b7f8",
 })
 
 
@@ -632,7 +637,11 @@ def play_episode(client, encoder, model, device, mode, seed, max_decisions, trac
 
 
 def ppo_update(model, optimizer, samples, device, rng, epochs=4, minibatch=256):
-    useful = [item for item in samples if not item["baseline"]]
+    # A trajectory spool exposes only small scalar metadata here. Tensor payloads
+    # are read for the current shuffled minibatch, never for the full update.
+    metadata = samples.training_metadata() if hasattr(samples, "training_metadata") else samples
+    useful_positions = [i for i, item in enumerate(metadata) if not item["baseline"]]
+    useful = [metadata[i] for i in useful_positions]
     if not useful:
         raise ValueError("No policy decisions to update")
     advantage = torch.tensor([item["advantage"] for item in useful], dtype=torch.float32, device=device)
@@ -647,7 +656,11 @@ def ppo_update(model, optimizer, samples, device, rng, epochs=4, minibatch=256):
         rng.shuffle(order)
         for start in range(0, len(order), minibatch):
             indices = order[start:start + minibatch]
-            batch = [useful[i] for i in indices]
+            batch = (samples.load_batch([useful_positions[i] for i in indices])
+                     if hasattr(samples, "load_batch") else [useful[i] for i in indices])
+            if hasattr(samples, "prefetch") and start + minibatch < len(order):
+                following = order[start + minibatch:start + 2 * minibatch]
+                samples.prefetch([useful_positions[i] for i in following])
             logits, values = model(*batch_tensors(batch, device))
             distribution = Categorical(logits=logits)
             actions = torch.tensor([item["action"] for item in batch], device=device)
@@ -714,7 +727,7 @@ def restore_checkpoint(path, model, optimizer, encoder, client, mode, rng, card_
     if any(saved.get(key) != value for key, value in expected.items()):
         raise ValueError("Checkpoint schema, mode, or rules build differs")
     if saved.get("trainerSourceSha256") not in ({TRAINER_SOURCE_HASH} |
-                                                 CONSOLE_ONLY_PREDECESSOR_HASHES):
+                                                 NON_SEMANTIC_PREDECESSOR_HASHES):
         raise ValueError("Checkpoint trainer source differs")
     if saved.get("completedEpisodes") != saved.get("update", -1) * 40:
         raise ValueError("Checkpoint complete-episode count differs from update boundary")
