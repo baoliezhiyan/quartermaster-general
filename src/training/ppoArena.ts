@@ -64,6 +64,7 @@ export type PpoStepInfo={decision:DecisionContext;nextDecision:DecisionContext|n
   submittedCardDefinitions:string[];resolvedCardDefinitions:string[];cancelledCardDefinitions:string[];
   wasteCheck?:{seat:SeatId;definitionId:string;regionId:string;repeated:boolean;
     penalty:boolean;reason:string};
+  wasteOpportunity?:{candidateCount:number;chosen:boolean};
   termination:'ongoing'|'natural'|'truncated';winner:GameState['winner']};
 export type PpoSnapshot={format:typeof PPO_ARENA_FORMAT;header:PpoTrainingArena['header'];state:GameState;
   decisionCount:number;pendingCardId:string|null;terminationReason:string|null;
@@ -533,6 +534,17 @@ export class PpoTrainingArena {
       (candidate.definitionId==='build_army'||candidate.definitionId==='build_navy')&&
       candidate.choices?.[0]?.kind==='action_plan'&&!candidate.choices[0].repeated&&
       candidate.optionId?.endsWith(':'));
+    const hasStockAlternative=obs.candidates.some(candidate=>candidate.kind==='source'&&
+      (candidate.definitionId==='build_army'||candidate.definitionId==='build_navy')&&
+      candidate.choices?.[0]?.kind==='action_plan'&&!candidate.choices[0].repeated&&
+      candidate.optionId?.endsWith(':'));
+    const noInstalledEffects=Object.values(s.decks).every(deck=>!deck.active.length&&!deck.faceDown.length);
+    const opportunityIds=hasStockAlternative&&noInstalledEffects?obs.candidates.filter(candidate=>
+      candidate.kind==='source'&&!!candidate.optionId&&
+      (candidate.definitionId==='build_army'||candidate.definitionId==='build_navy')&&
+      !!candidate.choices?.[0]?.repeated&&candidate.effects?.length===1&&
+      candidate.effects[0].kind==='action'&&candidate.effects[0].action===candidate.definitionId)
+      .map(candidate=>candidate.id):[];
     let wasteCheck:PpoStepInfo['wasteCheck'];
     this.submittedThisStep=[];
     this.completedThisStep=[];
@@ -587,6 +599,7 @@ export class PpoTrainingArena {
       resolvedCardDefinitions:resolved,
       cancelledCardDefinitions:cancelled,
       ...(wasteCheck?{wasteCheck}:{}),
+      wasteOpportunity:{candidateCount:opportunityIds.length,chosen:opportunityIds.includes(selected.id)},
       winner:result?.winner??null};
     const record=this.trace==='none'?null:{type:'ppo-decision',decision:obs.decision,
       seat:obs.decisionSeat,activeSeat:obs.activeSeat,round:obs.round,choiceKind:obs.choiceKind,

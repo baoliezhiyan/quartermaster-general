@@ -25,9 +25,10 @@ def scene(client, seat, extra_units, seed=871):
 
 def preference(model, encoder, observation, focus):
     state, candidates = encoder.encode(observation)
+    device = next(model.parameters()).device
     with torch.inference_mode():
         logits, _ = model(*ppo.batch_tensors([{"state": state, "candidates": candidates}],
-                                            torch.device("cpu")))
+                                            device))
         probabilities = logits[0, :len(candidates)].softmax(-1).tolist()
     order = sorted(range(len(probabilities)), key=lambda i: (-probabilities[i], i))
     focus_index = next(i for i, candidate in enumerate(observation["candidates"]) if focus(candidate))
