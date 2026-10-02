@@ -193,7 +193,7 @@ def main():
     parser = argparse.ArgumentParser(description="先 A 后 B，每轮 10 次 PPO 更新")
     parser.add_argument("--rounds", type=int, default=None,
                         help="目标总轮数；省略时启动后交互输入")
-    parser.add_argument("--workers", type=int, default=6)
+    parser.add_argument("--workers", type=int, default=8)
     parser.add_argument("--seed", type=int, default=20260930)
     parser.add_argument("--result-root", type=Path, default=DEFAULT_RESULTS)
     parser.add_argument("--dry-run", action="store_true", help="只显示计划，不训练或写文件")

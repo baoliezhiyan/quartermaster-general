@@ -69,6 +69,8 @@ class ParallelCollectionTests(unittest.TestCase):
                                          rng, 88, completed_episodes=400, training_seed=48)
             predecessor = "2b9778411434db42f2679a7c1e6a018d8b35d98a7789829c952f06309bcd7704"
             self.assertIn(predecessor, NON_SEMANTIC_PREDECESSOR_HASHES)
+            self.assertIn("31ad0efe38df4bceded8b45721c73153dcfc923b3895184d5c7b7ee2d7d8b7f8",
+                          NON_SEMANTIC_PREDECESSOR_HASHES)
             payload["trainerSourceSha256"] = predecessor
             with tempfile.TemporaryDirectory() as directory:
                 checkpoint = Path(directory) / "latest.pt"

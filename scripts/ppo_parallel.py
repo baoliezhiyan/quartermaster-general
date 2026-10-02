@@ -449,7 +449,7 @@ def main():
     parser = argparse.ArgumentParser(description="Parallel complete-episode PPO training")
     parser.add_argument("--mode", choices=["A", "B"], required=True)
     parser.add_argument("--card-set", choices=["basics", "events"], default="events")
-    parser.add_argument("--workers", type=int, default=6)
+    parser.add_argument("--workers", type=int, default=8)
     parser.add_argument("--inference-batch-size", type=int, default=8)
     parser.add_argument("--inference-wait-ms", type=float, default=2.0)
     parser.add_argument("--updates", type=int, default=1)
