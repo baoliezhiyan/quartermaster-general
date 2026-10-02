@@ -37,7 +37,9 @@ class ParallelCollectionTests(unittest.TestCase):
             rng = random.Random(12)
             payload = checkpoint_payload(model, optimizer, encoder, client, "A", 10, 1200,
                                          rng, 88, completed_episodes=400, training_seed=48)
-            payload["trainerSourceSha256"] = next(iter(CONSOLE_ONLY_PREDECESSOR_HASHES))
+            predecessor = "2b9778411434db42f2679a7c1e6a018d8b35d98a7789829c952f06309bcd7704"
+            self.assertIn(predecessor, CONSOLE_ONLY_PREDECESSOR_HASHES)
+            payload["trainerSourceSha256"] = predecessor
             with tempfile.TemporaryDirectory() as directory:
                 checkpoint = Path(directory) / "latest.pt"
                 torch.save(payload, checkpoint)
