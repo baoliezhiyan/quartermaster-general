@@ -28,7 +28,7 @@ GAMMA = 1.0
 LAMBDA_ROUND = 0.95
 POTENTIAL_SCALE = 0.3
 ENCODER_VERSION = "ppo-vector-v5-repeat-build"
-TRAINER_VERSION = "ppo-trainer-v6-action-waste"
+TRAINER_VERSION = "ppo-trainer-v7-a1-a2-config"
 EFFECT_KINDS = ["action", "score", "draw", "deckTop", "forceHand", "signal", "choose", "cards",
                 "extraPlay", "rebuild", "remove", "flag", "balance", "trace", "cancel", "randomReturn",
                 "randomPlay", "frameChange", "countChange", "reallocate", "prelude", "copyStatus"]
@@ -476,6 +476,29 @@ class PpoNetwork(nn.Module):
         return logits, self.value(state_hidden).squeeze(-1)
 
 
+def model_weights_sha256(model):
+    digest = hashlib.sha256()
+    for name, tensor in sorted(model.state_dict().items()):
+        raw = tensor.detach().cpu().contiguous().numpy().tobytes()
+        digest.update(name.encode("utf-8"))
+        digest.update(len(raw).to_bytes(8, "little"))
+        digest.update(raw)
+    return digest.hexdigest()
+
+
+def experiment_config_sha256(experiment_id, mode, entropy_coefficient, initial_hash,
+                             training_seed, build_fingerprint, card_set="events"):
+    if experiment_id is None:
+        return None
+    config = {"experimentId": experiment_id, "resourceMode": mode,
+              "entropyCoefficient": entropy_coefficient,
+              "initialWeightsSha256": initial_hash, "trainingSeed": training_seed,
+              "buildFingerprint": build_fingerprint, "cardSet": card_set,
+              "encoderVersion": ENCODER_VERSION, "rewardConfig": REWARD_CONFIG,
+              "optimizerConfig": {**OPTIMIZER_CONFIG, "entropy": entropy_coefficient}}
+    return hashlib.sha256(json.dumps(config, sort_keys=True).encode()).hexdigest()
+
+
 def batch_tensors(samples, device):
     states = torch.stack([item["state"] for item in samples]).to(device=device, dtype=torch.float32)
     width = max(item["candidates"].shape[0] for item in samples)
@@ -505,6 +528,22 @@ def shaped_reward(before, after, team, terminal=False, winner=None):
     if terminal and winner:
         outcome = 1.0 if winner == team else -1.0
     return outcome + new - old
+
+
+def decision_rewards(previous, after, outcome, info):
+    """One training reward entry for the initiating decision, shared by both collectors."""
+    natural = bool(outcome and outcome["termination"] == "natural")
+    base = {team: shaped_reward(previous["allianceScores"], after, team, natural,
+                                outcome["winner"] if outcome else None)
+            for team in ("axis", "allies")}
+    adjusted = dict(base)
+    waste = info.get("wasteCheck")
+    if waste and waste["penalty"]:
+        if (waste["seat"] != previous["decisionSeat"] or not waste["repeated"] or
+                waste["reason"] != "repeated_basic_build"):
+            raise RuntimeError("Waste penalty does not belong to the initiating decision")
+        adjusted[team_of(waste["seat"])] += REWARD_CONFIG["actionWastePenalty"]
+    return base, adjusted
 
 
 def assign_advantages(samples, rewards, elapsed_turns):
@@ -574,23 +613,27 @@ def weighted_baseline(observation, rng):
 
 def play_episode(client, encoder, model, device, mode, seed, max_decisions, trace="none",
                  baseline_side=None, rng=None, card_set="events", record_metadata=None,
-                 deterministic=False):
+                 deterministic=False, reference_model=None, reference_team=None):
     rng = rng or random.Random(seed)
     response = client.request(op="reset", seed=seed, mode=mode, cardSet=card_set,
                               trace=trace, recordMetadata=record_metadata)
     observation = response["observation"]
     samples, rewards, elapsed = [], [], []
+    base_totals = {"axis": 0.0, "allies": 0.0}
+    waste_penalties = defaultdict(int)
     choices, sources, submitted, resolved = (defaultdict(int) for _ in range(4))
     openness = []
     while observation is not None and len(samples) < max_decisions:
         seat = observation["decisionSeat"]
         state, candidates = encoder.encode(observation)
         use_baseline = baseline_side == team_of(seat)
+        use_reference = reference_model is not None and reference_team == team_of(seat)
         if use_baseline:
             index = weighted_baseline(observation, rng)
             logprob, value = 0.0, 0.0
         else:
-            index, logprob, value = select_action(model, state, candidates, device,
+            index, logprob, value = select_action(reference_model if use_reference else model,
+                                                  state, candidates, device,
                                                   deterministic=deterministic, rng=rng)
         chosen = observation["candidates"][index]
         if chosen["kind"] == "source":
@@ -599,13 +642,17 @@ def play_episode(client, encoder, model, device, mode, seed, max_decisions, trac
         remaining = sum(own["remaining"].values())
         if remaining:
             openness.append(sum(own["open"].values()) / remaining)
-        before = observation["allianceScores"]
+        previous = observation
         response = client.request(op="step", action={**observation["decision"], "actionId": chosen["id"]})
         outcome = response["result"]
         after = outcome["allianceScores"] if outcome else response["observation"]["allianceScores"]
-        is_terminal = bool(outcome and outcome["termination"] == "natural")
-        rewards.append({team: shaped_reward(before, after, team, is_terminal, outcome["winner"] if outcome else None)
-                        for team in ("axis", "allies")})
+        base, training_reward = decision_rewards(previous, after, outcome, response["info"])
+        for team in base_totals:
+            base_totals[team] += base[team]
+        waste = response["info"].get("wasteCheck")
+        if waste and waste["penalty"]:
+            waste_penalties[waste["seat"]] += 1
+        rewards.append(training_reward)
         elapsed.append(response["info"]["turnsAdvanced"])
         for definition in response["info"].get("submittedCardDefinitions", []):
             submitted[definition] += 1
@@ -613,7 +660,7 @@ def play_episode(client, encoder, model, device, mode, seed, max_decisions, trac
             resolved[definition] += 1
         samples.append({"seat": seat, "state": state, "candidates": candidates,
                         "action": index, "logprob": logprob, "value": value,
-                        "baseline": use_baseline})
+                        "baseline": use_baseline or use_reference})
         choices[chosen["kind"]] += 1
         observation = response["observation"]
     if observation is not None:
@@ -627,7 +674,10 @@ def play_episode(client, encoder, model, device, mode, seed, max_decisions, trac
                           for zone in ("discardPile", "active", "removed", "faceDown")
                           for card in deck[zone] if card["definitionId"].startswith("special_"))
     return {"samples": samples, "outcome": outcome, "choices": dict(choices),
-            "shaped": {team: sum(r[team] for r in rewards) for team in ("axis", "allies")},
+            "shaped": base_totals,
+            "trainingReward": {team: sum(r[team] for r in rewards) for team in ("axis", "allies")},
+            "wastePenaltiesBySeat": dict(waste_penalties),
+            "wastePenaltyTotal": REWARD_CONFIG["actionWastePenalty"] * sum(waste_penalties.values()),
             "decisions": len(samples), "sources": dict(sources),
             "submitted": dict(submitted), "resolved": dict(resolved),
             "consumedEvents": consumed_events,
@@ -636,7 +686,12 @@ def play_episode(client, encoder, model, device, mode, seed, max_decisions, trac
             "remainingBySeat": remaining_by_seat, "discardedBySeat": discarded_by_seat}
 
 
-def ppo_update(model, optimizer, samples, device, rng, epochs=4, minibatch=256):
+def ppo_update(model, optimizer, samples, device, rng, epochs=4, minibatch=256,
+               entropy_coefficient=None):
+    entropy_coefficient = (OPTIMIZER_CONFIG["entropy"] if entropy_coefficient is None
+                           else entropy_coefficient)
+    if not math.isfinite(entropy_coefficient) or entropy_coefficient < 0:
+        raise ValueError("Invalid entropy coefficient")
     # A trajectory spool exposes only small scalar metadata here. Tensor payloads
     # are read for the current shuffled minibatch, never for the full update.
     metadata = samples.training_metadata() if hasattr(samples, "training_metadata") else samples
@@ -673,7 +728,8 @@ def ppo_update(model, optimizer, samples, device, rng, epochs=4, minibatch=256):
                                           ratio.clamp(0.8, 1.2) * local_advantage).mean()
             value_loss = (values - targets).square().mean()
             entropy = distribution.entropy().mean()
-            loss = policy_loss + 0.5 * value_loss - 0.01 * entropy
+            loss = (policy_loss + OPTIMIZER_CONFIG["valueCoefficient"] * value_loss -
+                    entropy_coefficient * entropy)
             optimizer.zero_grad(set_to_none=True)
             loss.backward()
             gradients.append(float(nn.utils.clip_grad_norm_(model.parameters(), 0.5)))
@@ -683,6 +739,7 @@ def ppo_update(model, optimizer, samples, device, rng, epochs=4, minibatch=256):
             clip_fracs.append(float(((ratio.detach() - 1).abs() > 0.2).float().mean()))
             kls.append(float((old_logprob - logprob).detach().mean()))
     return {"loss": sum(losses) / len(losses), "entropy": sum(entropies) / len(entropies),
+            "entropyCoefficient": entropy_coefficient,
             "clipFraction": sum(clip_fracs) / len(clip_fracs), "approxKl": sum(kls) / len(kls),
             "gradientNorm": sum(gradients) / len(gradients), "samples": len(useful),
             "advantageMean": float(advantage.mean()),
@@ -690,7 +747,8 @@ def ppo_update(model, optimizer, samples, device, rng, epochs=4, minibatch=256):
 
 
 def checkpoint_payload(model, optimizer, encoder, client, mode, update, decisions, rng, next_seed,
-                       card_set="events", completed_episodes=0, training_seed=None):
+                       card_set="events", completed_episodes=0, training_seed=None,
+                       experiment_id=None, entropy_coefficient=None, initial_weights_sha256=None):
     return {"format": "quartermaster-ppo-checkpoint-v1", "encoderVersion": ENCODER_VERSION,
             "trainerVersion": TRAINER_VERSION,
             "trainerSourceSha256": TRAINER_SOURCE_HASH,
@@ -700,8 +758,13 @@ def checkpoint_payload(model, optimizer, encoder, client, mode, update, decision
             "buildFingerprint": client.fingerprint, "eventIds": client.schema["eventIds"],
             "mode": mode, "cardSet": card_set,
             "network": {"stateDim": encoder.state_dim, "candidateDim": encoder.candidate_dim},
-            "optimizerConfig": OPTIMIZER_CONFIG,
+            "optimizerConfig": {**OPTIMIZER_CONFIG,
+                "entropy": OPTIMIZER_CONFIG["entropy"] if entropy_coefficient is None else entropy_coefficient},
             "rewardConfig": REWARD_CONFIG,
+            "experimentId": experiment_id, "initialWeightsSha256": initial_weights_sha256,
+            "experimentConfigSha256": experiment_config_sha256(experiment_id, mode,
+                OPTIMIZER_CONFIG["entropy"] if entropy_coefficient is None else entropy_coefficient,
+                initial_weights_sha256, training_seed, client.fingerprint, card_set),
             "update": update, "policyVersion": update,
             "completedDecisions": decisions, "completedEpisodes": completed_episodes,
             "episodesPerUpdate": 40, "nextSeed": next_seed, "trainingSeed": training_seed,
@@ -711,7 +774,8 @@ def checkpoint_payload(model, optimizer, encoder, client, mode, update, decision
 
 
 def restore_checkpoint(path, model, optimizer, encoder, client, mode, rng, card_set="events",
-                       training_seed=None):
+                       training_seed=None, experiment_id=None, entropy_coefficient=None,
+                       initial_weights_sha256=None):
     saved = torch.load(path, map_location="cpu", weights_only=False)
     expected = {"format": "quartermaster-ppo-checkpoint-v1", "encoderVersion": ENCODER_VERSION,
                 "trainerVersion": TRAINER_VERSION,
@@ -722,7 +786,14 @@ def restore_checkpoint(path, model, optimizer, encoder, client, mode, rng, card_
                 "mode": mode, "cardSet": card_set,
                 "network": {"stateDim": encoder.state_dim,
                             "candidateDim": encoder.candidate_dim},
-                "rewardConfig": REWARD_CONFIG, "optimizerConfig": OPTIMIZER_CONFIG,
+                "rewardConfig": REWARD_CONFIG,
+                "optimizerConfig": {**OPTIMIZER_CONFIG,
+                    "entropy": OPTIMIZER_CONFIG["entropy"] if entropy_coefficient is None else entropy_coefficient},
+                "experimentId": experiment_id,
+                "initialWeightsSha256": initial_weights_sha256,
+                "experimentConfigSha256": experiment_config_sha256(experiment_id, mode,
+                    OPTIMIZER_CONFIG["entropy"] if entropy_coefficient is None else entropy_coefficient,
+                    initial_weights_sha256, training_seed, client.fingerprint, card_set),
                 "episodesPerUpdate": 40}
     if any(saved.get(key) != value for key, value in expected.items()):
         raise ValueError("Checkpoint schema, mode, or rules build differs")

@@ -158,6 +158,18 @@ class RepeatedBuildTests(unittest.TestCase):
         self.assertTrue(check["penalty"], check)
         self.assertEqual(check["seat"], "japan")
 
+    def test_waste_opportunity_counts_decision_even_when_another_action_is_selected(self):
+        observation = self.scene("soviet_union", [{"id": "test:soviet:ukraine",
+            "country": "soviet_union", "type": "army", "regionId": "ukraine"}])
+        passed = self.play(observation, next(c for c in observation["candidates"]
+                                             if c["kind"] == "pass"))
+        self.assertGreater(passed["info"]["wasteOpportunity"]["candidateCount"], 0)
+        self.assertFalse(passed["info"]["wasteOpportunity"]["chosen"])
+        repeated = self.scene("soviet_union", [{"id": "test:soviet:ukraine",
+            "country": "soviet_union", "type": "army", "regionId": "ukraine"}])
+        selected = self.play(repeated, self.candidate(repeated, "build_army", "ukraine"))
+        self.assertTrue(selected["info"]["wasteOpportunity"]["chosen"])
+
     def test_reward_is_only_assigned_to_initiator_not_other_team_or_next_seat(self):
         previous = {"decisionSeat": "soviet_union", "allianceScores": {"axis": 1, "allies": 2}}
         after = {"axis": 1, "allies": 6}

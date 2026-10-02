@@ -72,11 +72,18 @@ def validate_record(path: Path, expected_decisions: int, seed: int) -> str:
 
 
 def export_weights(checkpoint: Path, target: Path, mode: str,
-                   round_number: int, training_seed: int) -> str:
+                   round_number: int, training_seed: int, experiment_id=None) -> str:
     saved = torch.load(checkpoint, map_location="cpu", weights_only=False)
     if saved["update"] != round_number * UPDATES_PER_ROUND:
         raise ValueError("检查点不是本轮结束时的模型")
+    if saved.get("experimentId") != experiment_id:
+        raise ValueError("模型检查点实验身份不符")
     payload = {"format": "quartermaster-ppo-weights-v1", "mode": mode,
+               "experimentId": experiment_id,
+               "entropyCoefficient": saved.get("optimizerConfig", ppo.OPTIMIZER_CONFIG)["entropy"],
+               "initialWeightsSha256": saved.get("initialWeightsSha256"),
+               "experimentConfigSha256": saved.get("experimentConfigSha256"),
+               "rewardConfig": saved.get("rewardConfig", ppo.REWARD_CONFIG),
                "round": round_number, "policyVersion": saved["policyVersion"],
                "trainingSeed": training_seed, "completedEpisodes": saved["completedEpisodes"],
                "completedDecisions": saved["completedDecisions"],
@@ -95,7 +102,8 @@ def export_weights(checkpoint: Path, target: Path, mode: str,
 
 
 def record_game(checkpoint: Path, target: Path, mode: str, round_number: int,
-                training_seed: int, model_sha256: str, max_decisions: int = 3000):
+                training_seed: int, model_sha256: str, max_decisions: int = 3000,
+                experiment_id=None, entropy_coefficient=None, initial_weights_sha256=None):
     seed = selected_game(training_seed, mode, round_number)
     raw_target = target.with_name(".training-raw.jsonl")
     client = ppo.ArenaClient(log_path=raw_target, log_snapshots=True)
@@ -106,11 +114,17 @@ def record_game(checkpoint: Path, target: Path, mode: str, round_number: int,
         optimizer = torch.optim.Adam(model.parameters(), lr=3e-4)
         saved = ppo.restore_checkpoint(checkpoint, model, optimizer, encoder, client,
                                        mode, random.Random(), "events",
-                                       training_seed=training_seed)
+                                       training_seed=training_seed,
+                                       experiment_id=experiment_id,
+                                       entropy_coefficient=entropy_coefficient,
+                                       initial_weights_sha256=initial_weights_sha256)
         if saved["update"] != round_number * UPDATES_PER_ROUND:
             raise ValueError("记录所用模型与目标轮数不符")
         model.eval()
         metadata = {"round": round_number, "policyVersion": saved["policyVersion"],
+                    "experimentId": experiment_id, "resourceMode": mode,
+                    "entropyCoefficient": saved["optimizerConfig"]["entropy"],
+                    "initialWeightsSha256": saved.get("initialWeightsSha256"),
                     "trainingSeed": training_seed, "recordSeed": seed,
                     "controller": "same-policy-self-play-both-teams",
                     "actionSampling": "deterministic-greedy-argmax", "modelSha256": model_sha256,
