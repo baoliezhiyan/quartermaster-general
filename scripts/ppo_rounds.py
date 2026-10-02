@@ -17,8 +17,7 @@ from scripts import ppo_train as ppo
 from scripts.ppo_progress import ordinal
 
 UPDATES_PER_ROUND = 10
-# Action/observation v4 cannot resume checkpoints produced by the old interface.
-DEFAULT_RESULTS = ppo.ROOT / "PPO训练" / "提交出牌实验"
+DEFAULT_RESULTS = ppo.ROOT / "PPO训练"
 WEIGHTS_NAME = "模型.pt"
 RECORD_NAME = "AI训练记录.jsonl"
 
@@ -114,12 +113,12 @@ def record_game(checkpoint: Path, target: Path, mode: str, round_number: int,
         metadata = {"round": round_number, "policyVersion": saved["policyVersion"],
                     "trainingSeed": training_seed, "recordSeed": seed,
                     "controller": "same-policy-self-play-both-teams",
-                    "actionSampling": "stochastic-per-game-seed", "modelSha256": model_sha256,
+                    "actionSampling": "deterministic-greedy-argmax", "modelSha256": model_sha256,
                     "recordScope": "full-training-scene-replay-v1"}
         result = ppo.play_episode(client, encoder, model, device, mode, seed,
                                   max_decisions, trace="full",
                                   rng=random.Random(seed + 19), card_set="events",
-                                  record_metadata=metadata)
+                                  record_metadata=metadata, deterministic=True)
     finally:
         client.close()
     if result["outcome"]["termination"] != "natural":
@@ -194,7 +193,7 @@ def main():
     parser = argparse.ArgumentParser(description="先 A 后 B，每轮 10 次 PPO 更新")
     parser.add_argument("--rounds", type=int, default=None,
                         help="目标总轮数；省略时启动后交互输入")
-    parser.add_argument("--workers", type=int, default=10)
+    parser.add_argument("--workers", type=int, default=6)
     parser.add_argument("--seed", type=int, default=20260930)
     parser.add_argument("--result-root", type=Path, default=DEFAULT_RESULTS)
     parser.add_argument("--dry-run", action="store_true", help="只显示计划，不训练或写文件")

@@ -1,7 +1,7 @@
 import {describe,expect,it} from 'vitest';
 import {PpoTrainingArena} from '../src/training/ppoArena';
 import {TRAINING_EVENT_IDS,TRAINING_EVENT_IDS_BY_SEAT,basicOpenProbability,openSpecialCount} from '../src/core/trainingCourse';
-import {createGame} from '../src/core/game';
+import {createGame,transition} from '../src/core/game';
 import {cardEffects} from '../src/core/specialCards';
 import {startResolution} from '../src/core/resolution';
 import {realTriggers} from '../src/core/specialCards';
@@ -233,6 +233,62 @@ describe('PPO event curriculum',()=>{
       {kind:'score',seat:'germany',amount:1,label:'获得一分'},
     ],[],undefined,'discardPile',true)).toBe(false);
     expect(state.resolution?.running).toBeFalsy();
+  });
+  it('keeps declining an uncommitted optional response as a genuine choice',()=>{
+    const initial=new PpoTrainingArena(7,'optional-trigger',{mode:'A',buildFingerprint:fingerprint})
+      .exportSnapshot().state;
+    const response=initial.decks.united_kingdom.hand.shift()!;
+    initial.decks.united_kingdom.faceDown.push(response);
+    const trigger={id:'training-optional-response',label:'可选响应',sourceInstanceId:response.id,
+      owner:'united_kingdom' as const,timing:'After' as const,on:'测试时点',mandatory:false,
+      source:'response' as const,effects:[{kind:'score' as const,seat:'united_kingdom' as const,
+        amount:1,label:'响应加分'}]};
+    const setup=()=>{const state=structuredClone(initial);
+      expect(startResolution(state,'测试','germany',[{kind:'trace',label:'测试时点'}],
+        [trigger],undefined,'discardPile',true)).toBe(true);
+      expect(state.resolution?.choice?.kind).toBe('TRIGGER');
+      expect(state.resolution?.choice?.min).toBe(0);
+      return state;};
+    const decline=setup(),choice=decline.resolution!.choice!;
+    const declined=transition(decline,{type:'RESOLVE_ENGINE_CHOICE',seat:choice.seat,
+      expectedRevision:decline.revision,choiceId:choice.id,ids:[],guided:true});
+    expect(declined.ok).toBe(true);
+    if(declined.ok){
+      expect(declined.state.scores.united_kingdom).toBe(initial.scores.united_kingdom);
+      expect(declined.state.decks.united_kingdom.faceDown.some(c=>c.id===response.id)).toBe(true);
+    }
+    const accept=setup(),triggerChoice=accept.resolution!.choice!;
+    const accepted=transition(accept,{type:'RESOLVE_ENGINE_CHOICE',seat:triggerChoice.seat,
+      expectedRevision:accept.revision,choiceId:triggerChoice.id,
+      ids:[triggerChoice.options[0].id],guided:true});
+    expect(accepted.ok).toBe(true);
+    if(accepted.ok){
+      expect(accepted.state.scores.united_kingdom).toBe(initial.scores.united_kingdom+1);
+      expect(accepted.state.decks.united_kingdom.faceDown.some(c=>c.id===response.id)).toBe(false);
+    }
+  });
+  it('records a genuine countered card as cancelled while consuming it',()=>{
+    const state=new PpoTrainingArena(7,'countered-card',{mode:'A',buildFingerprint:fingerprint})
+      .exportSnapshot().state;
+    const card=state.decks.germany.hand.find(c=>c.definitionId==='special_158')!;
+    const response=state.decks.united_kingdom.hand.shift()!;
+    state.decks.united_kingdom.faceDown.push(response);
+    expect(startResolution(state,'受反制出牌','germany',
+      [{kind:'trace',label:'将被取消的子效果'}],[{
+        id:'training-counter',label:'真实反制',sourceInstanceId:response.id,
+        owner:'united_kingdom',timing:'Before',on:'将被取消的子效果',mandatory:false,
+        source:'response',effects:[{kind:'cancel',label:'取消此效果'}],
+      }],card.id,'discardPile',true)).toBe(true);
+    const choice=state.resolution!.choice!;
+    expect(choice.kind).toBe('TRIGGER');
+    const accepted=transition(state,{type:'RESOLVE_ENGINE_CHOICE',seat:choice.seat,
+      expectedRevision:state.revision,choiceId:choice.id,ids:[choice.options[0].id],guided:true});
+    expect(accepted.ok).toBe(true);
+    if(accepted.ok){
+      expect(accepted.state.trainingCourse?.cardOutcomes?.find(v=>v.id===card.id)?.outcome)
+        .toBe('cancelled');
+      expect(accepted.state.decks.germany.discardPile.some(c=>c.id===card.id)).toBe(true);
+    }
   });
   it('consumes only the committed card from B openness without rerolling other cards',()=>{
     const original=new PpoTrainingArena(81,'b-empty-event',{mode:'B',buildFingerprint:fingerprint});
