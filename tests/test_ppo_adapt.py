@@ -33,6 +33,10 @@ class AdaptationTests(unittest.TestCase):
                 new = PpoNetwork(encoder.state_dim, encoder.candidate_dim)
                 new.load_state_dict(migrated["modelState"])
                 width = saved["network"]["candidateDim"]
+                state_width = saved["network"]["stateDim"]
+                self.assertTrue(torch.equal(new.state_net[0].weight[:, :state_width],
+                                            old.state_net[0].weight))
+                self.assertEqual(int(torch.count_nonzero(new.state_net[0].weight[:, state_width:])), 0)
                 self.assertTrue(torch.equal(new.candidate_net[0].weight[:, :width],
                                             old.candidate_net[0].weight))
                 self.assertEqual(int(torch.count_nonzero(new.candidate_net[0].weight[:, width:])), 0)
@@ -40,7 +44,7 @@ class AdaptationTests(unittest.TestCase):
                                              cardSet="events")["observation"]
                 state, candidates = encoder.encode(observation)
                 with torch.no_grad():
-                    old_logits, old_value = old(*batch_tensors([{"state": state,
+                    old_logits, old_value = old(*batch_tensors([{"state": state[:state_width],
                         "candidates": candidates[:, :width]}], torch.device("cpu")))
                     new_logits, new_value = new(*batch_tensors([{"state": state,
                         "candidates": candidates}], torch.device("cpu")))

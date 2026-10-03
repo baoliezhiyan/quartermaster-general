@@ -24,6 +24,9 @@ dist-server/
 /PPO训练/A2/
 /PPO训练/A1S1/
 /PPO训练/A1S2-map/
+/PPO训练/S2FLAT/
+/PPO训练/S2MAP/
+/PPO训练/第二阶段示范/
 /.pnpm-store/
 /对局记录/*
 !/对局记录/.gitkeep

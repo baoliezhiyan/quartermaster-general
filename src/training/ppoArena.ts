@@ -7,7 +7,7 @@ import {canPayEffectFees} from '../core/resolution';
 import {barbarossaTargets,cardEffects} from '../core/specialCards';
 import {createGame,transition} from '../core/game';
 import {MAP} from '../core/map';
-import {allianceScores,suppliedUnits,unsuppliedForPhase} from '../core/supply';
+import {adjacent,allianceScores,suppliedUnits,unsuppliedForPhase} from '../core/supply';
 import {TRAINING_COURSE_VERSION,TRAINING_EVENT_IDS,TRAINING_EVENT_IDS_BY_SEAT,
   TRAINING_OVERRIDES_VERSION,basicOpenProbability,openSpecialCount} from '../core/trainingCourse';
 import {SEATS,type CardInstance,type Command,type CountryId,type GameState,type SeatId,type Unit} from '../core/types';
@@ -15,7 +15,7 @@ import type {Effect,ChoiceRequest} from '../core/resolutionTypes';
 import {BASIC_ACTIONS,type BasicAction,type DecisionContext,type TraceLevel} from './basicArena';
 
 export const PPO_ARENA_FORMAT='quartermaster-ppo-arena-v2';
-export const PPO_OBSERVATION_SCHEMA_VERSION='ppo-observation-v5';
+export const PPO_OBSERVATION_SCHEMA_VERSION='ppo-observation-v6-effective-straits';
 export const PPO_ACTION_SCHEMA_VERSION='ppo-actions-v5-action-ledger';
 export const PPO_STATIC_SCHEMA={observationSchemaVersion:PPO_OBSERVATION_SCHEMA_VERSION,
   actionSchemaVersion:PPO_ACTION_SCHEMA_VERSION,
@@ -46,6 +46,8 @@ export type PpoObservation={decision:DecisionContext;mode:CourseMode;cardSet:Car
   activeSeat:SeatId;decisionSeat:SeatId;sourceSeat:SeatId;unitCountry:CountryId|null;
   scores:GameState['scores'];allianceScores:ReturnType<typeof allianceScores>;
   units:Unit[];suppliedUnitIds:string[];
+  /** Historical, engine-derived adjacency for each acting country; never recompute from a later state. */
+  effectiveStraits:Record<CountryId,boolean[]>;
   reserves:Record<CountryId,Record<Unit['type'],number>>;
   ownResources:{remaining:Record<string,number>;open:Record<string,number>;discard:Record<string,number>};
   publicResources:Record<SeatId,{remainingTotal:number;discardTotal:number}>;
@@ -618,6 +620,9 @@ export class PpoTrainingArena {
       suppliedUnitIds:[...suppliedUnits(s)],reserves:Object.fromEntries(countryIds.map(country=>[
         country,Object.fromEntries((['army','navy','air'] as const).map(type=>[type,reserve(s,country,type)]))
       ])) as PpoObservation['reserves'],
+      effectiveStraits:Object.fromEntries(countryIds.map(country=>[country,
+        MAP.straits.map(strait=>adjacent(s,country,strait.seaA,strait.seaB))])) as
+        PpoObservation['effectiveStraits'],
       ownResources:{remaining:counts(own.hand),open:counts(own.hand.filter(c=>open.has(c.id))),
         discard:counts(own.discardPile)},
       publicResources:Object.fromEntries(SEATS.map(seat=>[seat,{remainingTotal:s.decks[seat].hand.length,

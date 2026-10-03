@@ -1,4 +1,5 @@
 import unittest
+import copy
 
 import torch
 
@@ -45,6 +46,48 @@ class MapNetworkTests(unittest.TestCase):
         self.assertEqual(model.region_count, len(self.client.schema["regions"]))
         self.assertGreater(sum(p.numel() for p in model.parameters()),
                            sum(p.numel() for p in model.base.parameters()))
+
+    def test_actor_target_order_is_not_pooled_away(self):
+        obs = self.client.request(op="reset", seed=873, mode="A", cardSet="events")["observation"]
+        effects = [{"kind": "action", "action": "build_army", "country": "germany",
+                    "regions": ["eastern_europe"]},
+                   {"kind": "action", "action": "build_navy", "country": "italy",
+                    "regions": ["sea_mediterranean"]}]
+        first = {"id": "synthetic-a", "kind": "source", "definitionId": "special_150",
+                 "effects": effects}
+        reversed_actions = {**first, "id": "synthetic-b", "effects": list(reversed(effects))}
+        exchanged_actors = copy.deepcopy(first)
+        exchanged_actors["effects"][0]["country"] = "italy"
+        exchanged_actors["effects"][1]["country"] = "germany"
+        vectors = [self.encoder.encode_candidate(obs, option) for option in
+                   (first, reversed_actions, exchanged_actors)]
+        self.assertNotEqual(vectors[0], vectors[1])
+        self.assertNotEqual(vectors[0], vectors[2])
+        state = self.encoder.encode_state(obs)
+        model = PpoMapNetwork(self.encoder)
+        with torch.no_grad():
+            model.map_policy[-1].weight.fill_(0.01)
+        batch = batch_tensors([{"state": torch.tensor(state),
+                               "candidates": torch.tensor(vectors)}], torch.device("cpu"))
+        with torch.no_grad():
+            logits, _ = model(*batch)
+        self.assertNotEqual(float(logits[0, 0]), float(logits[0, 1]))
+        self.assertNotEqual(float(logits[0, 0]), float(logits[0, 2]))
+
+    def test_multiple_direct_targets_retain_order_in_map_branch(self):
+        obs = self.client.request(op="reset", seed=874, mode="A", cardSet="events")["observation"]
+        one = {"id": "ordered-a", "kind": "targets",
+               "targetIds": ["eastern_europe", "ukraine"]}
+        two = {"id": "ordered-b", "kind": "targets",
+               "targetIds": ["ukraine", "eastern_europe"]}
+        state = torch.tensor(self.encoder.encode_state(obs))
+        choices = torch.tensor([self.encoder.encode_candidate(obs, c) for c in (one, two)])
+        model = PpoMapNetwork(self.encoder)
+        with torch.no_grad():
+            model.map_policy[-1].weight.fill_(.01)
+            logits, _ = model(*batch_tensors([{"state": state, "candidates": choices}],
+                                             torch.device("cpu")))
+        self.assertNotEqual(float(logits[0, 0]), float(logits[0, 1]))
 
 
 if __name__ == "__main__":

@@ -55,12 +55,17 @@ def baseline(root):
 
 def migrate_model(saved, encoder):
     old = saved["network"]
-    if old["stateDim"] != encoder.state_dim or old["candidateDim"] >= encoder.candidate_dim:
-        raise ValueError("适应迁移要求状态前缀不变、候选编码只追加新字段")
+    if old["stateDim"] > encoder.state_dim or old["candidateDim"] >= encoder.candidate_dim:
+        raise ValueError("适应迁移要求状态与候选编码仅追加新字段")
     model = ppo.PpoNetwork(encoder.state_dim, encoder.candidate_dim)
     target = model.state_dict()
     for name, tensor in saved["modelState"].items():
-        if name == "candidate_net.0.weight":
+        if name == "state_net.0.weight":
+            if tensor.shape[0] != target[name].shape[0]:
+                raise ValueError("状态层输出维度不符")
+            target[name][:, :old["stateDim"]] = tensor
+            target[name][:, old["stateDim"]:] = 0
+        elif name == "candidate_net.0.weight":
             if tensor.shape[0] != target[name].shape[0]:
                 raise ValueError("候选层输出维度不符")
             target[name][:, :old["candidateDim"]] = tensor
