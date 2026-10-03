@@ -99,6 +99,38 @@ class ActionSemanticsTests(unittest.TestCase):
                 self.assertEqual(white[0]["reason"], "white_plan_empty_recruit")
             self.assertIn("special_150", response["info"]["resolvedCardDefinitions"])
 
+    def test_white_plan_random_discard_refreshes_arden_extra_play_candidates(self):
+        self.scene("germany")
+        baseline = self.client.request(op="snapshot")["snapshot"]
+        deck = baseline["state"]["decks"]["germany"]
+        white = next(c for c in deck["hand"] if c["definitionId"] == "special_150")
+        arden = next(c for c in deck["hand"] if c["definitionId"] == "special_158")
+        fallbacks = [c for c in deck["hand"] if c["definitionId"] == "build_army"][:2]
+        seen = set()
+        outcomes = []
+        for random_state in range(24):
+            snapshot = copy.deepcopy(baseline)
+            state = snapshot["state"]
+            state["decks"]["germany"]["hand"] = [white, arden, *fallbacks]
+            state["trainingCourse"]["openIds"]["germany"] = [
+                white["id"], arden["id"], *(c["id"] for c in fallbacks)]
+            state["trainingCourse"]["discardRandomState"] = random_state
+            obs = self.client.request(op="restore", snapshot=snapshot)["observation"]
+            after = self.step(obs, self.candidate(obs, "special_150"))
+            current = self.client.request(op="snapshot")["snapshot"]["state"]["decks"]["germany"]
+            arden_in_hand = any(c["id"] == arden["id"] for c in current["hand"])
+            arden_offered = any(arden["id"] in c.get("choiceIds", []) for c in
+                                 after["observation"]["candidates"])
+            self.assertEqual(arden_offered, arden_in_hand,
+                             (random_state, current["discardPile"], after["observation"]["node"]))
+            seen.add(arden_in_hand)
+            outcomes.append((random_state, [c["definitionId"] for c in current["hand"]],
+                             [c["definitionId"] for c in current["discardPile"]],
+                             after["observation"]["node"]))
+            if len(seen) == 2:
+                break
+        self.assertEqual(seen, {True, False}, outcomes)
+
     def test_delayed_penalty_only_changes_initiator_reward(self):
         rewards = [{"axis": .2, "allies": -.2}, {"axis": .1, "allies": -.1}]
         samples = [{"seat": "germany"}, {"seat": "united_kingdom"}]
