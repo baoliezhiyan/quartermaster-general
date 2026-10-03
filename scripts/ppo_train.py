@@ -69,6 +69,10 @@ TRAINER_SOURCE_HASH = hashlib.sha256(Path(__file__).read_bytes() +
      if Path(__file__).with_name("ppo_network_factory.py").exists() else b"") +
     (Path(__file__).with_name("ppo_map_network.py").read_bytes()
      if Path(__file__).with_name("ppo_map_network.py").exists() else b"") +
+    (Path(__file__).with_name("ppo_opening_adapter.py").read_bytes()
+     if Path(__file__).with_name("ppo_opening_adapter.py").exists() else b"") +
+    (Path(__file__).with_name("ppo_auxiliary.py").read_bytes()
+     if Path(__file__).with_name("ppo_auxiliary.py").exists() else b"") +
     (Path(__file__).with_name("ppo_parallel.py").read_bytes()
      if Path(__file__).with_name("ppo_parallel.py").exists() else b"") +
     (Path(__file__).with_name("ppo_trajectory.py").read_bytes()
@@ -79,6 +83,9 @@ TRAINER_SOURCE_HASH = hashlib.sha256(Path(__file__).read_bytes() +
 # default worker count, or temporary trajectory storage only. All other
 # schema, rule-build, course, optimizer and seed checks remain strict.
 NON_SEMANTIC_PREDECESSOR_HASHES = frozenset({
+    # Historical S2MAP round 2: only experiment routing and the optional
+    # A1S2 adapter/auxiliary path have changed; its own semantics are intact.
+    "a343ff64ae233ce94afcbc2b935307b8d6463edb3061f26f945757a0e98164af",
     # S2MAP updates through #13 used the same 256-sample objective; the
     # subsequent change only accumulates that objective in smaller GPU pieces.
     "92162067e83a5569c38a1c540af3115de0057b5c57710a034af2916cef7f44f7",
@@ -554,7 +561,8 @@ def model_weights_sha256(model):
 
 
 def experiment_config_sha256(experiment_id, mode, entropy_coefficient, initial_hash,
-                             training_seed, build_fingerprint, card_set="events", architecture=None):
+                             training_seed, build_fingerprint, card_set="events", architecture=None,
+                             auxiliary_config=None):
     if experiment_id is None:
         return None
     config = {"experimentId": experiment_id, "resourceMode": mode,
@@ -565,6 +573,8 @@ def experiment_config_sha256(experiment_id, mode, entropy_coefficient, initial_h
               "optimizerConfig": {**OPTIMIZER_CONFIG, "entropy": entropy_coefficient}}
     if architecture is not None:
         config["networkArchitecture"] = architecture
+    if auxiliary_config is not None:
+        config["auxiliaryConfig"] = auxiliary_config
     return hashlib.sha256(json.dumps(config, sort_keys=True).encode()).hexdigest()
 
 
@@ -889,8 +899,8 @@ def ppo_update(model, optimizer, samples, device, rng, epochs=4, minibatch=256,
 def checkpoint_payload(model, optimizer, encoder, client, mode, update, decisions, rng, next_seed,
                        card_set="events", completed_episodes=0, training_seed=None,
                        experiment_id=None, entropy_coefficient=None, initial_weights_sha256=None,
-                       architecture=None):
-    return {"format": "quartermaster-ppo-checkpoint-v1", "encoderVersion": ENCODER_VERSION,
+                       architecture=None, auxiliary_config=None):
+    payload = {"format": "quartermaster-ppo-checkpoint-v1", "encoderVersion": ENCODER_VERSION,
             "networkArchitecture": architecture,
             "trainerVersion": TRAINER_VERSION,
             "trainerSourceSha256": TRAINER_SOURCE_HASH,
@@ -906,18 +916,22 @@ def checkpoint_payload(model, optimizer, encoder, client, mode, update, decision
             "experimentId": experiment_id, "initialWeightsSha256": initial_weights_sha256,
             "experimentConfigSha256": experiment_config_sha256(experiment_id, mode,
                 OPTIMIZER_CONFIG["entropy"] if entropy_coefficient is None else entropy_coefficient,
-                initial_weights_sha256, training_seed, client.fingerprint, card_set, architecture),
+                initial_weights_sha256, training_seed, client.fingerprint, card_set, architecture,
+                auxiliary_config),
             "update": update, "policyVersion": update,
             "completedDecisions": decisions, "completedEpisodes": completed_episodes,
             "episodesPerUpdate": 40, "nextSeed": next_seed, "trainingSeed": training_seed,
             "pythonRandomState": rng.getstate(), "torchRandomState": torch.get_rng_state(),
             "cudaRandomState": torch.cuda.get_rng_state_all() if torch.cuda.is_available() else None,
             "modelState": model.state_dict(), "optimizerState": optimizer.state_dict()}
+    if auxiliary_config is not None:
+        payload["auxiliaryConfig"] = auxiliary_config
+    return payload
 
 
 def restore_checkpoint(path, model, optimizer, encoder, client, mode, rng, card_set="events",
                        training_seed=None, experiment_id=None, entropy_coefficient=None,
-                       initial_weights_sha256=None, architecture=None):
+                       initial_weights_sha256=None, architecture=None, auxiliary_config=None):
     saved = torch.load(path, map_location="cpu", weights_only=False)
     expected = {"format": "quartermaster-ppo-checkpoint-v1", "encoderVersion": ENCODER_VERSION,
                 "trainerVersion": TRAINER_VERSION,
@@ -935,10 +949,13 @@ def restore_checkpoint(path, model, optimizer, encoder, client, mode, rng, card_
                 "initialWeightsSha256": initial_weights_sha256,
                 "experimentConfigSha256": experiment_config_sha256(experiment_id, mode,
                     OPTIMIZER_CONFIG["entropy"] if entropy_coefficient is None else entropy_coefficient,
-                    initial_weights_sha256, training_seed, client.fingerprint, card_set, architecture),
+                    initial_weights_sha256, training_seed, client.fingerprint, card_set, architecture,
+                    auxiliary_config),
                 "episodesPerUpdate": 40}
     if architecture is not None:
         expected["networkArchitecture"] = architecture
+    if auxiliary_config is not None:
+        expected["auxiliaryConfig"] = auxiliary_config
     if any(saved.get(key) != value for key, value in expected.items()):
         raise ValueError("Checkpoint schema, mode, or rules build differs")
     if saved.get("trainerSourceSha256") not in ({TRAINER_SOURCE_HASH} |

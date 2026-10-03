@@ -496,9 +496,13 @@ def summarize_evaluation(games):
 def main():
     parser = argparse.ArgumentParser(description="Parallel complete-episode PPO training")
     parser.add_argument("--mode", choices=["A", "B"], required=True)
-    parser.add_argument("--experiment-id", choices=["A1", "A2", "A1S1", "S2FLAT", "S2MAP"], default=None)
+    parser.add_argument("--experiment-id", choices=["A1", "A2", "A1S1", "S2FLAT", "S2MAP", "A1S2"], default=None)
     parser.add_argument("--architecture", choices=["flat-v1-effective-straits",
-        "shared-regions-actor-adjacency-ordered-actions-v2"], default=None)
+        "shared-regions-actor-adjacency-ordered-actions-v2", "map-contextual-opening-adapter-v1"], default=None)
+    parser.add_argument("--auxiliary-data", type=Path)
+    parser.add_argument("--auxiliary-weight", type=float, default=0.05)
+    parser.add_argument("--auxiliary-decay-updates", type=int, default=20)
+    parser.add_argument("--no-auxiliary", action="store_true")
     parser.add_argument("--entropy-coefficient", type=float,
                         default=ppo.OPTIMIZER_CONFIG["entropy"])
     parser.add_argument("--initial-weights", type=Path, default=None)
@@ -531,14 +535,22 @@ def main():
         parser.error("entropy coefficient must be finite and nonnegative")
     if args.experiment_id and (args.mode != "A" or args.entropy_coefficient !=
                                {"A1": 0.01, "A2": 0.02, "A1S1": 0.01,
-                                "S2FLAT": 0.01, "S2MAP": 0.01}[args.experiment_id] or
+                                "S2FLAT": 0.01, "S2MAP": 0.01, "A1S2": 0.01}[args.experiment_id] or
                                not args.initial_weights or not args.expected_initial_hash):
         parser.error("A1/A2 require A resource mode, the prescribed entropy, and shared initialization")
-    from scripts.ppo_network_factory import STAGE2_EXPERIMENTS, make_network
-    if args.experiment_id in STAGE2_EXPERIMENTS and args.architecture != STAGE2_EXPERIMENTS[args.experiment_id]:
+    from scripts.ppo_network_factory import STAGE2_EXPERIMENTS, ACTIVE_EXPERIMENTS, make_network
+    allowed_architectures = {**STAGE2_EXPERIMENTS, **ACTIVE_EXPERIMENTS}
+    if args.experiment_id in allowed_architectures and args.architecture != allowed_architectures[args.experiment_id]:
         parser.error("Second-stage experiment and network architecture disagree")
-    if args.experiment_id not in STAGE2_EXPERIMENTS and args.architecture is not None:
+    if args.experiment_id not in allowed_architectures and args.architecture is not None:
         parser.error("Architecture override is reserved for the second-stage experiment")
+    if args.experiment_id == "A1S2":
+        if args.auxiliary_data is None:
+            parser.error("A1S2 requires explicit auxiliary data even when disabled")
+        if not math.isfinite(args.auxiliary_weight) or args.auxiliary_weight < 0 or args.auxiliary_decay_updates < 1:
+            parser.error("Invalid A1S2 auxiliary configuration")
+    elif args.auxiliary_data is not None or args.no_auxiliary:
+        parser.error("Auxiliary learning is exclusive to A1S2")
     torch.set_num_threads(min(4, os.cpu_count() or 1))
     device = torch.device("cpu" if args.cpu or not torch.cuda.is_available() else "cuda")
     rng = random.Random(args.seed)
@@ -566,6 +578,15 @@ def main():
             initial_hash = ppo.model_weights_sha256(model)
             if args.expected_initial_hash and initial_hash != args.expected_initial_hash:
                 raise ValueError("Comparison initialization weight hash differs")
+            auxiliary_config = None
+            auxiliary_bundle = None
+            if args.experiment_id == "A1S2":
+                from scripts import ppo_auxiliary
+                auxiliary_config = ppo_auxiliary.config(args.auxiliary_data,
+                    0.0 if args.no_auxiliary else args.auxiliary_weight,
+                    args.auxiliary_decay_updates)
+                auxiliary_bundle = ppo_auxiliary.load(args.auxiliary_data,
+                    initial_hash, clients[0].fingerprint, encoder)
             optimizer = torch.optim.Adam(model.parameters(), lr=3e-4)
             startup_seconds = time.perf_counter() - startup_started
             print(f"{args.experiment_id or args.mode}：环境就绪，耗时 {startup_seconds:.1f}s。", flush=True)
@@ -577,7 +598,8 @@ def main():
                                                experiment_id=args.experiment_id,
                                                entropy_coefficient=args.entropy_coefficient,
                                                initial_weights_sha256=initial_hash if args.experiment_id else None,
-                                               architecture=args.architecture)
+                                               architecture=args.architecture,
+                                               auxiliary_config=auxiliary_config)
                 next_seed = saved["nextSeed"]
                 completed_decisions = saved["completedDecisions"]
                 completed_episodes = saved["completedEpisodes"]
@@ -589,7 +611,7 @@ def main():
                     ["git", "status", "--porcelain"], cwd=ppo.ROOT, text=True).strip())
             except (OSError, subprocess.CalledProcessError):
                 source_commit, source_dirty = None, None
-            gradient_microbatch = (32 if args.experiment_id == "S2MAP" else
+            gradient_microbatch = (32 if args.experiment_id in ("S2MAP", "A1S2") else
                                    ppo.OPTIMIZER_CONFIG["minibatch"])
             report = {"mode": args.mode, "experimentId": args.experiment_id,
                       "entropyCoefficient": args.entropy_coefficient,
@@ -598,7 +620,9 @@ def main():
                       "initialWeightsSha256": initial_hash, "cardSet": args.card_set,
                       "experimentConfigSha256": ppo.experiment_config_sha256(args.experiment_id,
                           args.mode, args.entropy_coefficient, initial_hash if args.experiment_id else None,
-                          args.seed, clients[0].fingerprint, args.card_set, args.architecture),
+                          args.seed, clients[0].fingerprint, args.card_set, args.architecture,
+                          auxiliary_config),
+                      "auxiliaryConfig": auxiliary_config,
                       "networkArchitecture": args.architecture,
                       "sourceCommit": source_commit, "sourceDirty": source_dirty,
                       "trainerSourceSha256": ppo.TRAINER_SOURCE_HASH,
@@ -671,6 +695,10 @@ def main():
                             metrics = ppo.ppo_update(model, optimizer, store, device, rng,
                                                      entropy_coefficient=args.entropy_coefficient,
                                                      gradient_microbatch=gradient_microbatch)
+                            auxiliary_metrics = (ppo_auxiliary.update(model, optimizer,
+                                auxiliary_bundle, device,
+                                ppo_auxiliary.weight_at_update(auxiliary_config, update), update)
+                                if auxiliary_config is not None else None)
                             optimization_seconds = time.perf_counter() - optimization_started
                             phases["afterUpdate"] = phase_resources(clients, store, device)
                     resource = monitor.report(time.perf_counter() - monitored_started)
@@ -684,7 +712,8 @@ def main():
                         experiment_id=args.experiment_id,
                         entropy_coefficient=args.entropy_coefficient,
                         initial_weights_sha256=initial_hash if args.experiment_id else None,
-                        architecture=args.architecture)
+                        architecture=args.architecture,
+                        auxiliary_config=auxiliary_config)
                     args.checkpoint.parent.mkdir(parents=True, exist_ok=True)
                     temporary = args.checkpoint.with_suffix(".tmp")
                     torch.save(payload, temporary)
@@ -702,7 +731,7 @@ def main():
                               "resource": resource, "resourceStages": phases,
                               "trajectory": store.stats(),
                               "completedDecisionsPerSecond": batch_decisions / timing["collectionSeconds"],
-                              "optimization": metrics,
+                              "optimization": metrics, "auxiliary": auxiliary_metrics,
                               "actionWaste": {
                                   "opportunityDecisions": sum(e["wasteOpportunityDecisions"] for e in episodes),
                                   "opportunityChoices": sum(e["wasteOpportunityChoices"] for e in episodes),
