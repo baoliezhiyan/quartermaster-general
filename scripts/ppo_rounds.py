@@ -80,6 +80,7 @@ def export_weights(checkpoint: Path, target: Path, mode: str,
         raise ValueError("模型检查点实验身份不符")
     payload = {"format": "quartermaster-ppo-weights-v1", "mode": mode,
                "experimentId": experiment_id,
+               "networkArchitecture": saved.get("networkArchitecture"),
                "entropyCoefficient": saved.get("optimizerConfig", ppo.OPTIMIZER_CONFIG)["entropy"],
                "initialWeightsSha256": saved.get("initialWeightsSha256"),
                "experimentConfigSha256": saved.get("experimentConfigSha256"),
@@ -103,21 +104,27 @@ def export_weights(checkpoint: Path, target: Path, mode: str,
 
 def record_game(checkpoint: Path, target: Path, mode: str, round_number: int,
                 training_seed: int, model_sha256: str, max_decisions: int = 3000,
-                experiment_id=None, entropy_coefficient=None, initial_weights_sha256=None):
+                experiment_id=None, entropy_coefficient=None, initial_weights_sha256=None,
+                architecture=None):
     seed = selected_game(training_seed, mode, round_number)
     raw_target = target.with_name(".training-raw.jsonl")
     client = ppo.ArenaClient(log_path=raw_target, log_snapshots=True)
     try:
         encoder = ppo.Encoder(client.schema)
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        model = ppo.PpoNetwork(encoder.state_dim, encoder.candidate_dim).to(device)
+        if architecture:
+            from scripts.ppo_network_factory import make_network
+            model = make_network(architecture, encoder).to(device)
+        else:
+            model = ppo.PpoNetwork(encoder.state_dim, encoder.candidate_dim).to(device)
         optimizer = torch.optim.Adam(model.parameters(), lr=3e-4)
         saved = ppo.restore_checkpoint(checkpoint, model, optimizer, encoder, client,
                                        mode, random.Random(), "events",
                                        training_seed=training_seed,
                                        experiment_id=experiment_id,
                                        entropy_coefficient=entropy_coefficient,
-                                       initial_weights_sha256=initial_weights_sha256)
+                                       initial_weights_sha256=initial_weights_sha256,
+                                       architecture=architecture)
         if saved["update"] != round_number * UPDATES_PER_ROUND:
             raise ValueError("记录所用模型与目标轮数不符")
         model.eval()
@@ -128,6 +135,7 @@ def record_game(checkpoint: Path, target: Path, mode: str, round_number: int,
                     "trainingSeed": training_seed, "recordSeed": seed,
                     "controller": "same-policy-self-play-both-teams",
                     "actionSampling": "deterministic-greedy-argmax", "modelSha256": model_sha256,
+                    "networkArchitecture": architecture,
                     "recordScope": "full-training-scene-replay-v1"}
         result = ppo.play_episode(client, encoder, model, device, mode, seed,
                                   max_decisions, trace="full",

@@ -149,6 +149,7 @@ class Episode:
     rewards: list = field(default_factory=list)
     base_reward_totals: dict = field(default_factory=lambda: defaultdict(float))
     waste_reasons: dict = field(default_factory=lambda: defaultdict(int))
+    waste_exemptions: dict = field(default_factory=lambda: defaultdict(int))
     waste_penalties: dict = field(default_factory=lambda: defaultdict(int))
     waste_opportunity_decisions: int = 0
     waste_opportunity_choices: int = 0
@@ -233,6 +234,7 @@ def episode_summary(episode: Episode, snapshot: dict) -> dict:
             "trainingReward": {team: sum(r[team] for r in episode.rewards)
                                for team in ("axis", "allies")},
             "wasteCheckReasons": dict(episode.waste_reasons),
+            "wasteExemptionReasons": dict(episode.waste_exemptions),
             "wastePenaltiesBySeat": dict(episode.waste_penalties),
             "wastePenaltyTotal": ppo.REWARD_CONFIG["actionWastePenalty"] *
                 sum(episode.waste_penalties.values()),
@@ -341,6 +343,13 @@ def collect_batch(clients, encoder, model, device, tasks, mode, card_set, traini
                             if waste["penalty"]:
                                 episode.waste_penalties[waste["seat"]] += 1
                         episode.rewards.append(reward)
+                        for adjustment in ppo.apply_reward_adjustments(
+                                episode.rewards, episode.samples, info):
+                            episode.waste_penalties[adjustment["seat"]] += 1
+                            episode.waste_reasons[adjustment["reason"]] += 1
+                        for assessment in info.get("wasteAssessments") or ():
+                            if not assessment["penalized"]:
+                                episode.waste_exemptions[assessment["reason"]] += 1
                         episode.elapsed.append(info["turnsAdvanced"])
                         for name in info.get("submittedCardDefinitions", []):
                             episode.submitted[name] += 1
@@ -487,7 +496,9 @@ def summarize_evaluation(games):
 def main():
     parser = argparse.ArgumentParser(description="Parallel complete-episode PPO training")
     parser.add_argument("--mode", choices=["A", "B"], required=True)
-    parser.add_argument("--experiment-id", choices=["A1", "A2"], default=None)
+    parser.add_argument("--experiment-id", choices=["A1", "A2", "A1S1", "S2FLAT", "S2MAP"], default=None)
+    parser.add_argument("--architecture", choices=["flat-v1-effective-straits",
+        "shared-regions-actor-adjacency-ordered-actions-v2"], default=None)
     parser.add_argument("--entropy-coefficient", type=float,
                         default=ppo.OPTIMIZER_CONFIG["entropy"])
     parser.add_argument("--initial-weights", type=Path, default=None)
@@ -519,9 +530,15 @@ def main():
     if not math.isfinite(args.entropy_coefficient) or args.entropy_coefficient < 0:
         parser.error("entropy coefficient must be finite and nonnegative")
     if args.experiment_id and (args.mode != "A" or args.entropy_coefficient !=
-                               {"A1": 0.01, "A2": 0.02}[args.experiment_id] or
+                               {"A1": 0.01, "A2": 0.02, "A1S1": 0.01,
+                                "S2FLAT": 0.01, "S2MAP": 0.01}[args.experiment_id] or
                                not args.initial_weights or not args.expected_initial_hash):
         parser.error("A1/A2 require A resource mode, the prescribed entropy, and shared initialization")
+    from scripts.ppo_network_factory import STAGE2_EXPERIMENTS, make_network
+    if args.experiment_id in STAGE2_EXPERIMENTS and args.architecture != STAGE2_EXPERIMENTS[args.experiment_id]:
+        parser.error("Second-stage experiment and network architecture disagree")
+    if args.experiment_id not in STAGE2_EXPERIMENTS and args.architecture is not None:
+        parser.error("Architecture override is reserved for the second-stage experiment")
     torch.set_num_threads(min(4, os.cpu_count() or 1))
     device = torch.device("cpu" if args.cpu or not torch.cuda.is_available() else "cuda")
     rng = random.Random(args.seed)
@@ -535,13 +552,15 @@ def main():
         clients = open_clients(min(args.workers, BATCH_EPISODES), Path(directory))
         try:
             encoder = ppo.Encoder(clients[0].schema)
-            model = ppo.PpoNetwork(encoder.state_dim, encoder.candidate_dim).to(device)
+            model = (make_network(args.architecture, encoder) if args.architecture else
+                     ppo.PpoNetwork(encoder.state_dim, encoder.candidate_dim)).to(device)
             if args.initial_weights:
                 initial = torch.load(args.initial_weights, map_location="cpu", weights_only=False)
                 if (initial.get("format") != "quartermaster-ppo-comparison-initial-v1" or
                     initial.get("buildFingerprint") != clients[0].fingerprint or
                     initial.get("network") != {"stateDim": encoder.state_dim,
-                                                "candidateDim": encoder.candidate_dim}):
+                                                "candidateDim": encoder.candidate_dim} or
+                    args.architecture is not None and initial.get("networkArchitecture") != args.architecture):
                     raise ValueError("Comparison initialization schema differs")
                 model.load_state_dict(initial["modelState"])
             initial_hash = ppo.model_weights_sha256(model)
@@ -557,7 +576,8 @@ def main():
                                                training_seed=args.seed,
                                                experiment_id=args.experiment_id,
                                                entropy_coefficient=args.entropy_coefficient,
-                                               initial_weights_sha256=initial_hash if args.experiment_id else None)
+                                               initial_weights_sha256=initial_hash if args.experiment_id else None,
+                                               architecture=args.architecture)
                 next_seed = saved["nextSeed"]
                 completed_decisions = saved["completedDecisions"]
                 completed_episodes = saved["completedEpisodes"]
@@ -576,7 +596,8 @@ def main():
                       "initialWeightsSha256": initial_hash, "cardSet": args.card_set,
                       "experimentConfigSha256": ppo.experiment_config_sha256(args.experiment_id,
                           args.mode, args.entropy_coefficient, initial_hash if args.experiment_id else None,
-                          args.seed, clients[0].fingerprint, args.card_set),
+                          args.seed, clients[0].fingerprint, args.card_set, args.architecture),
+                      "networkArchitecture": args.architecture,
                       "sourceCommit": source_commit, "sourceDirty": source_dirty,
                       "trainerSourceSha256": ppo.TRAINER_SOURCE_HASH,
                       "buildFingerprint": clients[0].fingerprint,
@@ -596,6 +617,7 @@ def main():
                 previous_updates = previous_report.get("updates", [])
                 if (previous_report.get("mode") != args.mode or
                     previous_report.get("experimentId") != args.experiment_id or
+                    previous_report.get("networkArchitecture") != args.architecture or
                     args.experiment_id is not None and (
                         previous_report.get("entropyCoefficient") != args.entropy_coefficient or
                         previous_report.get("initialWeightsSha256") != initial_hash or
@@ -657,7 +679,8 @@ def main():
                         completed_episodes=completed_episodes, training_seed=args.seed,
                         experiment_id=args.experiment_id,
                         entropy_coefficient=args.entropy_coefficient,
-                        initial_weights_sha256=initial_hash if args.experiment_id else None)
+                        initial_weights_sha256=initial_hash if args.experiment_id else None,
+                        architecture=args.architecture)
                     args.checkpoint.parent.mkdir(parents=True, exist_ok=True)
                     temporary = args.checkpoint.with_suffix(".tmp")
                     torch.save(payload, temporary)
@@ -690,6 +713,9 @@ def main():
                                   "reasons": {reason: sum(episode["wasteCheckReasons"].get(reason, 0)
                                       for episode in episodes) for reason in sorted({reason for episode in episodes
                                       for reason in episode["wasteCheckReasons"]})},
+                                  "exemptions": {reason: sum(episode["wasteExemptionReasons"].get(reason, 0)
+                                      for episode in episodes) for reason in sorted({reason for episode in episodes
+                                      for reason in episode["wasteExemptionReasons"]})},
                                   "penaltyTotal": sum(episode["wastePenaltyTotal"] for episode in episodes)},
                               "policyDistribution": {
                                   "entropyMean": sum(e["policyEntropyMean"] * e["decisions"] for e in episodes) / batch_decisions,

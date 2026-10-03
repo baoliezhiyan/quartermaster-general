@@ -22,13 +22,18 @@ import torch
 from torch import nn
 from torch.distributions import Categorical
 
+try:
+    from scripts.ppo_action_semantics import MAX_ACTION_SLOTS, action_facts, opportunity_facts
+except ModuleNotFoundError:
+    from ppo_action_semantics import MAX_ACTION_SLOTS, action_facts, opportunity_facts
+
 
 ROOT = Path(__file__).resolve().parents[1]
 GAMMA = 1.0
 LAMBDA_ROUND = 0.95
 POTENTIAL_SCALE = 0.3
-ENCODER_VERSION = "ppo-vector-v5-repeat-build"
-TRAINER_VERSION = "ppo-trainer-v7-a1-a2-config"
+ENCODER_VERSION = "ppo-vector-v7-effective-straits"
+TRAINER_VERSION = "ppo-trainer-v9-actor-map"
 EFFECT_KINDS = ["action", "score", "draw", "deckTop", "forceHand", "signal", "choose", "cards",
                 "extraPlay", "rebuild", "remove", "flag", "balance", "trace", "cancel", "randomReturn",
                 "randomPlay", "frameChange", "countChange", "reallocate", "prelude", "copyStatus"]
@@ -52,13 +57,18 @@ CHOICE_FEATURE_KINDS = ["build_order", "action_region", "defenderId", "attackerI
 OPTIMIZER_CONFIG = {"lr": 3e-4, "epochs": 4, "minibatch": 256, "clip": 0.2,
                     "entropy": 0.01, "valueCoefficient": 0.5, "gradNorm": 0.5}
 REWARD_CONFIG = {"gamma": GAMMA, "lambdaRound": LAMBDA_ROUND, "potential": POTENTIAL_SCALE,
-                 "actionWasteVersion": "repeated-basic-build-v1", "actionWastePenalty": -0.01}
+                 "actionWasteVersion": "complete-action-v2", "actionWastePenalty": -0.01}
 ENCODER_DICTIONARY = {"effectKinds": EFFECT_KINDS, "actions": ACTIONS, "phases": PHASES,
                       "choiceKinds": CHOICE_KINDS, "choiceFields": CHOICE_FIELDS,
                       "targetSlots": TARGET_SLOTS, "choiceSlots": CHOICE_SLOTS,
                       "choiceFeatureKinds": CHOICE_FEATURE_KINDS}
 ENCODER_DICTIONARY_HASH = hashlib.sha256(json.dumps(ENCODER_DICTIONARY, sort_keys=True).encode()).hexdigest()
 TRAINER_SOURCE_HASH = hashlib.sha256(Path(__file__).read_bytes() +
+    Path(__file__).with_name("ppo_action_semantics.py").read_bytes() +
+    (Path(__file__).with_name("ppo_network_factory.py").read_bytes()
+     if Path(__file__).with_name("ppo_network_factory.py").exists() else b"") +
+    (Path(__file__).with_name("ppo_map_network.py").read_bytes()
+     if Path(__file__).with_name("ppo_map_network.py").exists() else b"") +
     (Path(__file__).with_name("ppo_parallel.py").read_bytes()
      if Path(__file__).with_name("ppo_parallel.py").exists() else b"") +
     (Path(__file__).with_name("ppo_trajectory.py").read_bytes()
@@ -216,6 +226,8 @@ class Encoder:
                 "activeSeat": self.seats[0], "decisionSeat": self.seats[0], "sourceSeat": self.seats[0],
                 "unitCountry": None, "scores": {s: 0 for s in self.seats},
                 "allianceScores": {"axis": 0, "allies": 0}, "units": [], "suppliedUnitIds": [],
+                "effectiveStraits": {c: [False] * len(self.schema["straits"])
+                                     for c in self.countries},
                 "reserves": {c: {"army": 0, "navy": 0, "air": 0} for c in self.countries},
                 "ownResources": {k: {} for k in ("remaining", "open", "discard")},
                 "publicResources": {s: {"remainingTotal": 0, "discardTotal": 0} for s in self.seats},
@@ -359,6 +371,14 @@ class Encoder:
                   [own[group].get(card, 0) / 10.0 for group in ("remaining", "open", "discard") for card in self.cards] +
                   [obs["publicResources"][seat][field] / 100.0 for seat in self.seats for field in
                    ("remainingTotal", "discardTotal")])
+        if not hasattr(self, "map_slices"):
+            start = len(values)
+            self.map_slices = ((start, start + len(units)),
+                (start + len(units), start + len(units) + len(supplied)),
+                (start + len(units) + len(supplied),
+                 start + len(units) + len(supplied) + len(control)),
+                (start + len(units) + len(supplied) + len(control),
+                 start + len(units) + len(supplied) + len(control) + len(static)))
         values += units + supplied + control + static + self._effect_vector(obs["activeEffects"], obs)
         values += self._unit_sequence(obs.get("selectedTargetFacts") or [])
         for key in self.binding_keys:
@@ -372,6 +392,16 @@ class Encoder:
             values += [(self.region_index[result["regionId"]] + 1) / len(self.regions)
                        if result.get("regionId") in self.region_index else 0.0]
         values += [0.0] * ((8 - len(prior)) * (3 + len(ACTIONS)))
+        if not hasattr(self, "effective_straits_start"):
+            self.effective_straits_start = len(values)
+        links = obs.get("effectiveStraits")
+        if links is None or set(links) != set(self.countries):
+            raise ValueError("Observation lacks engine-derived effective strait facts")
+        for country in self.countries:
+            flags = links[country]
+            if len(flags) != len(self.schema["straits"]):
+                raise ValueError("Effective strait count differs from schema")
+            values.extend(float(flag) for flag in flags)
         if hasattr(self, "state_dim") and len(values) != self.state_dim:
             raise ValueError("Variable state vector dimension")
         return values
@@ -442,9 +472,43 @@ class Encoder:
                    float(not candidate.get("choiceIds") and candidate["kind"] == "choice"),
                    float(candidate["kind"] == "pass")])
         values += ordered_vector + choice_vector + self._effect_vector(candidate.get("effects") or [], obs)
+        if not hasattr(self, "candidate_semantic_start"):
+            self.candidate_semantic_start = len(values)
+        values += self._action_semantics(obs, candidate)
         if hasattr(self, "candidate_dim") and len(values) != self.candidate_dim:
             raise ValueError("Variable candidate vector dimension")
         return values
+
+    def _action_semantics(self, obs, candidate):
+        outcomes = ("unknown", "new", "repeated", "blocked", "target", "empty")
+        facts = action_facts(obs, candidate, self.schema["regions"])
+        def token(item):
+            return (onehot(item["action"], ACTIONS) +
+                    onehot(item["country"], self.countries) +
+                    onehot(item["regionId"], self.regions) +
+                    onehot(item["unitType"], UNIT_TYPES) +
+                    onehot(item["outcome"], outcomes) +
+                    onehot(item["homeCountry"], self.countries) +
+                    [float(item["chosenLegal"]), float(item["recycled"]),
+                     min(item["same"], 3) / 3, min(item["allied"], 3) / 3,
+                     min(item["enemy"], 3) / 3, min(item["suppliedHere"], 3) / 3,
+                     float(item["supplyPoint"] is True), float(item["supplyPoint"] is None),
+                     float(item["futureTarget"])])
+        empty = token({"action": None, "country": None, "regionId": None,
+                       "unitType": None, "outcome": None, "homeCountry": None,
+                       "chosenLegal": False, "recycled": False, "same": 0,
+                       "allied": 0, "enemy": 0, "suppliedHere": 0,
+                       "supplyPoint": None, "futureTarget": False})
+        result = [value for item in facts for value in token(item)]
+        result.extend([0.0] * ((MAX_ACTION_SLOTS - len(facts)) * len(empty)))
+        opportunity = opportunity_facts(candidate)
+        result.extend([min(opportunity["extraPlayEffects"], 3) / 3,
+                       float(opportunity["replacesSpentPlay"]),
+                       float(opportunity["trueExtraPlayKnown"]),
+                       float(any(e.get("fee") for e in candidate.get("effects") or [])),
+                       float(any(e.get("kind") == "choose" for e in candidate.get("effects") or [])),
+                       min(len(obs.get("priorResults") or []), 8) / 8])
+        return result
 
     def encode(self, obs):
         if not obs["candidates"]:
@@ -487,7 +551,7 @@ def model_weights_sha256(model):
 
 
 def experiment_config_sha256(experiment_id, mode, entropy_coefficient, initial_hash,
-                             training_seed, build_fingerprint, card_set="events"):
+                             training_seed, build_fingerprint, card_set="events", architecture=None):
     if experiment_id is None:
         return None
     config = {"experimentId": experiment_id, "resourceMode": mode,
@@ -496,6 +560,8 @@ def experiment_config_sha256(experiment_id, mode, entropy_coefficient, initial_h
               "buildFingerprint": build_fingerprint, "cardSet": card_set,
               "encoderVersion": ENCODER_VERSION, "rewardConfig": REWARD_CONFIG,
               "optimizerConfig": {**OPTIMIZER_CONFIG, "entropy": entropy_coefficient}}
+    if architecture is not None:
+        config["networkArchitecture"] = architecture
     return hashlib.sha256(json.dumps(config, sort_keys=True).encode()).hexdigest()
 
 
@@ -544,6 +610,27 @@ def decision_rewards(previous, after, outcome, info):
             raise RuntimeError("Waste penalty does not belong to the initiating decision")
         adjusted[team_of(waste["seat"])] += REWARD_CONFIG["actionWastePenalty"]
     return base, adjusted
+
+
+def apply_reward_adjustments(rewards, samples, info):
+    """Attach delayed training-only waste to its original PPO decision.
+
+    Called after appending the current step. No opponent bonus is created, and
+    the game score in the arena is untouched.
+    """
+    applied = []
+    for item in info.get("rewardAdjustments") or ():
+        index = item["decisionId"]
+        if not isinstance(index, int) or index < 0 or index >= len(rewards) or \
+                samples[index]["seat"] != item["seat"]:
+            raise RuntimeError("Delayed waste does not belong to its originating decision")
+        penalty = item["penalty"]
+        if penalty != REWARD_CONFIG["actionWastePenalty"] or \
+                item.get("afterCap") != penalty:
+            raise RuntimeError("Unexpected action waste reward or cap")
+        rewards[index][team_of(item["seat"])] += penalty
+        applied.append(item)
+    return applied
 
 
 def assign_advantages(samples, rewards, elapsed_turns):
@@ -621,8 +708,16 @@ def play_episode(client, encoder, model, device, mode, seed, max_decisions, trac
     samples, rewards, elapsed = [], [], []
     base_totals = {"axis": 0.0, "allies": 0.0}
     waste_penalties = defaultdict(int)
+    waste_reasons = defaultdict(int)
+    repeated_builds = 0
     choices, sources, submitted, resolved = (defaultdict(int) for _ in range(4))
     openness = []
+    first_german_source = True
+    white_opening = False
+    white_recruit = False
+    white_followed_arden = False
+    white_pending = False
+    passes = 0
     while observation is not None and len(samples) < max_decisions:
         seat = observation["decisionSeat"]
         state, candidates = encoder.encode(observation)
@@ -636,6 +731,15 @@ def play_episode(client, encoder, model, device, mode, seed, max_decisions, trac
                                                   state, candidates, device,
                                                   deterministic=deterministic, rng=rng)
         chosen = observation["candidates"][index]
+        if first_german_source and observation["node"] == "SOURCE" and observation["activeSeat"] == "germany":
+            first_german_source = False
+            white_opening = chosen.get("definitionId") == "special_150"
+            white_pending = white_opening
+        if white_pending and observation.get("choiceKind") == "EXTRA_CARD" and \
+                "germany:special_158" in (chosen.get("choiceIds") or ()):
+            white_followed_arden = True
+        if chosen["kind"] == "pass":
+            passes += 1
         if chosen["kind"] == "source":
             sources[chosen.get("definitionId") or "unknown"] += 1
         own = observation["ownResources"]
@@ -644,14 +748,23 @@ def play_episode(client, encoder, model, device, mode, seed, max_decisions, trac
             openness.append(sum(own["open"].values()) / remaining)
         previous = observation
         response = client.request(op="step", action={**observation["decision"], "actionId": chosen["id"]})
+        if white_opening and not white_recruit:
+            current = response["observation"] or response["result"].get("finalObservation", {})
+            white_recruit = any(u["country"] == "germany" and u["type"] == "army" and
+                                u["regionId"] == "eastern_europe" for u in current.get("units", ()))
+        if "special_150" in response["info"].get("resolvedCardDefinitions", ()):
+            white_pending = False
         outcome = response["result"]
         after = outcome["allianceScores"] if outcome else response["observation"]["allianceScores"]
         base, training_reward = decision_rewards(previous, after, outcome, response["info"])
         for team in base_totals:
             base_totals[team] += base[team]
         waste = response["info"].get("wasteCheck")
+        if waste and waste.get("repeated"):
+            repeated_builds += 1
         if waste and waste["penalty"]:
             waste_penalties[waste["seat"]] += 1
+            waste_reasons[waste["reason"]] += 1
         rewards.append(training_reward)
         elapsed.append(response["info"]["turnsAdvanced"])
         for definition in response["info"].get("submittedCardDefinitions", []):
@@ -661,6 +774,9 @@ def play_episode(client, encoder, model, device, mode, seed, max_decisions, trac
         samples.append({"seat": seat, "state": state, "candidates": candidates,
                         "action": index, "logprob": logprob, "value": value,
                         "baseline": use_baseline or use_reference})
+        for adjustment in apply_reward_adjustments(rewards, samples, response["info"]):
+            waste_penalties[adjustment["seat"]] += 1
+            waste_reasons[adjustment["reason"]] += 1
         choices[chosen["kind"]] += 1
         observation = response["observation"]
     if observation is not None:
@@ -678,9 +794,12 @@ def play_episode(client, encoder, model, device, mode, seed, max_decisions, trac
             "trainingReward": {team: sum(r[team] for r in rewards) for team in ("axis", "allies")},
             "wastePenaltiesBySeat": dict(waste_penalties),
             "wastePenaltyTotal": REWARD_CONFIG["actionWastePenalty"] * sum(waste_penalties.values()),
+            "wasteReasons": dict(waste_reasons), "repeatedBasicBuilds": repeated_builds,
             "decisions": len(samples), "sources": dict(sources),
             "submitted": dict(submitted), "resolved": dict(resolved),
             "consumedEvents": consumed_events,
+            "openingWhitePlan": white_opening, "whiteRecruit": white_recruit,
+            "whiteFollowedArden": white_followed_arden, "passes": passes,
             "countryTurns": sum(elapsed),
             "meanOpenFraction": sum(openness) / len(openness) if openness else 0.0,
             "remainingBySeat": remaining_by_seat, "discardedBySeat": discarded_by_seat}
@@ -748,8 +867,10 @@ def ppo_update(model, optimizer, samples, device, rng, epochs=4, minibatch=256,
 
 def checkpoint_payload(model, optimizer, encoder, client, mode, update, decisions, rng, next_seed,
                        card_set="events", completed_episodes=0, training_seed=None,
-                       experiment_id=None, entropy_coefficient=None, initial_weights_sha256=None):
+                       experiment_id=None, entropy_coefficient=None, initial_weights_sha256=None,
+                       architecture=None):
     return {"format": "quartermaster-ppo-checkpoint-v1", "encoderVersion": ENCODER_VERSION,
+            "networkArchitecture": architecture,
             "trainerVersion": TRAINER_VERSION,
             "trainerSourceSha256": TRAINER_SOURCE_HASH,
             "encoderDictionarySha256": ENCODER_DICTIONARY_HASH,
@@ -764,7 +885,7 @@ def checkpoint_payload(model, optimizer, encoder, client, mode, update, decision
             "experimentId": experiment_id, "initialWeightsSha256": initial_weights_sha256,
             "experimentConfigSha256": experiment_config_sha256(experiment_id, mode,
                 OPTIMIZER_CONFIG["entropy"] if entropy_coefficient is None else entropy_coefficient,
-                initial_weights_sha256, training_seed, client.fingerprint, card_set),
+                initial_weights_sha256, training_seed, client.fingerprint, card_set, architecture),
             "update": update, "policyVersion": update,
             "completedDecisions": decisions, "completedEpisodes": completed_episodes,
             "episodesPerUpdate": 40, "nextSeed": next_seed, "trainingSeed": training_seed,
@@ -775,7 +896,7 @@ def checkpoint_payload(model, optimizer, encoder, client, mode, update, decision
 
 def restore_checkpoint(path, model, optimizer, encoder, client, mode, rng, card_set="events",
                        training_seed=None, experiment_id=None, entropy_coefficient=None,
-                       initial_weights_sha256=None):
+                       initial_weights_sha256=None, architecture=None):
     saved = torch.load(path, map_location="cpu", weights_only=False)
     expected = {"format": "quartermaster-ppo-checkpoint-v1", "encoderVersion": ENCODER_VERSION,
                 "trainerVersion": TRAINER_VERSION,
@@ -793,8 +914,10 @@ def restore_checkpoint(path, model, optimizer, encoder, client, mode, rng, card_
                 "initialWeightsSha256": initial_weights_sha256,
                 "experimentConfigSha256": experiment_config_sha256(experiment_id, mode,
                     OPTIMIZER_CONFIG["entropy"] if entropy_coefficient is None else entropy_coefficient,
-                    initial_weights_sha256, training_seed, client.fingerprint, card_set),
+                    initial_weights_sha256, training_seed, client.fingerprint, card_set, architecture),
                 "episodesPerUpdate": 40}
+    if architecture is not None:
+        expected["networkArchitecture"] = architecture
     if any(saved.get(key) != value for key, value in expected.items()):
         raise ValueError("Checkpoint schema, mode, or rules build differs")
     if saved.get("trainerSourceSha256") not in ({TRAINER_SOURCE_HASH} |
