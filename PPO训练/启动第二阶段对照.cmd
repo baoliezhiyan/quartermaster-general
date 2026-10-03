@@ -27,14 +27,20 @@ echo 2 Generate 32 scripted games
 echo 3 Adapt with scripted decisions only
 echo 4 Prepare the flat and map models
 echo 5 Train the flat group, then the map group
-set /p "CHOICE=Select step (1-5): "
+echo 6 Resume an unfinished training plan
+set /p "CHOICE=Select step (1-6): "
 if "%CHOICE%"=="1" set "STAGE=verify"
 if "%CHOICE%"=="2" set "STAGE=generate"
 if "%CHOICE%"=="3" set "STAGE=adapt"
 if "%CHOICE%"=="4" set "STAGE=prepare"
 if "%CHOICE%"=="5" set "STAGE=train"
+if "%CHOICE%"=="6" goto :resume
 if not defined STAGE goto :failed
 "%PYTHON_EXE%" -m scripts.ppo_stage2 %STAGE%
+goto :done
+
+:resume
+"%PYTHON_EXE%" -m scripts.ppo_stage2 train --continue-plan
 goto :done
 
 :arguments

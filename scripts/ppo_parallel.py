@@ -589,6 +589,8 @@ def main():
                     ["git", "status", "--porcelain"], cwd=ppo.ROOT, text=True).strip())
             except (OSError, subprocess.CalledProcessError):
                 source_commit, source_dirty = None, None
+            gradient_microbatch = (32 if args.experiment_id == "S2MAP" else
+                                   ppo.OPTIMIZER_CONFIG["minibatch"])
             report = {"mode": args.mode, "experimentId": args.experiment_id,
                       "entropyCoefficient": args.entropy_coefficient,
                       "optimizerConfig": {**ppo.OPTIMIZER_CONFIG, "entropy": args.entropy_coefficient},
@@ -633,6 +635,7 @@ def main():
                 # Older reports may retain the removed fixed-opponent evaluations.
                 for obsolete in ("baselineEvaluation", "baselineEvaluationSeconds", "evaluations"):
                     report.pop(obsolete, None)
+            report["gradientMicrobatch"] = gradient_microbatch
             warmup_started = time.perf_counter()
             dummy = encoder._dummy()
             dummy["candidates"] = [{"kind": "pass", "id": "warmup"}]
@@ -666,7 +669,8 @@ def main():
                             optimization_started = time.perf_counter()
                             model.train()
                             metrics = ppo.ppo_update(model, optimizer, store, device, rng,
-                                                     entropy_coefficient=args.entropy_coefficient)
+                                                     entropy_coefficient=args.entropy_coefficient,
+                                                     gradient_microbatch=gradient_microbatch)
                             optimization_seconds = time.perf_counter() - optimization_started
                             phases["afterUpdate"] = phase_resources(clients, store, device)
                     resource = monitor.report(time.perf_counter() - monitored_started)

@@ -79,6 +79,9 @@ TRAINER_SOURCE_HASH = hashlib.sha256(Path(__file__).read_bytes() +
 # default worker count, or temporary trajectory storage only. All other
 # schema, rule-build, course, optimizer and seed checks remain strict.
 NON_SEMANTIC_PREDECESSOR_HASHES = frozenset({
+    # S2MAP updates through #13 used the same 256-sample objective; the
+    # subsequent change only accumulates that objective in smaller GPU pieces.
+    "92162067e83a5569c38a1c540af3115de0057b5c57710a034af2916cef7f44f7",
     "3f0ff2c6491001bf3c3bd144712b2d055c2d15f750a6bf9229e5e68f5b350e0e",
     "02c6b3eb1c4a692fccbf9d7c1852b038b3ae14498a825ae8b064f46e94e129fb",
     "2b9778411434db42f2679a7c1e6a018d8b35d98a7789829c952f06309bcd7704",
@@ -806,11 +809,15 @@ def play_episode(client, encoder, model, device, mode, seed, max_decisions, trac
 
 
 def ppo_update(model, optimizer, samples, device, rng, epochs=4, minibatch=256,
-               entropy_coefficient=None):
+               entropy_coefficient=None, gradient_microbatch=None):
     entropy_coefficient = (OPTIMIZER_CONFIG["entropy"] if entropy_coefficient is None
                            else entropy_coefficient)
     if not math.isfinite(entropy_coefficient) or entropy_coefficient < 0:
         raise ValueError("Invalid entropy coefficient")
+    if gradient_microbatch is None:
+        gradient_microbatch = minibatch
+    if gradient_microbatch < 1 or gradient_microbatch > minibatch:
+        raise ValueError("Invalid gradient microbatch size")
     # A trajectory spool exposes only small scalar metadata here. Tensor payloads
     # are read for the current shuffled minibatch, never for the full update.
     metadata = samples.training_metadata() if hasattr(samples, "training_metadata") else samples
@@ -835,28 +842,42 @@ def ppo_update(model, optimizer, samples, device, rng, epochs=4, minibatch=256,
             if hasattr(samples, "prefetch") and start + minibatch < len(order):
                 following = order[start + minibatch:start + 2 * minibatch]
                 samples.prefetch([useful_positions[i] for i in following])
-            logits, values = model(*batch_tensors(batch, device))
-            distribution = Categorical(logits=logits)
-            actions = torch.tensor([item["action"] for item in batch], device=device)
-            old_logprob = torch.tensor([item["logprob"] for item in batch], device=device)
-            targets = torch.tensor([item["target"] for item in batch], device=device)
-            logprob = distribution.log_prob(actions)
-            ratio = (logprob - old_logprob).exp()
-            local_advantage = advantage[indices]
-            policy_loss = -torch.minimum(ratio * local_advantage,
-                                          ratio.clamp(0.8, 1.2) * local_advantage).mean()
-            value_loss = (values - targets).square().mean()
-            entropy = distribution.entropy().mean()
-            loss = (policy_loss + OPTIMIZER_CONFIG["valueCoefficient"] * value_loss -
-                    entropy_coefficient * entropy)
             optimizer.zero_grad(set_to_none=True)
-            loss.backward()
+            # One optimizer step still uses the original shuffled 256 samples.
+            # Only the GPU forward/backward working set is smaller; weighting
+            # each piece by its actual size preserves the mean loss, including
+            # the final short PPO minibatch and unequal final microbatch.
+            batch_loss = batch_entropy = batch_clip = batch_kl = 0.0
+            for offset in range(0, len(batch), gradient_microbatch):
+                piece = batch[offset:offset + gradient_microbatch]
+                logits, values = model(*batch_tensors(piece, device))
+                distribution = Categorical(logits=logits)
+                actions = torch.tensor([item["action"] for item in piece], device=device)
+                old_logprob = torch.tensor([item["logprob"] for item in piece], device=device)
+                targets = torch.tensor([item["target"] for item in piece], device=device)
+                logprob = distribution.log_prob(actions)
+                ratio = (logprob - old_logprob).exp()
+                local_advantage = advantage[indices[offset:offset + len(piece)]]
+                policy_loss = -torch.minimum(ratio * local_advantage,
+                                              ratio.clamp(0.8, 1.2) * local_advantage).mean()
+                value_loss = (values - targets).square().mean()
+                entropy = distribution.entropy().mean()
+                loss = (policy_loss + OPTIMIZER_CONFIG["valueCoefficient"] * value_loss -
+                        entropy_coefficient * entropy)
+                weight = len(piece) / len(batch)
+                (loss * weight).backward()
+                batch_loss += float(loss.detach()) * weight
+                batch_entropy += float(entropy.detach()) * weight
+                batch_clip += float(((ratio.detach() - 1).abs() > 0.2).float().mean()) * weight
+                batch_kl += float((old_logprob - logprob).detach().mean()) * weight
+                del logits, values, distribution, actions, old_logprob, targets
+                del logprob, ratio, local_advantage, policy_loss, value_loss, entropy, loss
             gradients.append(float(nn.utils.clip_grad_norm_(model.parameters(), 0.5)))
             optimizer.step()
-            losses.append(float(loss.detach()))
-            entropies.append(float(entropy.detach()))
-            clip_fracs.append(float(((ratio.detach() - 1).abs() > 0.2).float().mean()))
-            kls.append(float((old_logprob - logprob).detach().mean()))
+            losses.append(batch_loss)
+            entropies.append(batch_entropy)
+            clip_fracs.append(batch_clip)
+            kls.append(batch_kl)
     return {"loss": sum(losses) / len(losses), "entropy": sum(entropies) / len(entropies),
             "entropyCoefficient": entropy_coefficient,
             "clipFraction": sum(clip_fracs) / len(clip_fracs), "approxKl": sum(kls) / len(kls),

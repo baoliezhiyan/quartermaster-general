@@ -84,6 +84,27 @@ class TrajectoryStoreTests(unittest.TestCase):
                 for key, value in model_old.state_dict().items():
                     self.assertTrue(torch.allclose(value, model_disk.state_dict()[key], atol=1e-6), key)
 
+    def test_gradient_microbatches_keep_one_shuffled_optimizer_step(self):
+        torch.manual_seed(31)
+        originals = [sample(i, rows) for i, rows in enumerate([1, 4, 2, 5, 3])]
+        for i, item in enumerate(originals):
+            item.update(advantage=(i - 2) * .11, target=.2 - i * .07)
+        full = PpoNetwork(7, 9)
+        pieces = copy.deepcopy(full)
+        full_optimizer = torch.optim.Adam(full.parameters(), lr=3e-4)
+        pieces_optimizer = torch.optim.Adam(pieces.parameters(), lr=3e-4)
+        original = ppo_update(full, full_optimizer, originals, torch.device("cpu"),
+                              random.Random(21), epochs=2, minibatch=4)
+        accumulated = ppo_update(pieces, pieces_optimizer, originals, torch.device("cpu"),
+                                 random.Random(21), epochs=2, minibatch=4,
+                                 gradient_microbatch=2)
+        for key in original:
+            self.assertAlmostEqual(original[key], accumulated[key], delta=1e-5, msg=key)
+        for key, value in full.state_dict().items():
+            # Adam amplifies roundoff in the theoretically zero softmax-shift bias.
+            self.assertTrue(torch.allclose(value, pieces.state_dict()[key], atol=1e-4),
+                            (key, float((value - pieces.state_dict()[key]).abs().max())))
+
     def test_safe_stale_cleanup_does_not_touch_live_or_outside_directory(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory) / "root"
