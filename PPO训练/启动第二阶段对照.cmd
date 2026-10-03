@@ -21,13 +21,13 @@ if not exist "node_modules\.bin\tsc.cmd" (
 if errorlevel 1 goto :failed
 
 if not "%~1"=="" goto :arguments
-echo 第二阶段独立流程。源模型：A1S1 第003轮；资源A；熵0.01。
-echo 1 核验源模型
-echo 2 生成32局固定种子示范
-echo 3 仅用脚本标签执行小规模行为克隆
-echo 4 从共同起点准备平面/地图模型
-echo 5 顺序训练平面组、地图组
-set /p "CHOICE=选择步骤(1-5): "
+echo Stage 2: A1S1 round 003; resource mode A; entropy 0.01.
+echo 1 Verify the source model
+echo 2 Generate 32 scripted games
+echo 3 Adapt with scripted decisions only
+echo 4 Prepare the flat and map models
+echo 5 Train the flat group, then the map group
+set /p "CHOICE=Select step (1-5): "
 if "%CHOICE%"=="1" set "STAGE=verify"
 if "%CHOICE%"=="2" set "STAGE=generate"
 if "%CHOICE%"=="3" set "STAGE=adapt"
@@ -42,7 +42,7 @@ goto :done
 goto :done
 
 :failed
-echo 第二阶段未启动或未完成。请检查上面的错误；已有模型不会被覆盖。
+echo Stage 2 did not start or finish. Check the error above.
 exit /b 1
 
 :done
