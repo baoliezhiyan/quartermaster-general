@@ -22,13 +22,18 @@ import torch
 from torch import nn
 from torch.distributions import Categorical
 
+try:
+    from scripts.ppo_action_semantics import MAX_ACTION_SLOTS, action_facts, opportunity_facts
+except ModuleNotFoundError:
+    from ppo_action_semantics import MAX_ACTION_SLOTS, action_facts, opportunity_facts
+
 
 ROOT = Path(__file__).resolve().parents[1]
 GAMMA = 1.0
 LAMBDA_ROUND = 0.95
 POTENTIAL_SCALE = 0.3
-ENCODER_VERSION = "ppo-vector-v5-repeat-build"
-TRAINER_VERSION = "ppo-trainer-v7-a1-a2-config"
+ENCODER_VERSION = "ppo-vector-v6-action-semantics"
+TRAINER_VERSION = "ppo-trainer-v8-action-ledger"
 EFFECT_KINDS = ["action", "score", "draw", "deckTop", "forceHand", "signal", "choose", "cards",
                 "extraPlay", "rebuild", "remove", "flag", "balance", "trace", "cancel", "randomReturn",
                 "randomPlay", "frameChange", "countChange", "reallocate", "prelude", "copyStatus"]
@@ -52,13 +57,14 @@ CHOICE_FEATURE_KINDS = ["build_order", "action_region", "defenderId", "attackerI
 OPTIMIZER_CONFIG = {"lr": 3e-4, "epochs": 4, "minibatch": 256, "clip": 0.2,
                     "entropy": 0.01, "valueCoefficient": 0.5, "gradNorm": 0.5}
 REWARD_CONFIG = {"gamma": GAMMA, "lambdaRound": LAMBDA_ROUND, "potential": POTENTIAL_SCALE,
-                 "actionWasteVersion": "repeated-basic-build-v1", "actionWastePenalty": -0.01}
+                 "actionWasteVersion": "complete-action-v2", "actionWastePenalty": -0.01}
 ENCODER_DICTIONARY = {"effectKinds": EFFECT_KINDS, "actions": ACTIONS, "phases": PHASES,
                       "choiceKinds": CHOICE_KINDS, "choiceFields": CHOICE_FIELDS,
                       "targetSlots": TARGET_SLOTS, "choiceSlots": CHOICE_SLOTS,
                       "choiceFeatureKinds": CHOICE_FEATURE_KINDS}
 ENCODER_DICTIONARY_HASH = hashlib.sha256(json.dumps(ENCODER_DICTIONARY, sort_keys=True).encode()).hexdigest()
 TRAINER_SOURCE_HASH = hashlib.sha256(Path(__file__).read_bytes() +
+    Path(__file__).with_name("ppo_action_semantics.py").read_bytes() +
     (Path(__file__).with_name("ppo_parallel.py").read_bytes()
      if Path(__file__).with_name("ppo_parallel.py").exists() else b"") +
     (Path(__file__).with_name("ppo_trajectory.py").read_bytes()
@@ -359,6 +365,14 @@ class Encoder:
                   [own[group].get(card, 0) / 10.0 for group in ("remaining", "open", "discard") for card in self.cards] +
                   [obs["publicResources"][seat][field] / 100.0 for seat in self.seats for field in
                    ("remainingTotal", "discardTotal")])
+        if not hasattr(self, "map_slices"):
+            start = len(values)
+            self.map_slices = ((start, start + len(units)),
+                (start + len(units), start + len(units) + len(supplied)),
+                (start + len(units) + len(supplied),
+                 start + len(units) + len(supplied) + len(control)),
+                (start + len(units) + len(supplied) + len(control),
+                 start + len(units) + len(supplied) + len(control) + len(static)))
         values += units + supplied + control + static + self._effect_vector(obs["activeEffects"], obs)
         values += self._unit_sequence(obs.get("selectedTargetFacts") or [])
         for key in self.binding_keys:
@@ -442,9 +456,43 @@ class Encoder:
                    float(not candidate.get("choiceIds") and candidate["kind"] == "choice"),
                    float(candidate["kind"] == "pass")])
         values += ordered_vector + choice_vector + self._effect_vector(candidate.get("effects") or [], obs)
+        if not hasattr(self, "candidate_semantic_start"):
+            self.candidate_semantic_start = len(values)
+        values += self._action_semantics(obs, candidate)
         if hasattr(self, "candidate_dim") and len(values) != self.candidate_dim:
             raise ValueError("Variable candidate vector dimension")
         return values
+
+    def _action_semantics(self, obs, candidate):
+        outcomes = ("unknown", "new", "repeated", "blocked", "target", "empty")
+        facts = action_facts(obs, candidate, self.schema["regions"])
+        def token(item):
+            return (onehot(item["action"], ACTIONS) +
+                    onehot(item["country"], self.countries) +
+                    onehot(item["regionId"], self.regions) +
+                    onehot(item["unitType"], UNIT_TYPES) +
+                    onehot(item["outcome"], outcomes) +
+                    onehot(item["homeCountry"], self.countries) +
+                    [float(item["chosenLegal"]), float(item["recycled"]),
+                     min(item["same"], 3) / 3, min(item["allied"], 3) / 3,
+                     min(item["enemy"], 3) / 3, min(item["suppliedHere"], 3) / 3,
+                     float(item["supplyPoint"] is True), float(item["supplyPoint"] is None),
+                     float(item["futureTarget"])])
+        empty = token({"action": None, "country": None, "regionId": None,
+                       "unitType": None, "outcome": None, "homeCountry": None,
+                       "chosenLegal": False, "recycled": False, "same": 0,
+                       "allied": 0, "enemy": 0, "suppliedHere": 0,
+                       "supplyPoint": None, "futureTarget": False})
+        result = [value for item in facts for value in token(item)]
+        result.extend([0.0] * ((MAX_ACTION_SLOTS - len(facts)) * len(empty)))
+        opportunity = opportunity_facts(candidate)
+        result.extend([min(opportunity["extraPlayEffects"], 3) / 3,
+                       float(opportunity["replacesSpentPlay"]),
+                       float(opportunity["trueExtraPlayKnown"]),
+                       float(any(e.get("fee") for e in candidate.get("effects") or [])),
+                       float(any(e.get("kind") == "choose" for e in candidate.get("effects") or [])),
+                       min(len(obs.get("priorResults") or []), 8) / 8])
+        return result
 
     def encode(self, obs):
         if not obs["candidates"]:
@@ -544,6 +592,27 @@ def decision_rewards(previous, after, outcome, info):
             raise RuntimeError("Waste penalty does not belong to the initiating decision")
         adjusted[team_of(waste["seat"])] += REWARD_CONFIG["actionWastePenalty"]
     return base, adjusted
+
+
+def apply_reward_adjustments(rewards, samples, info):
+    """Attach delayed training-only waste to its original PPO decision.
+
+    Called after appending the current step. No opponent bonus is created, and
+    the game score in the arena is untouched.
+    """
+    applied = []
+    for item in info.get("rewardAdjustments") or ():
+        index = item["decisionId"]
+        if not isinstance(index, int) or index < 0 or index >= len(rewards) or \
+                samples[index]["seat"] != item["seat"]:
+            raise RuntimeError("Delayed waste does not belong to its originating decision")
+        penalty = item["penalty"]
+        if penalty != REWARD_CONFIG["actionWastePenalty"] or \
+                item.get("afterCap") != penalty:
+            raise RuntimeError("Unexpected action waste reward or cap")
+        rewards[index][team_of(item["seat"])] += penalty
+        applied.append(item)
+    return applied
 
 
 def assign_advantages(samples, rewards, elapsed_turns):
@@ -661,6 +730,8 @@ def play_episode(client, encoder, model, device, mode, seed, max_decisions, trac
         samples.append({"seat": seat, "state": state, "candidates": candidates,
                         "action": index, "logprob": logprob, "value": value,
                         "baseline": use_baseline or use_reference})
+        for adjustment in apply_reward_adjustments(rewards, samples, response["info"]):
+            waste_penalties[adjustment["seat"]] += 1
         choices[chosen["kind"]] += 1
         observation = response["observation"]
     if observation is not None:

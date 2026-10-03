@@ -29,7 +29,7 @@ echo Building matching game rules and replay validator...
 "%NODE_EXE%" "%PNPM_ENTRY%" build
 if errorlevel 1 goto :failed
 
-"%PYTHON_EXE%" -m scripts.ppo_compare --result-root "%RESULT_ROOT%" %*
+"%PYTHON_EXE%" -m scripts.ppo_adapt --result-root "%RESULT_ROOT%" %*
 set "PPO_EXIT=%ERRORLEVEL%"
 goto :finish
 

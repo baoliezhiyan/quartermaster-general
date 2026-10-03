@@ -149,6 +149,7 @@ class Episode:
     rewards: list = field(default_factory=list)
     base_reward_totals: dict = field(default_factory=lambda: defaultdict(float))
     waste_reasons: dict = field(default_factory=lambda: defaultdict(int))
+    waste_exemptions: dict = field(default_factory=lambda: defaultdict(int))
     waste_penalties: dict = field(default_factory=lambda: defaultdict(int))
     waste_opportunity_decisions: int = 0
     waste_opportunity_choices: int = 0
@@ -233,6 +234,7 @@ def episode_summary(episode: Episode, snapshot: dict) -> dict:
             "trainingReward": {team: sum(r[team] for r in episode.rewards)
                                for team in ("axis", "allies")},
             "wasteCheckReasons": dict(episode.waste_reasons),
+            "wasteExemptionReasons": dict(episode.waste_exemptions),
             "wastePenaltiesBySeat": dict(episode.waste_penalties),
             "wastePenaltyTotal": ppo.REWARD_CONFIG["actionWastePenalty"] *
                 sum(episode.waste_penalties.values()),
@@ -341,6 +343,13 @@ def collect_batch(clients, encoder, model, device, tasks, mode, card_set, traini
                             if waste["penalty"]:
                                 episode.waste_penalties[waste["seat"]] += 1
                         episode.rewards.append(reward)
+                        for adjustment in ppo.apply_reward_adjustments(
+                                episode.rewards, episode.samples, info):
+                            episode.waste_penalties[adjustment["seat"]] += 1
+                            episode.waste_reasons[adjustment["reason"]] += 1
+                        for assessment in info.get("wasteAssessments") or ():
+                            if not assessment["penalized"]:
+                                episode.waste_exemptions[assessment["reason"]] += 1
                         episode.elapsed.append(info["turnsAdvanced"])
                         for name in info.get("submittedCardDefinitions", []):
                             episode.submitted[name] += 1
@@ -487,7 +496,7 @@ def summarize_evaluation(games):
 def main():
     parser = argparse.ArgumentParser(description="Parallel complete-episode PPO training")
     parser.add_argument("--mode", choices=["A", "B"], required=True)
-    parser.add_argument("--experiment-id", choices=["A1", "A2"], default=None)
+    parser.add_argument("--experiment-id", choices=["A1", "A2", "A1S1"], default=None)
     parser.add_argument("--entropy-coefficient", type=float,
                         default=ppo.OPTIMIZER_CONFIG["entropy"])
     parser.add_argument("--initial-weights", type=Path, default=None)
@@ -519,7 +528,7 @@ def main():
     if not math.isfinite(args.entropy_coefficient) or args.entropy_coefficient < 0:
         parser.error("entropy coefficient must be finite and nonnegative")
     if args.experiment_id and (args.mode != "A" or args.entropy_coefficient !=
-                               {"A1": 0.01, "A2": 0.02}[args.experiment_id] or
+                               {"A1": 0.01, "A2": 0.02, "A1S1": 0.01}[args.experiment_id] or
                                not args.initial_weights or not args.expected_initial_hash):
         parser.error("A1/A2 require A resource mode, the prescribed entropy, and shared initialization")
     torch.set_num_threads(min(4, os.cpu_count() or 1))
@@ -690,6 +699,9 @@ def main():
                                   "reasons": {reason: sum(episode["wasteCheckReasons"].get(reason, 0)
                                       for episode in episodes) for reason in sorted({reason for episode in episodes
                                       for reason in episode["wasteCheckReasons"]})},
+                                  "exemptions": {reason: sum(episode["wasteExemptionReasons"].get(reason, 0)
+                                      for episode in episodes) for reason in sorted({reason for episode in episodes
+                                      for reason in episode["wasteExemptionReasons"]})},
                                   "penaltyTotal": sum(episode["wastePenaltyTotal"] for episode in episodes)},
                               "policyDistribution": {
                                   "entropyMean": sum(e["policyEntropyMean"] * e["decisions"] for e in episodes) / batch_decisions,
