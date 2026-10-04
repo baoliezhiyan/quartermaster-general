@@ -1,6 +1,7 @@
 import {airDestinations,cardOptions} from '../core/actions';
 import {boardOptions} from '../core/boardEffects';
 import {extraEffects} from '../core/extraCards';
+import {observeFacts} from '../core/factObserver';
 import {BASIC_COUNTS,BASIC_NAMES,COUNTRY_NAMES,allianceOf,reserve,seatOf} from '../core/basic';
 import {regularCatalog,specialCard} from '../core/cardCatalog';
 import {canExecuteEffects,canPayEffectFees} from '../core/resolution';
@@ -10,7 +11,7 @@ import {barbarossaTargets,cardEffects} from '../core/specialCards';
 import {createGame,transition} from '../core/game';
 import {MAP} from '../core/map';
 import {homeRegion,supplySource} from '../core/modifiers';
-import {adjacent,allianceScores,suppliedUnits,unsuppliedForPhase} from '../core/supply';
+import {adjacent,allianceScores,suppliedUnits} from '../core/supply';
 import {TRAINING_COURSE_VERSION,TRAINING_EVENT_IDS,TRAINING_EVENT_IDS_BY_SEAT,
   TRAINING_OVERRIDES_VERSION,TRAINING_A2S1_COURSE_VERSION,TRAINING_A2S1_OVERRIDES_VERSION,
   TRAINING_A2S1_IDS_BY_SEAT,TRAINING_A2S1_IDS,TRAINING_SIGNAL_IDS_BY_SEAT,
@@ -113,6 +114,75 @@ type PendingTrigger={ruleId:string;label:string;cardId:string;seat:SeatId;decisi
 type TriggerLedger=PendingTrigger&{frameId:string;positive:string[];penalized:boolean};
 type PendingTargetCheck={decisionId:number;seat:SeatId;cardId:string;frameId?:string;
   effectIndex:number;action:string;regionId:string;relatedAttempt?:boolean};
+
+type Benefit='yes'|'no'|'unknown';
+const combineBenefits=(items:Benefit[]):Benefit=>items.includes('yes')?'yes':
+  items.includes('unknown')?'unknown':'no';
+/** Only facts guaranteed by the current, visible position count as an alternative. */
+function effectBenefit(s:GameState,e:Effect):Benefit {
+  if(e.fee)return 'no';
+  if(e.kind==='choose')return combineBenefits(e.options.map(option=>
+    combineBenefits(option.effects.map(child=>effectBenefit(s,child)))));
+  if(e.kind==='action'){
+    if(e.fromBinding||e.bindAttacker)return 'unknown';
+    const plans=boardOptions(s,e);
+    if(['build_army','build_navy','recruit_army','recruit_navy'].includes(e.action))
+      return plans.some(plan=>!plan.existingId&&!plan.recycleId)?'yes':
+        plans.some(plan=>!!plan.recycleId)?'unknown':'no';
+    if(['land_battle','sea_battle','destroy','air_power'].includes(e.action))
+      return plans.some(plan=>!!plan.defenderId)?'yes':plans.some(plan=>
+        plan.mode==='deploy')?'yes':'no';
+    if(e.action==='air_deploy')return plans.some(plan=>plan.mode==='deploy')?'yes':'no';
+    return 'unknown';
+  }
+  if(e.kind==='score')return e.amount>0&&allianceOf(e.seat)===allianceOf(s.activeSeat)?'yes':'no';
+  if(e.kind==='deckTop'||e.kind==='forceHand')return allianceOf(e.seat)!==
+    allianceOf(s.activeSeat)&&
+    (e.kind==='deckTop'?s.decks[e.seat].drawPile.length+s.decks[e.seat].hand.length:
+      s.decks[e.seat].hand.length)>0&&e.count>0?'yes':'no';
+  if(e.kind==='signal')return e.tag==='INSTALL'?'yes':'no';
+  if(e.kind==='trace'||e.kind==='cancel'||e.kind==='frameChange'||e.kind==='countChange')return 'no';
+  if(e.kind==='cards'&&e.from==='hand'&&e.to==='discardPile'&&e.seat===s.activeSeat)return 'no';
+  return 'unknown';
+}
+function candidateBenefit(s:GameState,c:PpoCandidate):Benefit {
+  if(c.kind!=='source')return 'no';
+  if(c.optionId&&basicType(c.definitionId??'')){
+    const plan=cardOptions(s,c.cardId!).find(option=>option.id===c.optionId);
+    if(!plan)return 'unknown';
+    if(['build_army','build_navy'].includes(c.definitionId!))return !plan.existingId&&!plan.recycleId?'yes':
+      plan.recycleId?'unknown':'no';
+    return plan.defenderId?'yes':'no';
+  }
+  const card=[...s.decks[s.activeSeat].hand,...s.decks[s.activeSeat].active]
+    .find(item=>item.id===c.cardId);
+  if(!card)return 'unknown';
+  const effects=c.statusAction?statusActionEffects(s,card):cardEffects(s,card);
+  return combineBenefits(effects.map(effect=>effectBenefit(s,effect)));
+}
+function knownWasteStructure(effect:Effect):boolean {
+  if(effect.kind==='choose')return effect.options.every(option=>
+    option.effects.every(knownWasteStructure));
+  if(effect.kind==='signal'&&effect.tag==='INSTALL')return false;
+  return ['action','score','deckTop','forceHand','trace','signal'].includes(effect.kind);
+}
+function resolvedEventBenefit(event:NonNullable<GameState['resolution']>['events'][number],seat:SeatId):Benefit {
+  const effect=event.effect;
+  if(!effect||effect.fee)return 'no';
+  if(effect.kind==='action'){
+    if(['land_battle','sea_battle','destroy'].includes(effect.action))
+      return effect.option?.defenderId?'yes':'no';
+    if(['build_army','build_navy','recruit_army','recruit_navy','air_deploy'].includes(effect.action))
+      return event.outcome==='succeeded'&&!!effect.resultUnitId&&
+        !effect.option?.existingId?'yes':'no';
+    return 'unknown';
+  }
+  if(effect.kind==='score')return event.outcome==='succeeded'&&effect.amount>0?'yes':'no';
+  if(effect.kind==='remove')return event.outcome==='succeeded'&&
+    allianceOf(effect.unit.country)!==allianceOf(seat)?'yes':'no';
+  if(effect.kind==='signal'||effect.kind==='trace'||effect.kind==='deckTop')return 'no';
+  return 'unknown';
+}
 
 const countryIds=Object.keys(COUNTRY_NAMES) as CountryId[];
 const basicType=(id:string):id is BasicAction=>BASIC_ACTIONS.some(type=>type===id);
@@ -290,18 +360,22 @@ export class PpoTrainingArena {
     })) as unknown as Record<SeatId,Record<string,string[]>>,
     resolutionEvents:s.resolution?.events??[],resolutionScenario:s.resolution?.scenario??null});}
   private beginAction(cardId:string,definitionId:string,seat:SeatId,alternative:boolean,
-    effects:EffectFeature[],extraCard=false){
-    const possibleDefense=effects.some(e=>e.kind==='action'&&
-      ['land_battle','sea_battle','destroy'].includes(e.action??'')&&
-      (!e.regions.length||this.state.units.some(u=>e.regions.includes(u.regionId)&&
-        ['germany','italy','japan'].includes(u.country)!==
-        ['germany','italy','japan'].includes(e.country??''))));
-    const supported=!possibleDefense&&effects.every(e=>e.kind==='action'||e.kind==='deckTop'&&e.fee||
-      definitionId==='special_150'&&e.kind==='extraPlay')&&effects.length>0;
+    extraCard=false){
+    const card=Object.values(this.state.decks).flatMap(deck=>[...deck.hand,...deck.active,
+      ...deck.discardPile]).find(item=>item.id===cardId);
+    const actual=card?(this.state.decks[seat].active.some(item=>item.id===cardId)?
+      statusActionEffects(this.state,card):cardEffects(this.state,card)):[];
+    // INSTALL is a durable benefit, not an empty action. Unknown structures
+    // remain exempt until their settlement can be classified safely.
+    const supported=!!card&&actual.every(effect=>knownWasteStructure(effect)||
+      definitionId==='special_150'&&effect.kind==='extraPlay')&&
+      !actual.some(effect=>effect.kind==='signal'&&effect.tag==='INSTALL');
+    const guaranteedScore=actual.length===1&&actual[0].kind==='score'&&
+      actual[0].amount>0&&allianceOf(actual[0].seat)===allianceOf(seat);
     this.actionLedgers[cardId]={cardId,definitionId,seat,originDecisionId:this.decisionCount,
-      alternative,supported,positive:[],newUnitIds:[],usedUnitIds:[],penalized:false,extraCard,
-      supplyEligible:effects.length===1&&effects[0].kind==='action'&&
-        Object.values(this.state.decks).every(deck=>!deck.active.length&&!deck.faceDown.length),
+      alternative,supported,positive:guaranteedScore?['direct_score_effect']:[],
+      newUnitIds:[],usedUnitIds:[],penalized:false,extraCard,
+      supplyEligible:supported,
       supplyCandidates:[]};
   }
   private penalize(action:ActionLedger,reason:string,effects:string[],decisionId=action.originDecisionId,
@@ -311,7 +385,8 @@ export class PpoTrainingArena {
     this.rewardAdjustments.push({decisionId,seat,
       cardId:action.cardId,reason,penalty:-0.01,beforeCap:-0.01,afterCap:-0.01,effects});
   }
-  private recordActionEffects(before:GameState,after:GameState,command:Command){
+  private recordActionEffects(before:GameState,after:GameState,command:Command,
+    supplyRemovedIds:readonly string[]){
     const beforeIds=new Set(before.units.map(u=>u.id));
     const newEvents=after.events.slice(before.events.length);
     const commandCardId='cardId'in command?command.cardId:
@@ -335,17 +410,9 @@ export class PpoTrainingArena {
       if(effect.fee) this.feeCardsSpent+=effect.kind==='cards'?
         effect.selectedIds?.length??effect.min:effect.kind==='deckTop'?effect.count:0;
       if(effect.kind==='action'&&effect.option?.attackerId)
-        for(const placement of Object.values(this.actionLedgers))if(
+        for(const placement of Object.values(this.actionLedgers))if(effect.option.defenderId&&
           placement.newUnitIds.includes(effect.option.attackerId))
           placement.usedUnitIds.push(effect.option.attackerId);
-      if(effect.kind==='remove'&&effect.cause==='supply'){
-        for(const placement of Object.values(this.actionLedgers)){
-          if(placement.supplyEligible&&placement.newUnitIds.includes(effect.unit.id)&&
-            !placement.usedUnitIds.includes(effect.unit.id)&&!placement.positive.length)
-            this.penalize(placement,'same_turn_supply_loss',
-              [`supply_removed:${effect.unit.id}`]);
-        }
-      }
       const cardId=frames.get(event.frameId),action=cardId?this.actionLedgers[cardId]:undefined;
       const activation=this.triggerLedgers[event.frameId];
       if(activation){
@@ -355,7 +422,10 @@ export class PpoTrainingArena {
             activation.positive.push(`new_unit:${event.id}`);
           else if(['land_battle','sea_battle','destroy'].includes(effect.action)&&
             effect.option?.defenderId)activation.positive.push(`attack:${event.id}`);
-        }else if(effect.kind==='remove'||effect.kind==='score'&&effect.amount>0)
+        }else if(effect.kind==='remove'&&
+          allianceOf(effect.unit.country)!==allianceOf(activation.seat)||
+          effect.kind==='score'&&effect.amount>0&&
+          allianceOf(effect.seat)===allianceOf(activation.seat))
           activation.positive.push(`effect:${event.id}`);
       }
       if(!action)continue;
@@ -369,41 +439,65 @@ export class PpoTrainingArena {
         }else if(['land_battle','sea_battle','destroy'].includes(effect.action)&&effect.option?.defenderId){
           action.positive.push(`attack:${event.id}`);
         }
-        if(effect.option?.attackerId)action.usedUnitIds.push(effect.option.attackerId);
-      }else if(effect.kind==='score'&&effect.amount>0)action.positive.push(`score:${event.id}`);
-      else if(effect.kind==='cards'&&effect.seat!==action.seat&&effect.to==='discardPile')
+        if(effect.option?.attackerId&&effect.option.defenderId)
+          action.usedUnitIds.push(effect.option.attackerId);
+      }else if(effect.kind==='score'&&effect.amount>0&&
+        allianceOf(effect.seat)===allianceOf(action.seat))action.positive.push(`score:${event.id}`);
+      else if(effect.kind==='cards'&&allianceOf(effect.seat)!==allianceOf(action.seat)&&
+        effect.to==='discardPile'&&(effect.selectedIds?.length??0)>0)
         action.positive.push(`enemy_resource:${event.id}`);
     }
-    if(newEvents.some(event=>event.type==='RULE_EVENT'&&event.code==='SUPPLY_CLEARED')){
-      const unsupplied=new Set(unsuppliedForPhase(before,before.activeSeat));
-      for(const action of Object.values(this.actionLedgers))if(action.supplyEligible)
-        action.supplyCandidates=action.newUnitIds.filter(id=>unsupplied.has(id));
-    }
-    for(const action of Object.values(this.actionLedgers))if(action.supplyCandidates.length&&
-      action.supplyCandidates.length===action.newUnitIds.length&&
-      action.supplyCandidates.every(id=>!after.units.some(u=>u.id===id))&&
-      !action.usedUnitIds.some(id=>action.newUnitIds.includes(id))&&!action.positive.length)
-      this.penalize(action,'same_turn_supply_loss',
-        action.supplyCandidates.map(id=>`supply_removed:${id}`));
+    for(const id of supplyRemovedIds)
+      for(const action of Object.values(this.actionLedgers))if(action.supplyEligible&&
+        action.newUnitIds.includes(id)&&!action.supplyCandidates.includes(id))
+        action.supplyCandidates.push(id);
     if(newEvents.some(event=>event.type==='RULE_EVENT'&&event.code==='COUNTRY_SCORED'))
-      for(const [id,action] of Object.entries(this.actionLedgers))if(action.newUnitIds.length)
+      for(const [id,action] of Object.entries(this.actionLedgers))if(action.newUnitIds.length){
+        const allLostToSupply=action.supplyEligible&&
+          action.supplyCandidates.length===action.newUnitIds.length&&
+          action.supplyCandidates.every(unitId=>!after.units.some(u=>u.id===unitId))&&
+          !action.usedUnitIds.some(unitId=>action.newUnitIds.includes(unitId))&&
+          !action.positive.length;
+        if(allLostToSupply)
+          this.penalize(action,'same_turn_supply_loss',
+            action.supplyCandidates.map(unitId=>`supply_removed:${unitId}`));
+        this.wasteAssessments.push({decisionId:action.originDecisionId,seat:action.seat,
+          cardId:action.cardId,reason:action.penalized?'same_turn_supply_loss':
+            action.positive.length?'actual_benefit':
+            action.newUnitIds.some(unitId=>after.units.some(u=>u.id===unitId))?
+              'new_unit_survived':!action.alternative?'no_confirmed_alternative':
+              action.usedUnitIds.length?'unit_contributed':'uncertain_supply_causality',
+          actualEffects:[...action.positive],newUnitIds:[...action.newUnitIds],
+          alternative:action.alternative,penalized:action.penalized});
         delete this.actionLedgers[id];
+      }
   }
-  private assessTriggerFrames(after:GameState){
+  private assessTriggerFrames(before:GameState,after:GameState){
     for(const [frameId,activation] of Object.entries(this.triggerLedgers)){
       const frame=after.resolution?.frames.find(frame=>frame.id===frameId);
-      if(frame?.status!=='COMPLETE')continue;
-      const ownEvents=after.resolution?.events.filter(event=>event.frameId===frameId)??[];
-      const descendant=after.resolution?.events.some(event=>event.ancestorIds.some(id=>
-        ownEvents.some(parent=>parent.id===id))&&event.applied&&!!event.effect&&
-        !event.effect.fee&&event.effect.kind!=='signal')??false;
-      if(activation.supported&&!frame.cancelled&&!activation.positive.length&&!descendant){
+      const prior=before.resolution?.frames.find(frame=>frame.id===frameId);
+      if(frame?.status!=='COMPLETE'&&!(prior&&!frame))continue;
+      const history=frame?after:before;
+      const ownEvents=history.resolution?.events.filter(event=>event.frameId===frameId)??[];
+      const related=(history.resolution?.events??[]).filter(event=>event.frameId===frameId||
+        event.ancestorIds.some(id=>ownEvents.some(parent=>parent.id===id)));
+      const benefit=combineBenefits(related.map(event=>resolvedEventBenefit(event,activation.seat)));
+      const cancelled=!!(frame??prior)?.cancelled||related.some(event=>event.cancelled&&
+        event.effect?.kind==='action'&&!!event.effect.option?.defenderId);
+      if(activation.supported&&!cancelled&&!activation.positive.length&&benefit==='no'){
         activation.penalized=true;
         this.penalizedEffectFrames.add(frameId);
         this.rewardAdjustments.push({decisionId:activation.decisionId,seat:activation.seat,
           cardId:activation.cardId,reason:'optional_trigger_no_effect',penalty:-0.01,
           beforeCap:-0.01,afterCap:-0.01,effects:[activation.label]});
       }
+      this.wasteAssessments.push({decisionId:activation.decisionId,seat:activation.seat,
+        cardId:activation.cardId,reason:activation.penalized?'optional_trigger_no_effect':
+          cancelled?'rule_cancelled':activation.positive.length||benefit==='yes'?
+            'actual_benefit':benefit==='unknown'?'uncertain_effect_structure':
+            !activation.supported?'uncertain_effect_structure':'no_effect_exempt',
+        actualEffects:[...activation.positive],newUnitIds:[],alternative:true,
+        penalized:activation.penalized});
       delete this.triggerLedgers[frameId];
     }
   }
@@ -466,15 +560,26 @@ export class PpoTrainingArena {
     this.penalizedEffectFrames.clear();
   }
   private commit(command:Command){const before=this.state;
+    if(command.type==='RESOLVE_ENGINE_CHOICE'&&before.resolution?.choice?.kind==='ACTION'){
+      const choice=before.resolution.choice,activation=this.triggerLedgers[choice.frameId??''];
+      const frame=before.resolution.frames.find(item=>item.id===choice.frameId);
+      const effect=frame?.effects[frame.nextEffectIndex];
+      if(activation&&effect?.kind==='action'&&command.ids.length){
+        const plans=boardOptions(before,effect).filter(plan=>command.ids.includes(
+          choice.field==='option'?plan.id:choice.field==='regionId'?plan.regionId:
+            choice.field==='defenderId'?plan.defenderId??'empty':plan.attackerId??''));
+        if(plans.some(plan=>!!plan.defenderId||
+          ['build_army','build_navy','recruit_army','recruit_navy','air_deploy'].includes(
+            effect.action)&&!plan.existingId))activation.positive.push('valid_action_attempt');
+      }
+    }
     if(command.type==='RESOLVE_ENGINE_CHOICE'&&before.resolution?.choice?.kind==='TRIGGER'&&
       command.ids.length){
       const option=command.ids[0];
       const rule=before.resolution.rules.find(rule=>option.endsWith('/'+rule.id));
       if(rule&&rule.sourceInstanceId.startsWith(rule.owner+':special_')){
         const nonfee=rule.effects.filter(effect=>!effect.fee);
-        const supported=nonfee.length===1&&nonfee[0].kind==='action'&&
-          ['build_army','build_navy','recruit_army','recruit_navy','destroy'].includes(nonfee[0].action)&&
-          rule.effects.every(effect=>effect.fee||effect===nonfee[0]);
+        const supported=nonfee.length>0&&nonfee.every(knownWasteStructure);
         this.pendingTriggers.push({ruleId:rule.id,label:rule.label,cardId:rule.sourceInstanceId,
           seat:rule.owner,decisionId:this.decisionCount,
           definitionId:rule.sourceInstanceId.split(':')[1],supported});
@@ -491,8 +596,16 @@ export class PpoTrainingArena {
       for(const card of extraSubmitted){
         const instance=Object.values(before.decks).flatMap(deck=>
           [...deck.hand,...deck.drawPile,...deck.discardPile]).find(item=>item.id===card.id);
-        if(instance)this.beginAction(card.id,card.definitionId,choice?.seat??before.activeSeat,
-          false,effectSequence(before,instance,this.unitFact),true);
+        if(instance){
+          const alternatives=choice?.options.filter(option=>option.id!==card.id).some(option=>{
+            const other=Object.values(before.decks).flatMap(deck=>
+              [...deck.hand,...deck.drawPile,...deck.discardPile]).find(item=>item.id===option.id);
+            return other&&combineBenefits(cardEffects(before,other).map(effect=>
+              effectBenefit(before,effect)))==='yes';
+          })??false;
+          this.beginAction(card.id,card.definitionId,choice?.seat??before.activeSeat,
+            alternatives,true);
+        }
       }
     }
     const responseCardId=command.type==='RESOLVE_ENGINE_CHOICE'&&
@@ -520,7 +633,13 @@ export class PpoTrainingArena {
       }
     }
     for(const unit of before.units)this.knownUnits[unit.id]={country:unit.country,type:unit.type,regionId:unit.regionId};
-    const outcome=transition(before,command);
+    const supplyRemovedIds:string[]=[];
+    const outcome=observeFacts((_state,boundary)=>{
+      if(boundary.code==='unit_removed'){
+        const details=boundary.details as {cause?:string;unit?:Unit}|undefined;
+        if(details?.cause==='supply'&&details.unit)supplyRemovedIds.push(details.unit.id);
+      }
+    },()=>transition(before,command));
     if(!outcome.ok)throw new Error(`Core rejected ${command.type}: ${outcome.error}`);
     for(const check of relatedChoices)check.relatedAttempt=true;
     this.state=outcome.state;
@@ -533,8 +652,8 @@ export class PpoTrainingArena {
       this.triggerLedgers[frame.id]={...pending,frameId:frame.id,positive:[],penalized:false};
     }
     if(!before.resolution?.running&&this.state.resolution?.running)this.resolutionEventOutcomes={};
-    this.recordActionEffects(before,this.state,command);
-    this.assessTriggerFrames(this.state);
+    this.recordActionEffects(before,this.state,command,supplyRemovedIds);
+    this.assessTriggerFrames(before,this.state);
     const previousEvents=before.resolution?.events??[],currentEvents=this.state.resolution?.events??[];
     const resolutionSwitched=!!before.resolution?.running&&(
       before.phase!==this.state.phase||currentEvents.length<previousEvents.length||
@@ -927,9 +1046,7 @@ export class PpoTrainingArena {
       candidate.choices?.[0]?.kind==='action_plan'&&!candidate.choices[0].repeated&&
       candidate.optionId?.endsWith(':'));
     const hasStockAlternative=obs.candidates.some(candidate=>candidate.kind==='source'&&
-      (candidate.definitionId==='build_army'||candidate.definitionId==='build_navy')&&
-      candidate.choices?.[0]?.kind==='action_plan'&&!candidate.choices[0].repeated&&
-      candidate.optionId?.endsWith(':'));
+      candidate.id!==selected.id&&candidateBenefit(s,candidate)==='yes');
     const noInstalledEffects=Object.values(s.decks).every(deck=>!deck.active.length&&!deck.faceDown.length);
     const opportunityIds=hasStockAlternative&&noInstalledEffects?obs.candidates.filter(candidate=>
       candidate.kind==='source'&&!!candidate.optionId&&
@@ -948,7 +1065,7 @@ export class PpoTrainingArena {
     else if(selected.kind==='source'){
       if(selected.statusAction){
         this.beginAction(selected.cardId!,selected.definitionId!,s.activeSeat,
-          !!hasStockAlternative,selected.effects??[]);
+          !!hasStockAlternative);
         this.commit({type:'STATUS_ACTION',seat:s.activeSeat,expectedRevision:s.revision,
           cardId:selected.cardId!,guided:true});
       }else {
@@ -958,7 +1075,7 @@ export class PpoTrainingArena {
           action.usedUnitIds.push(used);
       }
       this.beginAction(selected.cardId!,selected.definitionId!,s.activeSeat,
-        !!hasStockAlternative,selected.effects??[]);
+        !!hasStockAlternative);
       if(selected.definitionId==='special_162'&&barbarossaTargets(s).length)this.pendingCardId=selected.cardId!;
       else if(selected.optionId){
         if(this.header.cardSet==='signals'&&basicBuild&&buildPlan?.repeated&&validAlternative)
@@ -1041,14 +1158,13 @@ export class PpoTrainingArena {
     for(const outcome of this.completedThisStep){
       const ledger=this.actionLedgers[outcome.id];if(!ledger)continue;
       if(outcome.outcome==='resolved'&&!basicType(ledger.definitionId)&&
-        !ledger.positive.length&&!ledger.newUnitIds.length&&
-        ledger.supported&&!ledger.extraCard)
+        !ledger.positive.length&&!ledger.newUnitIds.length&&ledger.supported)
         this.penalize(ledger,ledger.definitionId==='special_150'?'white_plan_empty_recruit':
           'whole_action_no_effect',[`resolved:${ledger.definitionId}`]);
       const reason=outcome.outcome==='cancelled'?'rule_cancelled':ledger.penalized?'penalized':
         ledger.positive.length?'actual_benefit':ledger.newUnitIds.length?'new_unit_pending_supply':
         !ledger.alternative?'no_confirmed_alternative':!ledger.supported?'uncertain_effect_structure':
-        ledger.extraCard?'extra_play_cost_uncertain':'no_effect_exempt';
+        'no_effect_exempt';
       this.wasteAssessments.push({decisionId:ledger.originDecisionId,seat:ledger.seat,
         cardId:ledger.cardId,reason,actualEffects:[...ledger.positive],
         newUnitIds:[...ledger.newUnitIds],alternative:ledger.alternative,

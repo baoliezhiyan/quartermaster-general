@@ -63,7 +63,7 @@ REWARD_CONFIG = {"gamma": GAMMA, "lambdaRound": LAMBDA_ROUND, "potential": POTEN
 def reward_config(card_set):
     if card_set == "signals":
         return {**REWARD_CONFIG,
-                "actionWasteVersion": "complete-action-and-deferred-target-v2"}
+                "actionWasteVersion": "complete-action-settled-benefit-v3"}
     return REWARD_CONFIG
 ENCODER_DICTIONARY = {"effectKinds": EFFECT_KINDS, "actions": ACTIONS, "phases": PHASES,
                       "choiceKinds": CHOICE_KINDS, "choiceFields": CHOICE_FIELDS,
@@ -1097,7 +1097,7 @@ def restore_checkpoint(path, model, optimizer, encoder, client, mode, rng, card_
                              "87b7fa23046c8a38a0bb06623085ad414353f413fad16c976a56544bb924c8d2")
     if not source_compatible:
         raise ValueError("Checkpoint trainer source differs")
-    if experiment_id == "A2S1" and saved.get("update", 0) > 1 and saved.get("samplingConfig") != {
+    if experiment_id in ("A2S1", "A2S1W1") and saved.get("update", 0) > 1 and saved.get("samplingConfig") != {
             "version": "chunk-shuffle-epoch-v1", "cacheLimitBytes": 1536 * 1024 ** 2,
             "prefetchLimitBytes": 256 * 1024 ** 2, "gradientMicrobatch": 64,
             "logicalMinibatch": 256, "epochs": 4}:

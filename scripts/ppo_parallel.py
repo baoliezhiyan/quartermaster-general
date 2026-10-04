@@ -167,6 +167,7 @@ class Episode:
     base_reward_totals: dict = field(default_factory=lambda: defaultdict(float))
     waste_reasons: dict = field(default_factory=lambda: defaultdict(int))
     waste_exemptions: dict = field(default_factory=lambda: defaultdict(int))
+    waste_exemptions_by_card: dict = field(default_factory=lambda: defaultdict(lambda: defaultdict(int)))
     waste_penalties: dict = field(default_factory=lambda: defaultdict(int))
     waste_opportunity_decisions: int = 0
     waste_opportunity_choices: int = 0
@@ -266,6 +267,8 @@ def episode_summary(episode: Episode, snapshot: dict) -> dict:
                                for team in ("axis", "allies")},
             "wasteCheckReasons": dict(episode.waste_reasons),
             "wasteExemptionReasons": dict(episode.waste_exemptions),
+            "wasteExemptionsByCard": {card: dict(reasons) for card, reasons in
+                                      episode.waste_exemptions_by_card.items()},
             "wastePenaltiesBySeat": dict(episode.waste_penalties),
             "wastePenaltyTotal": ppo.REWARD_CONFIG["actionWastePenalty"] *
                 sum(episode.waste_penalties.values()),
@@ -386,6 +389,8 @@ def collect_batch(clients, encoder, model, device, tasks, mode, card_set, traini
                         for assessment in info.get("wasteAssessments") or ():
                             if not assessment["penalized"]:
                                 episode.waste_exemptions[assessment["reason"]] += 1
+                                card_id = assessment["cardId"].split(":")[1]
+                                episode.waste_exemptions_by_card[card_id][assessment["reason"]] += 1
                         episode.elapsed.append(info["turnsAdvanced"])
                         for name in info.get("submittedCardDefinitions", []):
                             episode.submitted[name] += 1
@@ -546,7 +551,7 @@ def summarize_evaluation(games):
 def main():
     parser = argparse.ArgumentParser(description="Parallel complete-episode PPO training")
     parser.add_argument("--mode", choices=["A", "B"], required=True)
-    parser.add_argument("--experiment-id", choices=["A1", "A2", "A1S1", "S2FLAT", "S2MAP", "A1S2", "A2S1"], default=None)
+    parser.add_argument("--experiment-id", choices=["A1", "A2", "A1S1", "S2FLAT", "S2MAP", "A1S2", "A2S1", "A2S1W1"], default=None)
     parser.add_argument("--architecture", choices=["flat-v1-effective-straits",
         "shared-regions-actor-adjacency-ordered-actions-v2", "map-contextual-opening-adapter-v1",
         "map-contextual-opening-adapter-a2s1-v1"], default=None)
@@ -587,7 +592,8 @@ def main():
         parser.error("entropy coefficient must be finite and nonnegative")
     if args.experiment_id and (args.mode != "A" or args.entropy_coefficient !=
                                {"A1": 0.01, "A2": 0.02, "A1S1": 0.01,
-                                "S2FLAT": 0.01, "S2MAP": 0.01, "A1S2": 0.01, "A2S1": 0.01}[args.experiment_id] or
+                                "S2FLAT": 0.01, "S2MAP": 0.01, "A1S2": 0.01,
+                                "A2S1": 0.01, "A2S1W1": 0.01}[args.experiment_id] or
                                not args.initial_weights or not args.expected_initial_hash):
         parser.error("A1/A2 require A resource mode, the prescribed entropy, and shared initialization")
     from scripts.ppo_network_factory import STAGE2_EXPERIMENTS, ACTIVE_EXPERIMENTS, make_network
@@ -603,7 +609,7 @@ def main():
             parser.error("Invalid A1S2 auxiliary configuration")
     elif args.auxiliary_data is not None or args.no_auxiliary:
         parser.error("Auxiliary learning is exclusive to A1S2")
-    if args.experiment_id == "A2S1" and args.card_set != "signals":
+    if args.experiment_id in ("A2S1", "A2S1W1") and args.card_set != "signals":
         parser.error("A2S1 requires the signals course")
     torch.set_num_threads(min(4, os.cpu_count() or 1))
     device = torch.device("cpu" if args.cpu or not torch.cuda.is_available() else "cuda")
@@ -628,6 +634,12 @@ def main():
                                                 "candidateDim": encoder.candidate_dim} or
                     args.architecture is not None and initial.get("networkArchitecture") != args.architecture):
                     raise ValueError("Comparison initialization schema differs")
+                if args.experiment_id == "A2S1W1" and (
+                        initial.get("experimentId") != "A2S1W1" or
+                        initial.get("rewardConfig") != ppo.reward_config("signals") or
+                        initial.get("sourceExperimentId") != "A2S1" or
+                        initial.get("optimizerMigration") != "new-Adam-no-old-momentum"):
+                    raise ValueError("A2S1W1 requires its explicit v3 reward migration initializer")
                 model.load_state_dict(initial["modelState"])
             initial_hash = ppo.model_weights_sha256(model)
             if args.expected_initial_hash and initial_hash != args.expected_initial_hash:
@@ -666,7 +678,7 @@ def main():
                     ["git", "status", "--porcelain"], cwd=ppo.ROOT, text=True).strip())
             except (OSError, subprocess.CalledProcessError):
                 source_commit, source_dirty = None, None
-            gradient_microbatch = (64 if args.experiment_id == "A2S1" else
+            gradient_microbatch = (64 if args.experiment_id in ("A2S1", "A2S1W1") else
                                    32 if args.experiment_id in ("S2MAP", "A1S2") else
                                    ppo.OPTIMIZER_CONFIG["minibatch"])
             report = {"mode": args.mode, "experimentId": args.experiment_id,
@@ -716,7 +728,7 @@ def main():
                 for obsolete in ("baselineEvaluation", "baselineEvaluationSeconds", "evaluations"):
                     report.pop(obsolete, None)
             report["gradientMicrobatch"] = gradient_microbatch
-            if args.experiment_id == "A2S1":
+            if args.experiment_id in ("A2S1", "A2S1W1"):
                 report["performanceMigration"] = {
                     "parentCheckpointSha256": args.approved_resume_parent_sha256,
                     "fromUpdate": start_update, "effectiveFromUpdate": start_update + 1,
@@ -743,7 +755,7 @@ def main():
                          f"{ordinal((update - 1) // 10 + 1, '轮')} · "
                          f"{ordinal((update - 1) % 10 + 1, '次更新')}")
                 store = TrajectoryStore(args.mode, update, root=trajectory_root,
-                    read_limit=(1536 * 1024 ** 2 if args.experiment_id == "A2S1" else 16 * 1024 ** 2))
+                    read_limit=(1536 * 1024 ** 2 if args.experiment_id in ("A2S1", "A2S1W1") else 16 * 1024 ** 2))
                 phases = {"beforeCollection": phase_resources(clients, store, device)}
                 result = None
                 try:
@@ -761,7 +773,7 @@ def main():
                                                      entropy_coefficient=args.entropy_coefficient,
                                                      gradient_microbatch=gradient_microbatch,
                                                      sampling=("chunk-shuffle-epoch-v1" if
-                                                         args.experiment_id == "A2S1" else
+                                                         args.experiment_id in ("A2S1", "A2S1W1") else
                                                          "global-shuffle-v1"))
                             auxiliary_metrics = (ppo_auxiliary.update(model, optimizer,
                                 auxiliary_bundle, device,
@@ -786,7 +798,7 @@ def main():
                             "cacheLimitBytes": 1536 * 1024 ** 2,
                             "prefetchLimitBytes": 256 * 1024 ** 2,
                             "gradientMicrobatch": 64, "logicalMinibatch": 256,
-                            "epochs": 4} if args.experiment_id == "A2S1" else None))
+                            "epochs": 4} if args.experiment_id in ("A2S1", "A2S1W1") else None))
                     args.checkpoint.parent.mkdir(parents=True, exist_ok=True)
                     temporary = args.checkpoint.with_suffix(".tmp")
                     torch.save(payload, temporary)
@@ -839,6 +851,12 @@ def main():
                                   "exemptions": {reason: sum(episode["wasteExemptionReasons"].get(reason, 0)
                                       for episode in episodes) for reason in sorted({reason for episode in episodes
                                       for reason in episode["wasteExemptionReasons"]})},
+                                  "exemptionsByCard": {card: {reason: sum(episode.get(
+                                      "wasteExemptionsByCard", {}).get(card, {}).get(reason, 0)
+                                      for episode in episodes) for reason in sorted({reason for episode in episodes
+                                      for reason in episode.get("wasteExemptionsByCard", {}).get(card, {})})}
+                                      for card in sorted({card for episode in episodes
+                                      for card in episode.get("wasteExemptionsByCard", {})})},
                                   "penaltyTotal": sum(episode["wastePenaltyTotal"] for episode in episodes)},
                               "policyDistribution": {
                                   "entropyMean": sum(e["policyEntropyMean"] * e["decisions"] for e in episodes) / batch_decisions,

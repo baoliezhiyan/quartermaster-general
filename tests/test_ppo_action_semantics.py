@@ -212,6 +212,19 @@ class ActionSemanticsTests(unittest.TestCase):
                 self.assertEqual((adjustments[0]["decisionId"], adjustments[0]["seat"]),
                                  (0, "germany"))
 
+    def test_delayed_waste_changes_only_originating_team_reward(self):
+        rewards = [{"axis": 0.4, "allies": -0.2},
+                   {"axis": 0.7, "allies": 0.3}]
+        samples = [{"seat": "germany"}, {"seat": "united_kingdom"}]
+        info = {"rewardAdjustments": [{"decisionId": 0, "seat": "germany",
+                 "cardId": "germany:special_137:probe", "reason": "optional_trigger_no_effect",
+                 "penalty": -0.01, "afterCap": -0.01}]}
+        applied = apply_reward_adjustments(rewards, samples, info)
+        self.assertEqual(len(applied), 1)
+        self.assertAlmostEqual(rewards[0]["axis"], 0.39)
+        self.assertEqual(rewards[0]["allies"], -0.2)
+        self.assertEqual(rewards[1], {"axis": 0.7, "allies": 0.3})
+
 
 if __name__ == "__main__":
     unittest.main()
