@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import random
@@ -26,6 +27,7 @@ OUTPUT = ROOT / "A2S1"
 SEED = 20266930
 WORKERS = 8
 FIXED_EVAL_SEEDS = (20600001, 20600002)
+UPDATE1_SHA256 = "6d3833a41b39b2b78f762fd4d694188e728ecf898e608c9793324211309dd3c6"
 
 
 def initial():
@@ -78,6 +80,9 @@ def show(start, plan, updates):
     print(f"当前已完成更新 {updates}，成果轮次 {completed_rounds()}。")
     if plan:
         print(f"未完成计划：从第{plan['fromRound']}轮新增{plan['addedRounds']}轮，目标第{plan['targetRound']}轮。")
+        print(f"恢复预览：已完成{updates}次更新/{updates*40}局；目标{plan['targetRound']*10}次更新；"
+              f"还需{plan['targetRound']*10-updates}次更新/"
+              f"{(plan['targetRound']*10-updates)*40}局。未完成的更新将重新采集。")
 
 
 def evaluate(checkpoint, start, target):
@@ -141,6 +146,10 @@ def complete_round(number, start, dry_run=False):
                    "--seed", str(SEED), "--checkpoint", str(CHECKPOINT), "--report", str(REPORT)]
         if current:
             command.append("--resume")
+        if current == 1:
+            if hashlib.sha256(CHECKPOINT.read_bytes()).hexdigest() != UPDATE1_SHA256:
+                raise ValueError("更新1恢复点哈希变化，拒绝自动迁移")
+            command += ["--approved-resume-parent-sha256", UPDATE1_SHA256]
         subprocess.run(command, cwd=ppo.ROOT, check=True)
     OUTPUT.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix=f".a2s1-round-{number:03d}-", dir=OUTPUT) as temporary:
@@ -179,17 +188,24 @@ def run(args):
                 "initialWeightsSha256": start["weightsSha256"], "trainingSeed": SEED}
         if not args.dry_run:
             save_plan(plan)
-    elif args.command == "continue":
+    elif args.command in ("continue", "resume-original"):
         if not plan:
             raise RuntimeError("没有未完成的A2S1计划")
+        if args.command == "resume-original" and (updates != 1 or plan["targetRound"] != 2 or
+                hashlib.sha256(CHECKPOINT.read_bytes()).hexdigest() != UPDATE1_SHA256):
+            raise RuntimeError("原两轮计划的更新1恢复点不匹配；不会新增训练预算")
     else:
         raise ValueError("Unknown command")
     if plan["initialWeightsSha256"] != start["weightsSha256"] or plan["trainingSeed"] != SEED:
         raise ValueError("运行计划与A2S1起点不一致")
     show(start, plan, updates)
     if args.dry_run:
+        projected_update = updates
         for number in range(plan["fromRound"], plan["targetRound"] + 1):
-            complete_round(number, start, dry_run=True)
+            target_update = number * 10
+            print(f"A2S1 第{number}轮：更新 {projected_update}→{target_update}，"
+                  f"{max(0, target_update-projected_update)*40}局（预览，不启动）。")
+            projected_update = max(projected_update, target_update)
         return
     for number in range(plan["fromRound"], plan["targetRound"] + 1):
         complete_round(number, start)
@@ -200,19 +216,27 @@ def run(args):
 
 def main():
     parser = argparse.ArgumentParser(description="A2S1 course, manual round driver")
-    parser.add_argument("command", choices=["show", "new", "continue", "interactive"])
+    parser.add_argument("command", choices=["show", "new", "continue", "resume-original", "interactive"])
     parser.add_argument("rounds", type=int, nargs="?")
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args()
     if args.command == "interactive":
         start = initial()
         plan = read_plan()
-        show(start, plan, progress(start))
+        current_update = progress(start)
+        show(start, plan, current_update)
         if plan:
-            choice = input("输入 C 继续原计划，D 只预览，其他键退出：").strip().upper()
-            if choice not in ("C", "D"):
+            if current_update == 1:
+                prompt = "输入 R 从第1次更新恢复原两轮计划（到第20次更新），D 只预览，其他键退出："
+                continue_choice = "R"
+            else:
+                prompt = "输入 C 从最近完整更新继续原计划，D 只预览，其他键退出："
+                continue_choice = "C"
+            choice = input(prompt).strip().upper()
+            if choice not in (continue_choice, "D"):
                 return
-            args.command = "continue";args.dry_run = choice == "D"
+            args.command = "resume-original" if current_update == 1 else "continue"
+            args.dry_run = choice == "D"
         else:
             text = input("本次新增轮数（默认2；输入 D 预览2轮）：").strip()
             args.command = "new";args.dry_run = text.upper() == "D"

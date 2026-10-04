@@ -14,11 +14,12 @@ import random
 import subprocess
 import sys
 import time
-from collections import defaultdict
+from collections import Counter, defaultdict
 from dataclasses import dataclass
 from pathlib import Path
 
 import torch
+import numpy as np
 from torch import nn
 from torch.distributions import Categorical
 
@@ -329,7 +330,9 @@ class Encoder:
         facts = effect.get(fact_field) or []
         if facts or not ids:
             return facts
-        by_id = {unit["id"]: unit for unit in obs["units"]}
+        by_id = getattr(self, "_encoding_context", {}).get("unitsById")
+        if by_id is None:
+            by_id = {unit["id"]: unit for unit in obs["units"]}
         if any(target not in by_id for target in ids):
             if field == "selectedIds":
                 return [by_id[target] for target in ids if target in by_id]
@@ -447,8 +450,10 @@ class Encoder:
                 raise ValueError("A2S1 observation lacks card or dynamic map facts")
             for seat in self.seats:
                 active = visible["active"][seat]
-                values.extend(min(active.count(card), 4) / 4 for card in self.cards)
-            values.extend(min(visible["ownFaceDown"].count(card), 4) / 4
+                counts = Counter(active)
+                values.extend(min(counts[card], 4) / 4 for card in self.cards)
+            face_down_counts = Counter(visible["ownFaceDown"])
+            values.extend(min(face_down_counts[card], 4) / 4
                           for card in self.cards)
             values.extend(min(visible["otherFaceDownCount"][seat], 10) / 10
                           for seat in self.seats)
@@ -475,6 +480,9 @@ class Encoder:
         return values
 
     def encode_candidate(self, obs, candidate):
+        by_id = getattr(self, "_encoding_context", {}).get("unitsById")
+        if by_id is None:
+            by_id = {unit["id"]: unit for unit in obs["units"]}
         targets = [0.0] * len(self.regions)
         country_targets = [0.0] * len(self.countries)
         for target in (candidate.get("targetIds") or []) + (candidate.get("choiceIds") or []):
@@ -483,7 +491,7 @@ class Encoder:
             elif target in self.countries:
                 country_targets[self.countries.index(target)] = 1.0
             else:
-                unit = next((u for u in obs["units"] if u["id"] == target), None)
+                unit = by_id.get(target)
                 if unit:
                     targets[self.region_index[unit["regionId"]]] = 1.0
                     country_targets[self.countries.index(unit["country"])] = 1.0
@@ -496,7 +504,7 @@ class Encoder:
                 definition = parts[1]
         ordered = []
         for target in (candidate.get("targetIds") or []) + (candidate.get("choiceIds") or []):
-            unit = next((u for u in obs["units"] if u["id"] == target), None)
+            unit = by_id.get(target)
             if unit:
                 ordered.append(unit)
             elif target in self.region_index:
@@ -556,7 +564,8 @@ class Encoder:
 
     def _action_semantics(self, obs, candidate):
         outcomes = ("unknown", "new", "repeated", "blocked", "target", "empty")
-        facts = action_facts(obs, candidate, self.schema["regions"], self.max_action_slots)
+        facts = action_facts(obs, candidate, self.schema["regions"], self.max_action_slots,
+                             getattr(self, "_encoding_context", None))
         def token(item):
             return (onehot(item["action"], ACTIONS) +
                     onehot(item["country"], self.countries) +
@@ -588,10 +597,29 @@ class Encoder:
     def encode(self, obs):
         if not obs["candidates"]:
             raise ValueError("No legal candidates")
-        state = torch.tensor(self.encode_state(obs), dtype=torch.float32)
-        candidates = torch.tensor([self.encode_candidate(obs, c) for c in obs["candidates"]],
-                                  dtype=torch.float32)
-        return state, candidates
+        by_region = {}
+        for unit in obs["units"]:
+            by_region.setdefault(unit["regionId"], []).append(unit)
+        self._encoding_context = {"unitsById": {u["id"]: u for u in obs["units"]},
+                                  "unitsByRegion": by_region,
+                                  "regions": self.region_data,
+                                  "supplied": set(obs["suppliedUnitIds"])}
+        try:
+            state = torch.from_numpy(np.asarray(self.encode_state(obs), dtype=np.float32))
+            array = np.empty((len(obs["candidates"]), self.candidate_dim), dtype=np.float32)
+            for index, candidate in enumerate(obs["candidates"]):
+                array[index] = self.encode_candidate(obs, candidate)
+            return state, torch.from_numpy(array)
+        finally:
+            del self._encoding_context
+
+    def encode_reference(self, obs):
+        """Pre-optimization path retained for exact observation regression tests."""
+        if not obs["candidates"]:
+            raise ValueError("No legal candidates")
+        return (torch.tensor(self.encode_state(obs), dtype=torch.float32),
+                torch.tensor([self.encode_candidate(obs, candidate)
+                              for candidate in obs["candidates"]], dtype=torch.float32))
 
 
 class PpoNetwork(nn.Module):
@@ -883,8 +911,15 @@ def play_episode(client, encoder, model, device, mode, seed, max_decisions, trac
             "remainingBySeat": remaining_by_seat, "discardedBySeat": discarded_by_seat}
 
 
+def _is_cuda_oom(error, device):
+    return (device.type == "cuda" and
+            isinstance(error, (torch.cuda.OutOfMemoryError, torch.AcceleratorError)) and
+            "out of memory" in str(error).lower())
+
+
 def ppo_update(model, optimizer, samples, device, rng, epochs=4, minibatch=256,
-               entropy_coefficient=None, gradient_microbatch=None):
+               entropy_coefficient=None, gradient_microbatch=None,
+               sampling="global-shuffle-v1"):
     entropy_coefficient = (OPTIMIZER_CONFIG["entropy"] if entropy_coefficient is None
                            else entropy_coefficient)
     if not math.isfinite(entropy_coefficient) or entropy_coefficient < 0:
@@ -898,6 +933,7 @@ def ppo_update(model, optimizer, samples, device, rng, epochs=4, minibatch=256,
     metadata = samples.training_metadata() if hasattr(samples, "training_metadata") else samples
     useful_positions = [i for i, item in enumerate(metadata) if not item["baseline"]]
     useful = [metadata[i] for i in useful_positions]
+    metadata_index = {position: index for index, position in enumerate(useful_positions)}
     if not useful:
         raise ValueError("No policy decisions to update")
     advantage = torch.tensor([item["advantage"] for item in useful], dtype=torch.float32, device=device)
@@ -907,46 +943,69 @@ def ppo_update(model, optimizer, samples, device, rng, epochs=4, minibatch=256,
     else:
         advantage = advantage - mean
     losses, entropies, clip_fracs, kls, gradients = [], [], [], [], []
-    for _ in range(epochs):
-        order = list(range(len(useful)))
-        rng.shuffle(order)
-        for start in range(0, len(order), minibatch):
-            indices = order[start:start + minibatch]
-            batch = (samples.load_batch([useful_positions[i] for i in indices])
+    oom_fallbacks = []
+    for epoch in range(epochs):
+        if sampling == "chunk-shuffle-epoch-v1":
+            if not hasattr(samples, "epoch_batches"):
+                raise ValueError("Chunk sampler requires a trajectory store")
+            # Only integer sample indices are held here, never decoded payloads.
+            batches = list(samples.epoch_batches(useful_positions, rng, minibatch))
+        elif sampling == "global-shuffle-v1":
+            order = list(useful_positions)
+            rng.shuffle(order)
+            batches = (order[start:start + minibatch]
+                       for start in range(0, len(order), minibatch))
+        else:
+            raise ValueError(f"Unknown PPO sampling configuration: {sampling}")
+        for batch_number, positions in enumerate(batches):
+            indices = [metadata_index[position] for position in positions]
+            batch = (samples.load_batch(positions)
                      if hasattr(samples, "load_batch") else [useful[i] for i in indices])
-            if hasattr(samples, "prefetch") and start + minibatch < len(order):
-                following = order[start + minibatch:start + 2 * minibatch]
-                samples.prefetch([useful_positions[i] for i in following])
-            optimizer.zero_grad(set_to_none=True)
-            # One optimizer step still uses the original shuffled 256 samples.
-            # Only the GPU forward/backward working set is smaller; weighting
-            # each piece by its actual size preserves the mean loss, including
-            # the final short PPO minibatch and unequal final microbatch.
-            batch_loss = batch_entropy = batch_clip = batch_kl = 0.0
-            for offset in range(0, len(batch), gradient_microbatch):
-                piece = batch[offset:offset + gradient_microbatch]
-                logits, values = model(*batch_tensors(piece, device))
-                distribution = Categorical(logits=logits)
-                actions = torch.tensor([item["action"] for item in piece], device=device)
-                old_logprob = torch.tensor([item["logprob"] for item in piece], device=device)
-                targets = torch.tensor([item["target"] for item in piece], device=device)
-                logprob = distribution.log_prob(actions)
-                ratio = (logprob - old_logprob).exp()
-                local_advantage = advantage[indices[offset:offset + len(piece)]]
-                policy_loss = -torch.minimum(ratio * local_advantage,
-                                              ratio.clamp(0.8, 1.2) * local_advantage).mean()
-                value_loss = (values - targets).square().mean()
-                entropy = distribution.entropy().mean()
-                loss = (policy_loss + OPTIMIZER_CONFIG["valueCoefficient"] * value_loss -
-                        entropy_coefficient * entropy)
-                weight = len(piece) / len(batch)
-                (loss * weight).backward()
-                batch_loss += float(loss.detach()) * weight
-                batch_entropy += float(entropy.detach()) * weight
-                batch_clip += float(((ratio.detach() - 1).abs() > 0.2).float().mean()) * weight
-                batch_kl += float((old_logprob - logprob).detach().mean()) * weight
-                del logits, values, distribution, actions, old_logprob, targets
-                del logprob, ratio, local_advantage, policy_loss, value_loss, entropy, loss
+            if sampling == "chunk-shuffle-epoch-v1" and batch_number + 1 < len(batches):
+                samples.prefetch(batches[batch_number + 1])
+            microbatch = gradient_microbatch
+            while True:
+                optimizer.zero_grad(set_to_none=True)
+                # Every retry starts the same logical batch from its first sample.
+                # The actual piece size preserves the 256-sample mean objective.
+                batch_loss = batch_entropy = batch_clip = batch_kl = 0.0
+                try:
+                    for offset in range(0, len(batch), microbatch):
+                        piece = batch[offset:offset + microbatch]
+                        logits, values = model(*batch_tensors(piece, device))
+                        distribution = Categorical(logits=logits)
+                        actions = torch.tensor([item["action"] for item in piece], device=device)
+                        old_logprob = torch.tensor([item["logprob"] for item in piece], device=device)
+                        targets = torch.tensor([item["target"] for item in piece], device=device)
+                        logprob = distribution.log_prob(actions)
+                        ratio = (logprob - old_logprob).exp()
+                        local_advantage = advantage[indices[offset:offset + len(piece)]]
+                        policy_loss = -torch.minimum(ratio * local_advantage,
+                                                      ratio.clamp(0.8, 1.2) * local_advantage).mean()
+                        value_loss = (values - targets).square().mean()
+                        entropy = distribution.entropy().mean()
+                        loss = (policy_loss + OPTIMIZER_CONFIG["valueCoefficient"] * value_loss -
+                                entropy_coefficient * entropy)
+                        weight = len(piece) / len(batch)
+                        (loss * weight).backward()
+                        batch_loss += float(loss.detach()) * weight
+                        batch_entropy += float(entropy.detach()) * weight
+                        batch_clip += float(((ratio.detach() - 1).abs() > 0.2).float().mean()) * weight
+                        batch_kl += float((old_logprob - logprob).detach().mean()) * weight
+                        del logits, values, distribution, actions, old_logprob, targets
+                        del logprob, ratio, local_advantage, policy_loss, value_loss, entropy, loss
+                    break
+                except (torch.cuda.OutOfMemoryError, torch.AcceleratorError) as exc:
+                    if not _is_cuda_oom(exc, device) or microbatch <= 16:
+                        raise
+                    optimizer.zero_grad(set_to_none=True)
+                    next_size = 32 if microbatch > 32 else 16
+                    oom_fallbacks.append({"epoch": epoch + 1, "batchSize": len(batch),
+                                          "maxCandidates": max(item["candidates"].shape[0] for item in batch),
+                                          "from": microbatch, "to": next_size})
+                    microbatch = next_size
+                if microbatch != gradient_microbatch and device.type == "cuda":
+                    torch.cuda.empty_cache()
             gradients.append(float(nn.utils.clip_grad_norm_(model.parameters(), 0.5)))
             optimizer.step()
             losses.append(batch_loss)
@@ -957,6 +1016,8 @@ def ppo_update(model, optimizer, samples, device, rng, epochs=4, minibatch=256,
             "entropyCoefficient": entropy_coefficient,
             "clipFraction": sum(clip_fracs) / len(clip_fracs), "approxKl": sum(kls) / len(kls),
             "gradientNorm": sum(gradients) / len(gradients), "samples": len(useful),
+            "sampling": sampling,
+            "oomFallbacks": oom_fallbacks,
             "advantageMean": float(advantage.mean()),
             "valueErrorBefore": sum((item["value"] - item["target"]) ** 2 for item in useful) / len(useful)}
 
@@ -964,7 +1025,7 @@ def ppo_update(model, optimizer, samples, device, rng, epochs=4, minibatch=256,
 def checkpoint_payload(model, optimizer, encoder, client, mode, update, decisions, rng, next_seed,
                        card_set="events", completed_episodes=0, training_seed=None,
                        experiment_id=None, entropy_coefficient=None, initial_weights_sha256=None,
-                       architecture=None, auxiliary_config=None):
+                       architecture=None, auxiliary_config=None, sampling_config=None):
     payload = {"format": "quartermaster-ppo-checkpoint-v1", "encoderVersion": encoder_version(card_set),
             "networkArchitecture": architecture,
             "trainerVersion": TRAINER_VERSION,
@@ -991,12 +1052,15 @@ def checkpoint_payload(model, optimizer, encoder, client, mode, update, decision
             "modelState": model.state_dict(), "optimizerState": optimizer.state_dict()}
     if auxiliary_config is not None:
         payload["auxiliaryConfig"] = auxiliary_config
+    if sampling_config is not None:
+        payload["samplingConfig"] = sampling_config
     return payload
 
 
 def restore_checkpoint(path, model, optimizer, encoder, client, mode, rng, card_set="events",
                        training_seed=None, experiment_id=None, entropy_coefficient=None,
-                       initial_weights_sha256=None, architecture=None, auxiliary_config=None):
+                       initial_weights_sha256=None, architecture=None, auxiliary_config=None,
+                       approved_resume_parent_sha256=None):
     saved = torch.load(path, map_location="cpu", weights_only=False)
     expected = {"format": "quartermaster-ppo-checkpoint-v1", "encoderVersion": encoder_version(card_set),
                 "trainerVersion": TRAINER_VERSION,
@@ -1023,9 +1087,21 @@ def restore_checkpoint(path, model, optimizer, encoder, client, mode, rng, card_
         expected["auxiliaryConfig"] = auxiliary_config
     if any(saved.get(key) != value for key, value in expected.items()):
         raise ValueError("Checkpoint schema, mode, or rules build differs")
-    if saved.get("trainerSourceSha256") not in ({TRAINER_SOURCE_HASH} |
-                                                 NON_SEMANTIC_PREDECESSOR_HASHES):
+    source_compatible = saved.get("trainerSourceSha256") in ({TRAINER_SOURCE_HASH} |
+                                                              NON_SEMANTIC_PREDECESSOR_HASHES)
+    if not source_compatible and approved_resume_parent_sha256 is not None:
+        actual_hash = hashlib.sha256(Path(path).read_bytes()).hexdigest()
+        source_compatible = (actual_hash == approved_resume_parent_sha256 and
+                             experiment_id == "A2S1" and saved.get("update") == 1 and
+                             saved.get("trainerSourceSha256") ==
+                             "87b7fa23046c8a38a0bb06623085ad414353f413fad16c976a56544bb924c8d2")
+    if not source_compatible:
         raise ValueError("Checkpoint trainer source differs")
+    if experiment_id == "A2S1" and saved.get("update", 0) > 1 and saved.get("samplingConfig") != {
+            "version": "chunk-shuffle-epoch-v1", "cacheLimitBytes": 1536 * 1024 ** 2,
+            "prefetchLimitBytes": 256 * 1024 ** 2, "gradientMicrobatch": 64,
+            "logicalMinibatch": 256, "epochs": 4}:
+        raise ValueError("A2S1 sampling configuration differs")
     if saved.get("completedEpisodes") != saved.get("update", -1) * 40:
         raise ValueError("Checkpoint complete-episode count differs from update boundary")
     if training_seed is not None and saved.get("trainingSeed") != training_seed:

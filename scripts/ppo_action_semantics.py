@@ -27,11 +27,11 @@ def _flatten(effects):
             yield from _flatten(branch)
 
 
-def action_facts(obs, candidate, regions, max_slots=MAX_ACTION_SLOTS):
+def action_facts(obs, candidate, regions, max_slots=MAX_ACTION_SLOTS, context=None):
     """Return ordered action facts without adding information unavailable to PPO."""
-    known_regions = {r["id"]: r for r in regions}
+    known_regions = context["regions"] if context is not None else {r["id"]: r for r in regions}
     units = obs["units"]
-    supplied = set(obs["suppliedUnitIds"])
+    supplied = context["supplied"] if context is not None else set(obs["suppliedUnitIds"])
     choices = candidate.get("choices") or ()
     explicit = [c for c in choices if c.get("action")]
     effects = list(_flatten(candidate.get("effects") or ()))
@@ -64,7 +64,8 @@ def action_facts(obs, candidate, regions, max_slots=MAX_ACTION_SLOTS):
         unit_type = chosen.get("unitType")
         if not unit_type and action in BUILD_ACTIONS:
             unit_type = "army" if action.endswith("army") else "navy"
-        occupants = [unit for unit in units if unit["regionId"] == region_id] if region_id else []
+        occupants = (context["unitsByRegion"].get(region_id, ()) if context is not None
+                     else [unit for unit in units if unit["regionId"] == region_id]) if region_id else []
         same = [u for u in occupants if u["country"] == country]
         allied = [u for u in occupants if u["country"] != country and team(u["country"]) == team(country)]
         enemy = [u for u in occupants if team(u["country"]) != team(country)]

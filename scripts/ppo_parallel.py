@@ -44,6 +44,22 @@ class _FileTime(ctypes.Structure):
     _fields_ = [("low", ctypes.c_ulong), ("high", ctypes.c_ulong)]
 
 
+class _MemoryStatus(ctypes.Structure):
+    _fields_ = [("length", ctypes.c_ulong), ("memoryLoad", ctypes.c_ulong),
+                ("totalPhysical", ctypes.c_ulonglong), ("availablePhysical", ctypes.c_ulonglong),
+                ("totalPageFile", ctypes.c_ulonglong), ("availablePageFile", ctypes.c_ulonglong),
+                ("totalVirtual", ctypes.c_ulonglong), ("availableVirtual", ctypes.c_ulonglong),
+                ("availableExtendedVirtual", ctypes.c_ulonglong)]
+
+
+def _available_physical_memory():
+    if os.name != "nt":
+        return None
+    status = _MemoryStatus()
+    status.length = ctypes.sizeof(status)
+    return status.availablePhysical if ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(status)) else None
+
+
 def _process_sample(pid):
     if os.name != "nt":
         return None
@@ -130,6 +146,7 @@ def phase_resources(clients, store, device):
             continue
     return {"pythonRssBytes": python[0] if python else None,
             "workerRssBytes": sum(item[0] for item in workers if item),
+            "systemAvailablePhysicalBytes": _available_physical_memory(),
             "liveTensorStorageBytes": sum(live_storages.values()),
             "writeBufferBytes": len(store.buffer) if store else 0,
             "readCacheBytes": store.cache_bytes if store else 0,
@@ -551,6 +568,7 @@ def main():
     parser.add_argument("--seed", type=int, default=20260930)
     parser.add_argument("--checkpoint", type=Path, required=True)
     parser.add_argument("--resume", action="store_true")
+    parser.add_argument("--approved-resume-parent-sha256", default=None)
     parser.add_argument("--trace", choices=["none", "summary", "full"], default="none")
     # Accepted for old short-benchmark commands; automatic baseline evaluations
     # are no longer part of training or round output.
@@ -635,7 +653,8 @@ def main():
                                                entropy_coefficient=args.entropy_coefficient,
                                                initial_weights_sha256=initial_hash if args.experiment_id else None,
                                                architecture=args.architecture,
-                                               auxiliary_config=auxiliary_config)
+                                               auxiliary_config=auxiliary_config,
+                                               approved_resume_parent_sha256=args.approved_resume_parent_sha256)
                 next_seed = saved["nextSeed"]
                 completed_decisions = saved["completedDecisions"]
                 completed_episodes = saved["completedEpisodes"]
@@ -647,7 +666,7 @@ def main():
                     ["git", "status", "--porcelain"], cwd=ppo.ROOT, text=True).strip())
             except (OSError, subprocess.CalledProcessError):
                 source_commit, source_dirty = None, None
-            gradient_microbatch = (16 if args.experiment_id == "A2S1" else
+            gradient_microbatch = (64 if args.experiment_id == "A2S1" else
                                    32 if args.experiment_id in ("S2MAP", "A1S2") else
                                    ppo.OPTIMIZER_CONFIG["minibatch"])
             report = {"mode": args.mode, "experimentId": args.experiment_id,
@@ -697,6 +716,14 @@ def main():
                 for obsolete in ("baselineEvaluation", "baselineEvaluationSeconds", "evaluations"):
                     report.pop(obsolete, None)
             report["gradientMicrobatch"] = gradient_microbatch
+            if args.experiment_id == "A2S1":
+                report["performanceMigration"] = {
+                    "parentCheckpointSha256": args.approved_resume_parent_sha256,
+                    "fromUpdate": start_update, "effectiveFromUpdate": start_update + 1,
+                    "sourceSha256": ppo.TRAINER_SOURCE_HASH,
+                    "sampling": "chunk-shuffle-epoch-v1", "cacheLimitBytes": 1536 * 1024 ** 2,
+                    "prefetchLimitBytes": 256 * 1024 ** 2,
+                    "gradientMicrobatch": gradient_microbatch}
             warmup_started = time.perf_counter()
             dummy = encoder._dummy()
             dummy["candidates"] = [{"kind": "pass", "id": "warmup"}]
@@ -715,7 +742,8 @@ def main():
                 label = (f"{args.experiment_id or args.mode}（资源{args.mode}，熵{args.entropy_coefficient:.2f}） "
                          f"{ordinal((update - 1) // 10 + 1, '轮')} · "
                          f"{ordinal((update - 1) % 10 + 1, '次更新')}")
-                store = TrajectoryStore(args.mode, update, root=trajectory_root)
+                store = TrajectoryStore(args.mode, update, root=trajectory_root,
+                    read_limit=(1536 * 1024 ** 2 if args.experiment_id == "A2S1" else 16 * 1024 ** 2))
                 phases = {"beforeCollection": phase_resources(clients, store, device)}
                 result = None
                 try:
@@ -731,7 +759,10 @@ def main():
                             model.train()
                             metrics = ppo.ppo_update(model, optimizer, store, device, rng,
                                                      entropy_coefficient=args.entropy_coefficient,
-                                                     gradient_microbatch=gradient_microbatch)
+                                                     gradient_microbatch=gradient_microbatch,
+                                                     sampling=("chunk-shuffle-epoch-v1" if
+                                                         args.experiment_id == "A2S1" else
+                                                         "global-shuffle-v1"))
                             auxiliary_metrics = (ppo_auxiliary.update(model, optimizer,
                                 auxiliary_bundle, device,
                                 ppo_auxiliary.weight_at_update(auxiliary_config, update), update)
@@ -750,7 +781,12 @@ def main():
                         entropy_coefficient=args.entropy_coefficient,
                         initial_weights_sha256=initial_hash if args.experiment_id else None,
                         architecture=args.architecture,
-                        auxiliary_config=auxiliary_config)
+                        auxiliary_config=auxiliary_config,
+                        sampling_config=({"version": "chunk-shuffle-epoch-v1",
+                            "cacheLimitBytes": 1536 * 1024 ** 2,
+                            "prefetchLimitBytes": 256 * 1024 ** 2,
+                            "gradientMicrobatch": 64, "logicalMinibatch": 256,
+                            "epochs": 4} if args.experiment_id == "A2S1" else None))
                     args.checkpoint.parent.mkdir(parents=True, exist_ok=True)
                     temporary = args.checkpoint.with_suffix(".tmp")
                     torch.save(payload, temporary)

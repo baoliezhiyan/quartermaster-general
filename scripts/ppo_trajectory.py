@@ -21,6 +21,8 @@ import torch
 ROOT = Path(__file__).resolve().parents[1] / "PPO训练" / ".trajectory-temp"
 WRITE_LIMIT = 8 * 1024 * 1024
 READ_LIMIT = 16 * 1024 * 1024
+PREFETCH_LIMIT = 256 * 1024 * 1024
+SAMPLER_VERSION = "chunk-shuffle-epoch-v1"
 HEADER = struct.Struct("<IIII")  # sample id, state width, candidate rows, candidate width
 
 
@@ -86,8 +88,10 @@ class TrajectoryStore:
     """One binary file, bounded write/read chunk caches, small scalar index in RAM."""
 
     def __init__(self, mode: str, update: int, root: Path = ROOT,
-                 write_limit: int = WRITE_LIMIT, read_limit: int = READ_LIMIT):
-        if mode not in ("A", "B") or update < 0 or write_limit < HEADER.size or read_limit < 1:
+                 write_limit: int = WRITE_LIMIT, read_limit: int = READ_LIMIT,
+                 prefetch_limit: int = PREFETCH_LIMIT):
+        if (mode not in ("A", "B") or update < 0 or write_limit < HEADER.size or
+            read_limit < 1 or prefetch_limit < 0):
             raise ValueError("Invalid trajectory spool configuration")
         self.root = root.resolve()
         self.root.mkdir(parents=True, exist_ok=True)
@@ -99,6 +103,7 @@ class TrajectoryStore:
         self.writer = self.path.open("wb")
         self.reader = None
         self.write_limit, self.read_limit = write_limit, read_limit
+        self.prefetch_limit = min(prefetch_limit, read_limit)
         self.buffer = bytearray()
         self.chunks: list[tuple[int, int]] = []
         self.index: list[tuple[int, int, int, int]] = []  # chunk, offset, rows, width
@@ -216,11 +221,42 @@ class TrajectoryStore:
         chosen, total = [], 0
         for chunk_id in sorted(counts, key=lambda key: (-counts[key], key)):
             size = self.chunks[chunk_id][1]
-            if total + size <= self.read_limit:
+            if total + size <= self.prefetch_limit:
                 chosen.append(chunk_id)
                 total += size
         if chosen:
             self.prefetch_future = self.prefetcher.submit(lambda: [self._chunk(chunk) for chunk in chosen])
+
+    def epoch_batches(self, positions: list[int], rng, minibatch: int):
+        """Shuffle disk blocks and records each epoch, carrying short block tails.
+
+        Positions refer to training_order, while rewards/GAE remain attached to
+        their original sample IDs. No observation payload is materialized here.
+        """
+        groups = defaultdict(list)
+        for position in positions:
+            sample_id = self.training_order[position]
+            groups[self.index[sample_id][0]].append(position)
+        blocks, block, size = [], [], 0
+        for chunk in sorted(groups):
+            chunk_size = self.chunks[chunk][1]
+            if block and size + chunk_size > self.read_limit:
+                blocks.append(block)
+                block, size = [], 0
+            block.extend(groups[chunk])
+            size += chunk_size
+        if block:
+            blocks.append(block)
+        rng.shuffle(blocks)
+        carry = []
+        for block in blocks:
+            rng.shuffle(block)
+            carry.extend(block)
+            while len(carry) >= minibatch:
+                yield carry[:minibatch]
+                del carry[:minibatch]
+        if carry:
+            yield carry
 
     def load_batch(self, order_indices: list[int]) -> list[dict]:
         if not self.reader or self.closed:
@@ -269,7 +305,9 @@ class TrajectoryStore:
                 "peakReadCacheBytes": self.peak_read_bytes, "writeSeconds": self.write_seconds,
                 "readSeconds": self.read_seconds, "batchLoadSeconds": self.batch_load_seconds,
                 "writeLimitBytes": self.write_limit,
-                "readLimitBytes": self.read_limit, "prefetchPending": bool(self.prefetch_future and not self.prefetch_future.done())}
+                "readLimitBytes": self.read_limit, "prefetchLimitBytes": self.prefetch_limit,
+                "samplerVersion": SAMPLER_VERSION,
+                "prefetchPending": bool(self.prefetch_future and not self.prefetch_future.done())}
 
     def close(self) -> dict:
         if self.closed:
