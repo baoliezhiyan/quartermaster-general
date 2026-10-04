@@ -15,6 +15,7 @@ import torch
 from scripts import ppo_rounds as rounds
 from scripts import ppo_train as ppo
 from scripts.ppo_combo_course import MIX, VERSION, pool_identity, read_pool
+from scripts.ppo_combo_metrics import VERSION as COMBO_METRICS_VERSION
 from scripts.ppo_combo_replay import record_course
 from scripts.ppo_network_factory import A2S1_ADAPTER, make_network
 
@@ -57,7 +58,7 @@ def identity():
             raise ValueError("Course pool is incomplete")
         course_config = {"version": VERSION, "mix": MIX,
             "poolIdentitySha256": expected["identitySha256"],
-            "poolFileSha256": sha(POOL)}
+            "poolFileSha256": sha(POOL), "metricsVersion": COMBO_METRICS_VERSION}
         return initial, entries, course_config
     finally:
         client.close()

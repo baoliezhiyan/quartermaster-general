@@ -13,6 +13,7 @@ import torch
 from scripts import ppo_parallel as parallel
 from scripts import ppo_train as ppo
 from scripts.ppo_combo_course import TEMPLATES, pool_identity, read_pool
+from scripts.ppo_combo_metrics import preparation_metadata
 from scripts.ppo_network_factory import A2S1_ADAPTER, make_network
 from scripts.ppo_trajectory import TrajectoryStore
 
@@ -31,6 +32,7 @@ def run(pool_path: Path, initial_path: Path, parent_path: Path, all_templates=Fa
         pool = read_pool(pool_path, expected)
         entries = {f"{entry['template']}:{entry['variant']}:{entry['layer']}": entry
                    for entry in pool["entries"]}
+        preparation = preparation_metadata(pool_path, pool["entries"], clients[0])
         templates = [item.key for item in TEMPLATES] if all_templates else ["G1"]
         tasks = [{"jobId": "smoke-normal", "seed": 2900001, "policyVersion": 0}]
         tasks.extend({"jobId": f"smoke-{template}", "seed": 2900002 + index,
@@ -42,7 +44,7 @@ def run(pool_path: Path, initial_path: Path, parent_path: Path, all_templates=Fa
                 store, summaries, timing = parallel.collect_batch(
                     clients, encoder, model, torch.device("cpu"), tasks, "A", "signals", 20261004,
                     3000, inference_batch_size=2, inference_wait_ms=1, store=store,
-                    combo_entries=entries)
+                    combo_entries=entries, combo_preparation=preparation)
                 if len(summaries) != len(tasks) or any(item["termination"] != "natural" for item in summaries):
                     raise AssertionError("Short games did not all finish naturally")
                 metrics = ({} if all_templates else ppo.ppo_update(model, optimizer, store,
@@ -78,8 +80,13 @@ def main():
                       "trajectoryBytes": result["trajectoryBytes"],
                       "collectionSeconds": result["collectionSeconds"],
                       "spoolRemoved": result["spoolRemovedAfterClose"],
+                      "normalFirstLanding": next(item["landing"] for item in result["episodes"]
+                                                 if item["startType"] == "normal"),
                       "course": [{"id": item["courseId"], "decisions": item["decisions"],
-                                  "tactical": (item.get("comboCourse") or {}).get("tacticalResultAchieved")}
+                                  "boardResult": item["comboCourse"]["tacticalResultAchieved"],
+                                  "specifiedCombo": item["comboCourse"]["specifiedComboAchieved"],
+                                  "status": item["comboCourse"]["comboStatus"],
+                                  "firstLanding": item["landing"]["firstUSWestEuropeLanding"]}
                                  for item in result["episodes"] if item["courseId"]],
                       "loss": result["optimization"].get("loss")}, ensure_ascii=False, indent=2))
 

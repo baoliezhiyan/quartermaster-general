@@ -78,9 +78,10 @@ def _already_resolved(goal, record):
     return False
 
 
-def probe(client, entry, max_steps=25):
+def probe(client, entry, max_steps=25, combo_telemetry=False):
     template = entry["template"]
-    response = client.request(op="restore", snapshot=entry["snapshot"], trace="full")
+    response = client.request(op="restore", snapshot=entry["snapshot"], trace="full",
+                              comboTelemetry=combo_telemetry)
     observation = response["observation"]
     goals = GOALS[template]
     steps = []
@@ -106,11 +107,13 @@ def probe(client, entry, max_steps=25):
         else:
             matched = True
         result = client.request(op="step", action={**observation["decision"],
-                                                    "actionId": chosen["id"]})
+                                                    "actionId": chosen["id"]},
+                                comboTelemetry=combo_telemetry)
         steps.append({"goal": goal, "matched": matched, "seat": observation["decisionSeat"],
                       "node": observation["node"], "choiceKind": observation.get("choiceKind"),
                       "source": observation.get("currentSourceDefinition"),
                       "chosen": chosen, "events": (result.get("record") or {}).get("events", []),
+                      "telemetry": result.get("comboTelemetry"),
                       "resolved": result["info"].get("resolvedCardDefinitions")})
         if matched:
             cursor += 1

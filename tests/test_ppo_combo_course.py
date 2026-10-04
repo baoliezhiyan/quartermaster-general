@@ -11,7 +11,8 @@ import torch
 from scripts import ppo_train as ppo
 from scripts.ppo_combo_accept import probe
 from scripts.ppo_combo_course import TEMPLATES, VERSION, pool_identity, read_pool, replay, ready
-from scripts.ppo_combo_metrics import new_tracker, record_step, summarize
+from scripts.ppo_combo_metrics import (new_tracker, record_step, summarize,
+                                       preparation_metadata, aggregate)
 from scripts.ppo_parallel import make_tasks
 from scripts.ppo_parallel import collect_batch
 from scripts.ppo_network_factory import A2S1_ADAPTER, make_network
@@ -93,29 +94,230 @@ class ComboCourseTests(unittest.TestCase):
         finally:
             client.close()
 
-    def test_us_west_placement_source_and_tactical_result_use_actual_unit_changes(self):
-        snapshot = {"header": {"seed": 7}, "state": {"round": 2, "units": [], "decks": {}},
-                    "decisionCount": 8}
-        tracker = new_tracker("U1:positive:payoff", snapshot)
-        before = {"node": "SOURCE", "units": [{"id": "it", "country": "italy",
-                   "type": "army", "regionId": "italy"}]}
-        after = {"units": [{"id": "us", "country": "united_states", "type": "army",
-                 "regionId": "western_europe"}]}
-        record_step(tracker, before, {"kind": "source", "definitionId": "special_111"},
-                    after, None)
-        result = summarize(tracker, {"winner": "allies",
-                                   "allianceScores": {"axis": 1, "allies": 4}})
-        self.assertEqual(result["westEuropeLandingSources"], {"patton": 1})
-        self.assertTrue(result["tacticalResultAchieved"])
-        self.assertEqual(result["scoreDifferenceAxisMinusAllies"], -3)
-        landing = new_tracker("U3:positive:payoff", snapshot)
-        record_step(landing, {"node": "ENGINE_CHOICE", "choiceKind": "TRIGGER",
-                              "units": []},
-                    {"kind": "choice", "choiceIds": ["landing"], "choices": [
-                        {"kind": "trigger", "definitionId": "special_88"}]},
-                    {"units": [{"id": "new", "country": "united_states", "type": "army",
-                                "regionId": "western_europe"}]}, None)
-        self.assertEqual(landing["westEuropeLandingSources"], {"landing_operation": 1})
+    def test_real_settlement_provenance_and_normal_start_first_landing(self):
+        if not POOL.exists():
+            self.skipTest("Local ignored course pool is absent")
+        with gzip.open(POOL, "rt", encoding="utf-8") as stream:
+            entries = json.load(stream)["entries"]
+        client = ppo.ArenaClient(card_set="signals")
+        try:
+            for name in ("G1", "G2", "G3", "U1", "U2", "U3", "J1", "J2"):
+                entry = next(item for item in entries if item["template"] == name and
+                             item["variant"] == "positive" and item["layer"] == "payoff")
+                actual = probe(client, entry, combo_telemetry=True)
+                tracker = new_tracker(f"{name}:positive:payoff", entry["snapshot"])
+                for index, step in enumerate(actual["steps"]):
+                    record_step(tracker, step["telemetry"], index)
+                result = summarize(tracker, {"winner": "allies",
+                    "allianceScores": {"axis": 1, "allies": 4}})
+                self.assertTrue(result["tacticalResultAchieved"], name)
+                # J1's second attack was selected but produced no board action:
+                # the old whole-game counter falsely called this a full chain.
+                self.assertEqual(result["specifiedComboAchieved"], name != "J1", name)
+                if name == "U1":
+                    self.assertEqual(result["firstUSWestEuropeLanding"]["source"], "patton")
+                    self.assertEqual(result["pattonAttacksStarted"], 1)
+                    self.assertEqual(result["pattonAttacksEffective"], 1)
+                    self.assertEqual(result["scoreDifferenceAxisMinusAllies"], -3)
+                    # A later ordinary attack is a separate settlement source,
+                    # even if it removes a unit on the same board.
+                    ordinary_attack = next(op for op in tracker["operations"] if
+                        op["source"] == "special_111" and op["action"] == "land_battle").copy()
+                    ordinary_attack["source"] = "land_battle"
+                    tracker["operations"].append(ordinary_attack)
+                    after_ordinary = summarize(tracker, {"winner": "allies",
+                        "allianceScores": {"axis": 1, "allies": 4}})
+                    self.assertEqual(after_ordinary["pattonAttacksStarted"], 1)
+                    self.assertEqual(after_ordinary["pattonAttacksEffective"], 1)
+                    normal = new_tracker(None, {"round": 1})
+                    for index, step in enumerate(actual["steps"]):
+                        record_step(normal, step["telemetry"], index)
+                    self.assertEqual(summarize(normal, {"winner": "allies",
+                        "allianceScores": {"axis": 1, "allies": 4}})["source"], "patton")
+                    normal_summary = {"startType": "normal", "landing":
+                        {"firstUSWestEuropeLanding": normal["firstUSWestEuropeLanding"],
+                         "source": "patton"}, "decisions": len(actual["steps"]),
+                        "winner": "allies"}
+                    self.assertEqual(aggregate([normal_summary])["normal"]
+                        ["firstLandingSources"], {"patton": 1})
+                if name == "U3":
+                    self.assertEqual(result["firstUSWestEuropeLanding"]["source"],
+                                     "landing_operation")
+        finally:
+            client.close()
+
+    def test_ordinary_attack_then_next_round_build_is_board_result_not_blitz_chain(self):
+        with gzip.open(POOL, "rt", encoding="utf-8") as stream:
+            entry = next(item for item in json.load(stream)["entries"] if
+                item["template"] == "G1" and item["variant"] == "positive" and
+                item["layer"] == "payoff")
+        client = ppo.ArenaClient(card_set="signals")
+        try:
+            observation = client.request(op="restore", snapshot=entry["snapshot"],
+                                         comboTelemetry=True)["observation"]
+            tracker = new_tracker("G1:positive:payoff", entry["snapshot"])
+            built = False
+            for index in range(120):
+                if index == 0:
+                    chosen = next(candidate for candidate in observation["candidates"] if
+                        candidate.get("definitionId") == "land_battle" and any(
+                            feature.get("regionId") == "ukraine" for feature in
+                            candidate.get("choices") or ()))
+                elif index == 1:
+                    self.assertEqual(observation["choiceKind"], "TRIGGER")
+                    chosen = next(candidate for candidate in observation["candidates"] if
+                                  candidate.get("choiceIds") == [])
+                else:
+                    chosen = next((candidate for candidate in observation["candidates"] if
+                        observation["activeSeat"] == "germany" and
+                        observation["node"] == "SOURCE" and
+                        candidate.get("definitionId") == "build_army" and any(
+                            feature.get("regionId") == "ukraine" for feature in
+                            candidate.get("choices") or ())), None)
+                    if chosen:
+                        built = True
+                    else:
+                        chosen = next((candidate for candidate in observation["candidates"]
+                                       if candidate["kind"] == "pass"),
+                                      observation["candidates"][0])
+                response = client.request(op="step", action={**observation["decision"],
+                    "actionId": chosen["id"]}, comboTelemetry=True)
+                record_step(tracker, response["comboTelemetry"], index)
+                observation = response["observation"]
+                if built:
+                    break
+            self.assertTrue(built)
+            result = summarize(tracker, {"winner": "axis",
+                "allianceScores": {"axis": 0, "allies": 0}})
+            self.assertTrue(result["tacticalResultAchieved"])
+            self.assertFalse(result["specifiedComboAchieved"])
+            self.assertEqual(result["comboMatchedSteps"], 1)
+        finally:
+            client.close()
+
+    def test_real_chinese_card_types_and_preparation_install_completion(self):
+        with gzip.open(POOL, "rt", encoding="utf-8") as stream:
+            entries = [item for item in json.load(stream)["entries"] if
+                item["template"] in ("G1", "J2") and item["variant"] == "positive" and
+                item["layer"] == "payoff"]
+        client = ppo.ArenaClient(card_set="signals")
+        try:
+            with tempfile.TemporaryDirectory() as directory:
+                results = preparation_metadata(POOL, entries, client,
+                                               Path(directory) / "metrics.json")
+            status = results["G1:positive:payoff"]["installations"]
+            responses = results["J2:positive:payoff"]["installations"]
+            self.assertEqual([(item["definitionId"], item["type"], item["zone"])
+                for item in status], [("special_136", "status", "active")])
+            self.assertEqual([(item["definitionId"], item["type"], item["zone"])
+                for item in responses], [("special_190", "response", "faceDown"),
+                                         ("special_189", "response", "faceDown")])
+            self.assertTrue(all(item["stage"] == "pre_takeover" for item in status + responses))
+        finally:
+            client.close()
+
+    def test_first_landing_is_not_overwritten_and_pre_takeover_is_separate(self):
+        with gzip.open(POOL, "rt", encoding="utf-8") as stream:
+            entry = next(item for item in json.load(stream)["entries"] if
+                item["template"] == "U1" and item["variant"] == "positive" and
+                item["layer"] == "payoff")
+        client = ppo.ArenaClient(card_set="signals")
+        try:
+            steps = probe(client, entry, combo_telemetry=True)["steps"]
+            tracker = new_tracker("U1:positive:payoff", entry["snapshot"],
+                {"firstUSWestEuropeLanding": {"source": "basic_build",
+                 "sourceCardId": "build_army", "unitId": "earlier", "round": 2,
+                 "decisionId": 9, "stage": "pre_takeover"}})
+            for index, step in enumerate(steps):
+                record_step(tracker, step["telemetry"], index)
+            self.assertEqual(tracker["firstUSWestEuropeLanding"]["source"], "basic_build")
+            self.assertEqual(tracker["firstUSWestEuropeLanding"]["stage"], "pre_takeover")
+            self.assertEqual(tracker["postTakeoverFirstUSWestEuropeLanding"]["source"], "patton")
+            normal = new_tracker(None, {"round": 1})
+            for index, step in enumerate(steps):
+                record_step(normal, step["telemetry"], index)
+            first = normal["firstUSWestEuropeLanding"].copy()
+            for index, step in enumerate(steps):
+                record_step(normal, step["telemetry"], index + len(steps))
+            self.assertEqual(normal["firstUSWestEuropeLanding"], first)
+        finally:
+            client.close()
+
+    def test_real_pre_takeover_landing_source_is_replayed_from_preparation(self):
+        with gzip.open(POOL, "rt", encoding="utf-8") as stream:
+            entry = next(item for item in json.load(stream)["entries"] if
+                item["template"] == "G2" and item["variant"] == "positive" and
+                item["layer"] == "payoff")
+        client = ppo.ArenaClient(card_set="signals")
+        try:
+            with tempfile.TemporaryDirectory() as directory:
+                metadata = preparation_metadata(POOL, [entry], client,
+                                                Path(directory) / "prep.json")
+            first = metadata["G2:positive:payoff"]["firstUSWestEuropeLanding"]
+            self.assertEqual(first["source"], "basic_build")
+            tracker = new_tracker("G2:positive:payoff", entry["snapshot"],
+                                  metadata["G2:positive:payoff"])
+            self.assertEqual(tracker["firstUSWestEuropeLanding"]["stage"], "pre_takeover")
+        finally:
+            client.close()
+
+    def test_compact_telemetry_does_not_change_rules_choices_or_rewards(self):
+        def without_session_ids(value):
+            if isinstance(value, dict):
+                return {key: without_session_ids(item) for key, item in value.items()
+                        if key not in ("episodeId", "gameId")}
+            if isinstance(value, list):
+                return [without_session_ids(item) for item in value]
+            return value
+        plain = ppo.ArenaClient(card_set="signals")
+        measured = ppo.ArenaClient(card_set="signals")
+        try:
+            self.assertEqual(plain.fingerprint, measured.fingerprint)
+            ordinary = plain.request(op="reset", seed=786, mode="A", cardSet="signals")
+            instrumented = measured.request(op="reset", seed=786, mode="A",
+                                            cardSet="signals", comboTelemetry=True)
+            self.assertEqual(without_session_ids(ordinary["observation"]),
+                             without_session_ids(instrumented["observation"]))
+            candidate = ordinary["observation"]["candidates"][0]
+            left = plain.request(op="step", action={**ordinary["observation"]["decision"],
+                "actionId": candidate["id"]})
+            right = measured.request(op="step", action={**instrumented["observation"]["decision"],
+                "actionId": candidate["id"]}, comboTelemetry=True)
+            self.assertEqual(without_session_ids(left["observation"]),
+                             without_session_ids(right["observation"]))
+            self.assertEqual(without_session_ids(left["info"]),
+                             without_session_ids(right["info"]))
+            self.assertEqual(without_session_ids(left["result"]),
+                             without_session_ids(right["result"]))
+            self.assertEqual(right["comboTelemetry"]["version"], "combo-settlement-v1")
+        finally:
+            plain.close()
+            measured.close()
+
+    def test_real_post_takeover_status_install_and_status_action_separation(self):
+        client = ppo.ArenaClient(card_set="signals")
+        try:
+            observation = client.request(op="reset", seed=786, mode="A",
+                                         cardSet="signals", comboTelemetry=True)["observation"]
+            candidate = next(item for item in observation["candidates"] if
+                             item.get("definitionId") == "special_136")
+            response = client.request(op="step", action={**observation["decision"],
+                "actionId": candidate["id"]}, comboTelemetry=True)
+            tracker = new_tracker(None, observation)
+            record_step(tracker, response["comboTelemetry"], 0)
+            self.assertEqual(tracker["modelInstallSelections"], {"status": 1})
+            self.assertEqual([(item["definitionId"], item["zone"]) for item in
+                              tracker["modelInstallations"]], [("special_136", "active")])
+            # A pre-existing status' replacement action has statusAction=true;
+            # it is a use, never another hand-to-active installation.
+            alternative = {**response["comboTelemetry"], "selected": {
+                **response["comboTelemetry"]["selected"], "statusAction": True,
+                "fromZone": {"seat": "germany", "zone": "active"}}, "commits": []}
+            record_step(tracker, alternative, 1)
+            self.assertEqual(len(tracker["modelInstallations"]), 1)
+            self.assertEqual(tracker["statusActions"]["special_136"], 1)
+        finally:
+            client.close()
 
     def test_checkpoint_identity_rejects_a_different_course_pool(self):
         client = ppo.ArenaClient(card_set="signals")

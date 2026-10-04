@@ -163,6 +163,7 @@ class Episode:
     rng: random.Random
     start_decision_count: int = 0
     course_tracker: dict | None = None
+    landing_tracker: dict | None = None
     last_chosen: dict | None = None
     started: float = field(default_factory=time.perf_counter)
     samples: list = field(default_factory=list)
@@ -313,13 +314,18 @@ def episode_summary(episode: Episode, snapshot: dict) -> dict:
     if episode.course_tracker is not None:
         from scripts.ppo_combo_metrics import summarize
         summary["comboCourse"] = summarize(episode.course_tracker, outcome, state)
+    if episode.course_tracker is not None or episode.landing_tracker is not None:
+        from scripts.ppo_combo_metrics import landing_summary
+        summary["landing"] = landing_summary(
+            episode.course_tracker or episode.landing_tracker)
     return summary
 
 
 def collect_batch(clients, encoder, model, device, tasks, mode, card_set, training_seed,
                   max_decisions, inference_batch_size=8, inference_wait_ms=2.0,
                   diagnostic_path: Path | None = None, trace="none", on_progress=None,
-                  store: TrajectoryStore | None = None, combo_entries: dict | None = None):
+                  store: TrajectoryStore | None = None, combo_entries: dict | None = None,
+                  combo_preparation: dict | None = None):
     """No weight changes occur here. Each task is claimed once, then finishes naturally."""
     if len({task["jobId"] for task in tasks}) != len(tasks):
         raise ValueError("Duplicate episode jobs")
@@ -355,10 +361,12 @@ def collect_batch(clients, encoder, model, device, tasks, mode, card_set, traini
                    "policyVersion": task["policyVersion"]}
             if course:
                 submit(environment, "reset", task, op="restore",
-                       snapshot=course["snapshot"], trace="full", tag=tag)
+                       snapshot=course["snapshot"], trace="full", tag=tag,
+                       comboTelemetry=True)
             else:
                 submit(environment, "reset", task, op="reset", seed=task["seed"], mode=mode,
-                       cardSet=card_set, trace=trace, gameId=tag["episodeId"], tag=tag)
+                       cardSet=card_set, trace=trace, gameId=tag["episodeId"], tag=tag,
+                       comboTelemetry="landing" if combo_entries is not None else False)
 
         for environment in range(min(len(clients), len(tasks))):
             start_next(environment)
@@ -386,12 +394,14 @@ def collect_batch(clients, encoder, model, device, tasks, mode, card_set, traini
                         if response["header"]["gameId"] != tag["episodeId"]:
                             raise RuntimeError("Reset game ID mismatch")
                         course = combo_entries[item["courseId"]] if "courseId" in item else None
-                        if course:
+                        if combo_entries is not None:
                             from scripts.ppo_combo_metrics import new_tracker
                         active[environment] = Episode(item, environment, obs,
                             policy_rng(item["seed"], item["policyVersion"], training_seed),
                             course["snapshot"]["decisionCount"] if course else 0,
-                            new_tracker(item["courseId"], course["snapshot"]) if course else None)
+                            new_tracker(item["courseId"], course["snapshot"],
+                                (combo_preparation or {}).get(item["courseId"])) if course else None,
+                            new_tracker(None, obs) if combo_entries is not None and not course else None)
                         ready.append(environment)
                     elif kind == "step":
                         episode = item
@@ -404,9 +414,12 @@ def collect_batch(clients, encoder, model, device, tasks, mode, card_set, traini
                         outcome = response["result"]
                         if episode.course_tracker is not None:
                             from scripts.ppo_combo_metrics import record_step
-                            record_step(episode.course_tracker, previous, episode.last_chosen,
-                                        response["observation"] or (outcome or {}).get("finalObservation"),
-                                        response.get("record"))
+                            record_step(episode.course_tracker, response.get("comboTelemetry"),
+                                        previous["decision"]["decisionId"])
+                        if episode.landing_tracker is not None:
+                            from scripts.ppo_combo_metrics import record_step
+                            record_step(episode.landing_tracker, response.get("comboTelemetry"),
+                                        previous["decision"]["decisionId"])
                         after = outcome["allianceScores"] if outcome else response["observation"]["allianceScores"]
                         base, reward = decision_rewards(previous, after, outcome, info)
                         for team in ("axis", "allies"):
@@ -487,9 +500,6 @@ def collect_batch(clients, encoder, model, device, tasks, mode, card_set, traini
                             raise RuntimeError(f"Episode {episode.task['jobId']} exceeded {max_decisions} decisions")
                         chosen = observation["candidates"][index]
                         episode.last_chosen = chosen
-                        if episode.course_tracker is not None:
-                            from scripts.ppo_combo_metrics import record_selection
-                            record_selection(episode.course_tracker, observation, chosen)
                         sample = {"seat": observation["decisionSeat"],
                             "state": state, "candidates": candidates, "action": index,
                             "logprob": math.log(probability), "value": value, "baseline": False}
@@ -531,7 +541,9 @@ def collect_batch(clients, encoder, model, device, tasks, mode, card_set, traini
                                "policyVersion": episode.task["policyVersion"],
                                "decision": decision}
                         submit(episode.environment, "step", episode, op="step",
-                               action={**decision, "actionId": chosen["id"]}, tag=tag)
+                               action={**decision, "actionId": chosen["id"]}, tag=tag,
+                               comboTelemetry=(True if episode.task.get("courseId") else
+                                               "landing" if combo_entries is not None else False))
         except Exception as error:
             if diagnostic_path:
                 for future in pending:
@@ -702,7 +714,7 @@ def main():
             initial_hash = ppo.model_weights_sha256(model)
             if args.expected_initial_hash and initial_hash != args.expected_initial_hash:
                 raise ValueError("Comparison initialization weight hash differs")
-            combo_entries, course_config, combo_generation = None, None, None
+            combo_entries, course_config, combo_generation, combo_preparation = None, None, None, None
             if args.combo_pool:
                 from scripts.ppo_combo_course import (MIX, VERSION, generation_summary,
                                                       pool_identity, read_pool)
@@ -715,9 +727,12 @@ def main():
                 if len(combo_entries) != 32 or len(pool["entries"]) != 32:
                     raise ValueError("Combo pool requires all eight templates, two variants and two layers")
                 combo_generation = generation_summary(pool)
+                from scripts.ppo_combo_metrics import VERSION as COMBO_METRICS_VERSION, preparation_metadata
+                combo_preparation = preparation_metadata(args.combo_pool, pool["entries"], clients[0])
                 course_config = {"version": VERSION, "mix": MIX,
                                  "poolIdentitySha256": expected["identitySha256"],
-                                 "poolFileSha256": hashlib.sha256(args.combo_pool.read_bytes()).hexdigest()}
+                                 "poolFileSha256": hashlib.sha256(args.combo_pool.read_bytes()).hexdigest(),
+                                 "metricsVersion": COMBO_METRICS_VERSION}
             auxiliary_config = None
             auxiliary_bundle = None
             if args.experiment_id == "A1S2":
@@ -849,7 +864,8 @@ def main():
                                 tasks, args.mode, args.card_set, args.seed, args.max_episode_decisions,
                                 args.inference_batch_size, args.inference_wait_ms, diagnostic, args.trace,
                                 on_progress=progress.update, store=store,
-                                combo_entries=combo_entries)
+                                combo_entries=combo_entries,
+                                combo_preparation=combo_preparation)
                             phases["afterCollection"] = phase_resources(clients, store, device)
                             progress.set_stage("优化中")
                             optimization_started = time.perf_counter()
