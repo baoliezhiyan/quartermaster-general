@@ -191,7 +191,7 @@ function activate(s:GameState,w:TriggerWindow,rule:TriggerRule,selected=false,ro
   if (rule.cost) {
     const cards=s.decks[rule.owner].hand.filter(c=>c.id!==rule.sourceInstanceId);
     const count=rule.cost;
-    ask(s,{kind:'PAY_COST',seat:rule.owner,prompt:`为【${rule.label}】支付 ${rule.cost} 张手牌费用${rule.costRequirements?`（${rule.costRequirements.map(id=>id==='*'?'任意手牌':cardName({definitionId:id})).join('、')}）`:''}；选择 ${count} 张`,min:count,max:count,options:cards.map(c=>({id:c.id,label:c.definitionId})),windowId:w.id,triggerId:rule.id});
+    ask(s,{kind:'PAY_COST',seat:rule.owner,prompt:`为【${rule.label}】支付 ${rule.cost} 张手牌费用${rule.costRequirements?`（${rule.costRequirements.map(id=>id==='*'?'任意手牌':cardName({definitionId:id})).join('、')}）`:''}；选择 ${count} 张`,min:count,max:count,requirements:rule.costRequirements,options:cards.map(c=>({id:c.id,label:c.definitionId})),windowId:w.id,triggerId:rule.id});
   } else fire(s,w,rule,rollback);
 }
 /** Prepare independent status frames, then expose one response list per batch boundary. */
@@ -527,8 +527,11 @@ export function runResolution(s:GameState) {
         record(s,'EFFECT_INVALID',`${e.label}当前条件不满足${e.fee?'，不能支付费用，停止后续效果':'，跳过此效果'}。`); if(e.fee)f.nextEffectIndex=f.effects.length;else f.nextEffectIndex++; continue;
       }
       if(e.kind==='extraPlay') {
-        if(s.trainingCourse&&f.committed)e.allowSkip=false;
-        if(e.optional&&!e.accepted)e.allowSkip=true;
+        // In training, submitting a card commits its own follow-up play. A
+        // separate country's invitation and an explicit return-on-decline
+        // branch remain genuine choices. Human play keeps its card text.
+        if(s.trainingCourse&&f.committed&&e.seat===f.owner&&!e.returnOnSkip)
+          e.allowSkip=false;
         if(!e.selectedCardId){ask(s,{kind:'EXTRA_CARD',seat:e.seat,prompt:e.label,min:e.allowSkip?0:1,max:1,options:extraCandidates(s,e).filter(c=>!e.onlyRemember||f.memory?.[e.onlyRemember]?.includes(c.id)).map(c=>({id:c.id,label:c.definitionId})),frameId:f.id});continue;}
         const card=s.decks[e.seat][e.from].find(c=>c.id===e.selectedCardId)!;
         const targets=cardTargetChoices(s,card);

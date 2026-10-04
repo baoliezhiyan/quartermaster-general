@@ -74,7 +74,7 @@ class PpoMathTests(unittest.TestCase):
         torch.manual_seed(4)
         model = PpoNetwork(5, 4)
         optimizer = torch.optim.Adam(model.parameters(), lr=3e-4)
-        encoder = SimpleNamespace(state_dim=5, candidate_dim=4)
+        encoder = SimpleNamespace(state_dim=5, candidate_dim=4, signals=False)
         client = SimpleNamespace(fingerprint="a" * 64, schema={
             "observationSchemaVersion": "one", "actionSchemaVersion": "two",
             "eventIds": ["special_1"]})

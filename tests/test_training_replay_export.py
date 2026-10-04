@@ -10,6 +10,34 @@ from scripts.ppo_train import ArenaClient, ROOT
 
 
 class TrainingReplayExportTests(unittest.TestCase):
+    def test_signals_game_replays_dynamic_supply_and_repeated_build(self):
+        with tempfile.TemporaryDirectory() as directory:
+            raw = Path(directory) / "raw.jsonl"
+            replay = Path(directory) / "replay.jsonl"
+            client = ArenaClient(log_path=raw, log_snapshots=True, card_set="signals")
+            try:
+                response = client.request(op="reset", seed=3, mode="A",
+                                          cardSet="signals", trace="full")
+                decisions = 0
+                while response["observation"] is not None and decisions < 1000:
+                    observation = response["observation"]
+                    candidate = random.Random(30000 + decisions).choice(
+                        observation["candidates"])
+                    response = client.request(op="step", action={
+                        **observation["decision"], "actionId": candidate["id"]})
+                    decisions += 1
+                self.assertIsNone(response["observation"], "signals game was truncated")
+                self.assertEqual(response["result"]["termination"], "natural")
+            finally:
+                client.close()
+            subprocess.run(["node", "scripts/ppo-export-training-replay.mjs",
+                            str(raw), str(replay)], cwd=ROOT, check=True,
+                           capture_output=True, text=True, encoding="utf-8")
+            verified = subprocess.run(["node", "scripts/validate-match-log.mjs",
+                                       str(replay), "--replay"], cwd=ROOT, check=True,
+                                      capture_output=True, text=True, encoding="utf-8")
+            self.assertTrue(json.loads(verified.stdout)["sceneReexecuted"])
+
     def test_complete_a_and_b_games_replay_with_explicit_resource_zones(self):
         for mode, seed, choice_seed in (("A", 987661, 44), ("B", 987651, 44),
                                         ("A", 987650, 987669),

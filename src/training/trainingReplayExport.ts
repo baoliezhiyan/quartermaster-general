@@ -21,7 +21,7 @@ type Commit={commandType:string;seat:SeatId;cardId?:string;responseCardId?:strin
     recycleId?:string;mode?:string;newUnitId?:string;airDefense?:boolean}>};
 type RawRow={recordType?:string;type?:string;seed?:number;trainingMetadata?:Record<string,unknown>;
   seat?:SeatId;activeSeat?:SeatId;choiceKind?:string;
-  snapshot?:{state:GameState;header:{seed:number;mode:'A'|'B';cardSet:'events'|'basics';
+  snapshot?:{state:GameState;header:{seed:number;mode:'A'|'B';cardSet:'events'|'basics'|'signals';
     courseVersion:string;overridesVersion:string;eventIds:string[];buildFingerprint:string;
     configHash:string;mapVersion:string;
     gameId:string}};
@@ -42,12 +42,15 @@ function frame(s:GameState):Frame{return {round:s.round,phase:s.phase,activeSeat
     resourcePool:s.trainingCourse?.mode==='B'?s.trainingCourse.openIds[seat]:[]}];
   })) as unknown as Frame['resources'],
   resolutionEvents:s.resolution?.events??[],resolutionScenario:s.resolution?.scenario??null};}
+// Active status order is a resolver detail. The scene protocol records membership, not
+// reordering, so compare it as a set without inventing remove/install operations.
+const statusMembership=(cards:Record<SeatId,string[]>)=>Object.fromEntries(
+  SEATS.map(seat=>[seat,[...cards[seat]].sort()]));
 function sceneProjection(s:GameState){return {units:s.units,scores:s.scores,round:s.round,phase:s.phase,
   activeSeat:s.activeSeat,unitSerial:s.unitSerial??0,
-  activeCards:Object.fromEntries(SEATS.map(seat=>[seat,s.decks[seat].active.map(c=>c.id)])),
-  turnFlags:s.turnFlags??null};}
+  activeCards:statusMembership(Object.fromEntries(SEATS.map(seat=>[seat,s.decks[seat].active.map(c=>c.id)])) as Record<SeatId,string[]>)};}
 function frameProjection(f:Frame){return {units:f.units,scores:f.scores,round:f.round,phase:f.phase,
-  activeSeat:f.activeSeat,unitSerial:f.unitSerial,activeCards:f.activeCards,turnFlags:f.turnFlags};}
+  activeSeat:f.activeSeat,unitSerial:f.unitSerial,activeCards:statusMembership(f.activeCards)};}
 function cardsFrom(s:GameState):TrainingCard[]{const byId=new Map<string,TrainingCard>();
   for(const seat of SEATS)for(const zone of ['hand','drawPile','discardPile','active','faceDown','resolving','removed'] as const)
     for(const card of s.decks[seat][zone]){
@@ -103,12 +106,29 @@ function resourceOps(current:Record<SeatId,Record<ResourceZone,string[]>>,c:Comm
   }
   return output;
 }
-function applyCommit(s:GameState,c:Commit,cards:Map<string,TrainingCard>,n:number,
-  resources:Record<SeatId,Record<ResourceZone,string[]>>,mode:'A'|'B'):TrainingStep['operations'] {
+export function applyCommit(s:GameState,c:Commit,cards:Map<string,TrainingCard>,n:number,
+  resources:Record<SeatId,Record<ResourceZone,string[]>>,mode:'A'|'B',
+  pendingBattles:Array<{sourceCardId?:string;board:SceneEffect&{kind:'board';defenderId?:string}}>,
+  sourceCardId?:string):TrainingStep['operations'] {
   const ops:TrainingStep['operations']=[];
   timing(s,c.after);
+  // Attack and direct-destruction declarations may open a response window
+  // before the casualty is resolved. The scene adapter removes the defender
+  // immediately, so wait until the recorded resolution actually removes it.
+  for(let index=pendingBattles.length-1;index>=0;index--){
+    const pending=pendingBattles[index];
+    if(pending.board.defenderId&&c.after.units.some(u=>u.id===pending.board.defenderId))continue;
+    try{applyScene(s,pending.board,cards);}catch(error){fail(n,`延后海陆战 ${String(error)}`);}
+    ops.push(pending.board);pendingBattles.splice(index,1);
+  }
   for(const recorded of c.boardEvents??[]){const {type:_,revision:__,...fields}=recorded;
-    const board={kind:'board',...fields} as SceneEffect;
+    const board={kind:'board',...fields} as Extract<SceneEffect,{kind:'board'}>;
+    if(['build_army','build_navy','recruit_army','recruit_navy'].includes(board.action)&&
+      !board.newUnitId&&same(c.before.units,c.after.units))continue;
+    if(['land_battle','sea_battle','destroy'].includes(board.action)&&board.defenderId&&
+      c.after.units.some(u=>u.id===board.defenderId)){
+      pendingBattles.push({sourceCardId:c.cardId??sourceCardId,board});continue;
+    }
     try{applyScene(s,board,cards);}catch(error){fail(n,`场面动作 ${recorded.action} ${JSON.stringify(board)}：${String(error)}`);}ops.push(board);
   }
   for(const event of newEvents(c)){
@@ -123,15 +143,9 @@ function applyCommit(s:GameState,c:Commit,cards:Map<string,TrainingCard>,n:numbe
       }
     }
   }
-  // Automatic supply loss is still a real removal, and is checked by the scene engine.
-  for(const unit of [...s.units])if(!c.after.units.some(u=>u.id===unit.id)){
-    const op={kind:'remove',unitId:unit.id,reason:'supply'} as const;
-    try{applyScene(s,op,cards);}catch{fail(n,`未记录的部队移除 ${unit.id}；不能冒充断补`);}ops.push(op);
-  }
-  if(!same(s.units,c.after.units))fail(n,'场面部队与训练引擎不一致');
-  for(const seat of SEATS){const amount=c.after.scores[seat]-s.scores[seat];if(amount){
-    const op={kind:'score',seat,amount} as const;applyScene(s,op,cards);ops.push(op);
-  }}
+  // A status can change the effective capital, sea adjacency, and supply in
+  // this same command. Install/remove it before validating automatic supply
+  // casualties; otherwise the old map rules misclassify a legitimate loss.
   for(const seat of SEATS){const current=s.decks[seat].active.map(card=>card.id);
     for(const id of current.filter(id=>!c.after.activeCards[seat].includes(id))){
       const op={kind:'status',seat,cardId:id,operation:'remove'} as const;
@@ -142,11 +156,35 @@ function applyCommit(s:GameState,c:Commit,cards:Map<string,TrainingCard>,n:numbe
       try{applyScene(s,op,cards);}catch(error){fail(n,String(error));}ops.push(op);
     }
   }
-  if(!same(s.turnFlags??null,c.after.turnFlags??null))fail(n,'临时规则标记无法由 v1.0 能力表示');
+  // Automatic supply loss is still a real removal, and is checked by the scene engine.
+  for(const unit of [...s.units])if(!c.after.units.some(u=>u.id===unit.id)){
+    const op={kind:'remove',unitId:unit.id,reason:'supply'} as const;
+    try{applyScene(s,op,cards);}catch{fail(n,`未记录的部队移除 ${unit.id}；不能冒充断补`);}ops.push(op);
+  }
+  if(!same(s.units,c.after.units)){
+    const expected=new Map(c.after.units.map(unit=>[unit.id,unit]));
+    const actual=new Map(s.units.map(unit=>[unit.id,unit]));
+    fail(n,`场面部队与训练引擎不一致（${c.commandType}，${c.seat}，${c.cardId??''}）：`+JSON.stringify({
+      onlyActual:s.units.filter(unit=>!expected.has(unit.id)),
+      onlyExpected:c.after.units.filter(unit=>!actual.has(unit.id)),
+      changed:s.units.filter(unit=>expected.has(unit.id)&&!same(unit,expected.get(unit.id)))
+        .map(unit=>({actual:unit,expected:expected.get(unit.id)})),
+      orderOnly:s.units.length===c.after.units.length&&s.units.every(unit=>expected.has(unit.id))
+    }));
+  }
+  for(const seat of SEATS){const amount=c.after.scores[seat]-s.scores[seat];if(amount){
+    const op={kind:'score',seat,amount} as const;applyScene(s,op,cards);ops.push(op);
+  }}
+  // The v1 scene adapter is intentionally a board/resource projection. Temporary
+  // response flags have no scene operation; the raw full-fidelity trace retains them.
   if(!same(sceneProjection(s),frameProjection(c.after))){const actual=sceneProjection(s),expected=frameProjection(c.after);
     const keys=Object.keys(expected).filter(k=>!same((actual as any)[k],(expected as any)[k]));
     fail(n,'场面摘要内容不一致：'+keys.map(k=>`${k}=${JSON.stringify((actual as any)[k])} / ${JSON.stringify((expected as any)[k])}`).join('; ').slice(0,1200));}
   ops.push(...resourceOps(resources,c,mode,n));
+  for(const outcome of c.cardOutcomes??[])if(outcome.outcome==='resolved'||outcome.outcome==='cancelled'){
+    for(let index=pendingBattles.length-1;index>=0;index--)
+      if(pendingBattles[index].sourceCardId===outcome.id)pendingBattles.splice(index,1);
+  }
   return ops;
 }
 export async function exportTrainingReplay(rawText:string):Promise<string>{
@@ -168,7 +206,8 @@ export async function exportTrainingReplay(rawText:string):Promise<string>{
     sceneEngineFingerprint:ENGINE,
     requiredCapabilities:['resources.independent.v1','scene.board.v1','scene.score.v1',
       'scene.remove.v1','scene.supply.v1','scene.status.v1'],
-    training:{courseId:`ppo-events-${original.header.mode}`,courseVersion:original.header.courseVersion,
+    training:{courseId:`ppo-${original.header.cardSet}-${original.header.mode}`,
+      courseVersion:original.header.courseVersion,
       configuration:{recordKind:'AI训练记录',seed:original.header.seed,
         mode:original.header.mode,cardSet:original.header.cardSet,
         eventIds:original.header.eventIds,basicCounts:BASIC_COUNTS,effectiveBasicCounts,
@@ -192,10 +231,11 @@ export async function exportTrainingReplay(rawText:string):Promise<string>{
     zone,[...start.resources!.find(r=>r.seat===seat&&r.zone===zone)!.ids]]))])) as
     Record<SeatId,Record<ResourceZone,string[]>>;
   if(!same(sceneProjection(scene),frameProjection(initial)))throw Error('初始训练场面与客户端场面规则不等价');
-  type Pending={cardId:string;seat:SeatId;round:number;name:string;response:boolean;
+  type Pending={cardId:string;seat:SeatId;round:number;name:string;detail?:string;response:boolean;
     operations:TrainingStep['operations'];cancelled:boolean};
   let pending:Pending|null=null;
   const suspended:Pending[]=[];
+  const pendingBattles:Array<{sourceCardId?:string;board:SceneEffect&{kind:'board';defenderId?:string}}>=[];
   const append=async(seat:SeatId,cardId:string|undefined,summary:string,
     operations:TrainingStep['operations'])=>{
     const index=steps.length+1;
@@ -212,7 +252,8 @@ export async function exportTrainingReplay(rawText:string):Promise<string>{
       if(['PLAY_CARD','PLAY_BASIC'].includes(commit.commandType)&&commit.cardId){
         if(pending)fail(steps.length+1,'上一张牌尚未完成，不能开始另一张标准出牌');
         pending={cardId:commit.cardId,seat:commit.seat,round:commit.before.round,
-          name:cardMap.get(commit.cardId)?.name??commit.cardId,response:false,
+          name:cardMap.get(commit.cardId)?.name??commit.cardId,
+          detail:row.action?.label,response:false,
           operations:[],cancelled:false};
       }
       if(commit.responseCardId){
@@ -227,7 +268,7 @@ export async function exportTrainingReplay(rawText:string):Promise<string>{
           response:true,operations:[],cancelled:false};
       }
       const before=sceneProjection(scene),ops=applyCommit(scene,commit,cardMap,
-        steps.length+1,resources,original.header.mode);
+        steps.length+1,resources,original.header.mode,pendingBattles,pending?.cardId);
       if(pending)pending.operations.push(...ops);
       else if(ops.length||!same(before,sceneProjection(scene))){
         const actor=COUNTRY_NAMES[commit.seat];
@@ -240,6 +281,7 @@ export async function exportTrainingReplay(rawText:string):Promise<string>{
         pending.cancelled=outcome.outcome==='cancelled';
         const action=`第${pending.round}轮 ${COUNTRY_NAMES[pending.seat]}`+
           `${pending.response?'响应【':'打出【'}${pending.name}】`+
+          (pending.detail&&pending.detail!==pending.name?`：${pending.detail}`:'')+
           (pending.cancelled?'，被取消':'');
         await append(pending.seat,pending.cardId,action,pending.operations);
         pending=suspended.pop()??null;

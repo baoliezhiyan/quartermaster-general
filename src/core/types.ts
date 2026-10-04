@@ -38,7 +38,7 @@ export interface GameState {
   unitSerial?:number;
   /** Isolated PPO curriculum data; absent in ordinary games. */
   trainingCourse?: {
-    version: 'ppo-events-v1'; mode: 'A' | 'B';
+    version: 'ppo-events-v1' | 'ppo-signals-a2s1-v2'; mode: 'A' | 'B';
     openIds: Record<SeatId,string[]>;
     openRandomState: number; discardRandomState: number;
     captureReplay?:boolean;

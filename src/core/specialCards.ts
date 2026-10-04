@@ -25,7 +25,7 @@ export function cardEffects(s:ReadState,card:CardInstance|ReadState['decks']['ge
   const full=fullCardEffects(s,card,targets);
   if(full!==undefined){
     // Training-only event overrides. The production card effects above remain intact.
-    if(s.trainingCourse?.version==='ppo-events-v1'){
+    if(s.trainingCourse){
       if(['special_113','special_255'].includes(card.definitionId))return full.slice(0,-1);
       if(card.definitionId==='special_94')return full.map(effect=>effect.kind==='choose'?{
         ...effect,options:effect.options.map(option=>({
@@ -67,9 +67,10 @@ export function realTriggers(s:GameState,frame:ResolutionFrame,e:Effect,timing:'
   const rules:TriggerRule[]=includePrelude?preludeTriggers(s,frame,e,timing,sourceInstanceId):[];
   const region=e.kind==='action'?e.option?.regionId:undefined;
   const phase=(p:string)=>e.kind==='signal' && e.tag===`PHASE:${p}`;
-  // The frozen PPO courses contain only four basics and one-shot events. None
-  // supplies a persistent/response/enhancement trigger; retain system rules below.
-  if(!s.trainingBasicOnly&&!s.trainingCourse) for(const owner of SEATS) for(const card of [...s.decks[owner].active,...s.decks[owner].hand,...s.decks[owner].faceDown,...s.decks[owner].resolving]) {
+  // The v1 event curriculum has no persistent or response card; A2S1 does.
+  if(!s.trainingBasicOnly&&(!s.trainingCourse||s.trainingCourse.version==='ppo-signals-a2s1-v2')) for(const owner of SEATS) for(const card of [...s.decks[owner].active,
+    ...(s.trainingCourse?.version==='ppo-signals-a2s1-v2'?[]:s.decks[owner].hand),
+    ...s.decks[owner].faceDown,...s.decks[owner].resolving]) {
     if(sourceInstanceId&&card.id!==sourceInstanceId)continue;
     if(!triggerCandidate(card.definitionId,e,timing))continue;
     const d=specialCard(card.definitionId,card.balance); if(!d) continue;

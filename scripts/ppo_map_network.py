@@ -44,6 +44,7 @@ class PpoMapNetwork(nn.Module):
         self.register_buffer("base_adjacency", adjacency)
         self.register_buffer("strait_edges", straits)
         self.semantic_start = encoder.candidate_semantic_start
+        self.action_slots = encoder.max_action_slots
         self.token_width = (len(ACTIONS) + self.country_count + self.region_count + 3 + 6 +
                             self.country_count + 9)
         self.country_offset = len(ACTIONS)
@@ -70,9 +71,10 @@ class PpoMapNetwork(nn.Module):
                   for start, end in self.map_slices]
         regions = self.region_projection(torch.cat(pieces, -1))
         neighbors = self._actor_neighbors(states, regions)
+        slots = self.action_slots
         tokens = candidates[:, :, self.semantic_start:
-                            self.semantic_start + MAX_ACTION_SLOTS * self.token_width]
-        tokens = tokens.reshape(batch, count, MAX_ACTION_SLOTS, self.token_width)
+                            self.semantic_start + slots * self.token_width]
+        tokens = tokens.reshape(batch, count, slots, self.token_width)
         actions = tokens[..., :len(ACTIONS)]
         countries = tokens[..., self.country_offset:
                            self.country_offset + self.country_count]
@@ -88,7 +90,7 @@ class PpoMapNetwork(nn.Module):
         present = (actions.sum(-1, keepdim=True) + actor_present).clamp(max=1)
         features = torch.cat((target_region, actor_neighborhood, actions, countries,
                               has_target, actor_present, present), -1)
-        sequence = self.slot_projection(features).reshape(batch * count, MAX_ACTION_SLOTS, -1)
+        sequence = self.slot_projection(features).reshape(batch * count, slots, -1)
         _, hidden = self.ordered_actions(sequence)
         ordered = hidden[-1].reshape(batch, count, -1)
         direct = candidates[:, :, self.direct_target_offset:

@@ -19,19 +19,23 @@ else {
   if(bundlePath){mkdirSync(dirname(resolve(bundlePath)),{recursive:true});writeFileSync(bundlePath,code,'utf8');}
 }
 const fingerprint=createHash('sha256').update(code).digest('hex');
-const {PpoTrainingArena,PPO_STATIC_SCHEMA}=await import(`data:text/javascript;base64,${Buffer.from(code).toString('base64')}`);
+const {PpoTrainingArena,PPO_STATIC_SCHEMA,PPO_A2S1_STATIC_SCHEMA}=await import(`data:text/javascript;base64,${Buffer.from(code).toString('base64')}`);
+const schemaCardSet=get('--card-set','events');
+if(!['basics','events','signals'].includes(schemaCardSet))throw new Error('Unknown arena schema course');
+const staticSchema=schemaCardSet==='signals'?PPO_A2S1_STATIC_SCHEMA:PPO_STATIC_SCHEMA;
 let arena=null;
 let log=null;
 if(logPath){const path=resolve(logPath);mkdirSync(dirname(path),{recursive:true});log=createWriteStream(path,{encoding:'utf8'});}
 const send=value=>process.stdout.write(`${JSON.stringify(value)}\n`);
 const record=value=>{if(log)log.write(`${JSON.stringify(value)}\n`);};
-send({ready:true,buildFingerprint:fingerprint,staticSchema:PPO_STATIC_SCHEMA});
+send({ready:true,buildFingerprint:fingerprint,staticSchema});
 const rl=createInterface({input:process.stdin,crlfDelay:Infinity});
 for await(const line of rl){
   let request;
   try{request=JSON.parse(line);let response;
     const operationStarted=process.hrtime.bigint();
     if(request.op==='reset'){
+      if((request.cardSet??'events')!==schemaCardSet)throw new Error('Arena course and encoder schema differ');
       arena=new PpoTrainingArena(request.seed,request.gameId??`ppo-${request.seed}`,{
         mode:request.mode,cardSet:request.cardSet??'events',
         buildFingerprint:fingerprint,trace:request.trace??'none',captureReplay:logSnapshots});

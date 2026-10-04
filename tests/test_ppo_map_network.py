@@ -1,10 +1,11 @@
 import unittest
 import copy
+import random
 
 import torch
 
 from scripts.ppo_map_network import PpoMapNetwork, migrate_flat
-from scripts.ppo_train import ArenaClient, Encoder, PpoNetwork, batch_tensors
+from scripts.ppo_train import ArenaClient, Encoder, PpoNetwork, batch_tensors, ppo_update
 
 
 class MapNetworkTests(unittest.TestCase):
@@ -88,6 +89,31 @@ class MapNetworkTests(unittest.TestCase):
             logits, _ = model(*batch_tensors([{"state": state, "candidates": choices}],
                                              torch.device("cpu")))
         self.assertNotEqual(float(logits[0, 0]), float(logits[0, 1]))
+
+    def test_map_gradient_accumulation_keeps_effective_minibatch(self):
+        obs = self.client.request(op="reset", seed=875, mode="A", cardSet="events")["observation"]
+        state, choices = self.encoder.encode(obs)
+        samples = [{"seat": "germany", "state": state, "candidates": choices[:count],
+                    "action": 0, "logprob": -1.0, "value": 0.0,
+                    "advantage": .1 * (i - 2), "target": .02 * i, "baseline": False}
+                   for i, count in enumerate((2, 4, 3, 5, 2))]
+        torch.manual_seed(875)
+        full = PpoMapNetwork(self.encoder)
+        pieces = copy.deepcopy(full)
+        full_optimizer = torch.optim.Adam(full.parameters(), lr=3e-4)
+        pieces_optimizer = torch.optim.Adam(pieces.parameters(), lr=3e-4)
+        before = ppo_update(full, full_optimizer, samples, torch.device("cpu"),
+                            random.Random(875), epochs=1, minibatch=4)
+        after = ppo_update(pieces, pieces_optimizer, samples, torch.device("cpu"),
+                           random.Random(875), epochs=1, minibatch=4,
+                           gradient_microbatch=2)
+        for key in before:
+            self.assertAlmostEqual(before[key], after[key], delta=1e-5, msg=key)
+        for key, tensor in full.state_dict().items():
+            if key in ("base.policy.2.bias", "map_policy.2.bias"):
+                continue  # Common logit shifts do not change the policy.
+            self.assertTrue(torch.allclose(tensor, pieces.state_dict()[key], atol=1e-4),
+                            (key, float((tensor - pieces.state_dict()[key]).abs().max())))
 
 
 if __name__ == "__main__":

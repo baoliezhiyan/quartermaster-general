@@ -1,5 +1,5 @@
 import { specialCard } from './cardCatalog';
-import { TRAINING_EVENT_IDS } from './trainingCourse';
+import { TRAINING_EVENT_IDS,TRAINING_A2S1_IDS } from './trainingCourse';
 import { cardEffects, barbarossaTargets, realTriggers } from './specialCards';
 import { matchesCard, canAffordHandCost } from './cardCosts';
 import type { ReadState, CardInstance, GameState } from './types';
@@ -37,7 +37,8 @@ export function extraEffects(s:ReadState,c:CardInstance,targets:string[]=[]):Eff
 export function extraCandidates(s:ReadState,e:Extract<Effect,{kind:'extraPlay'}>):CardInstance[] {
   return s.decks[e.seat][e.from].filter(c=>{
     if(s.trainingCourse && (e.from==='hand'&&!s.trainingCourse.openIds[e.seat].includes(c.id) ||
-      c.definitionId.startsWith('special_') && !TRAINING_EVENT_IDS.has(c.definitionId)))return false;
+      c.definitionId.startsWith('special_') && !(s.trainingCourse.version==='ppo-signals-a2s1-v2'?
+        TRAINING_A2S1_IDS:TRAINING_EVENT_IDS).has(c.definitionId)))return false;
     if(e.onlyCardIds&&!e.onlyCardIds.includes(c.id))return false;
     if(checking.has(c.id))return false;
     const d=specialCard(c.definitionId,c.balance);

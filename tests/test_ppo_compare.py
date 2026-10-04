@@ -119,7 +119,7 @@ class ComparisonTests(unittest.TestCase):
             self.assertEqual(ppo_train.model_weights_sha256(a2), digest)
             client = SimpleNamespace(fingerprint="f" * 64, schema={
                 "observationSchemaVersion": "v5", "actionSchemaVersion": "v4", "eventIds": []})
-            encoder = SimpleNamespace(state_dim=5, candidate_dim=4)
+            encoder = SimpleNamespace(state_dim=5, candidate_dim=4, signals=False)
             optim = torch.optim.Adam(a1.parameters())
             payload = ppo_train.checkpoint_payload(a1, optim, encoder, client, "A", 1, 10,
                 random.Random(42), 20260970, completed_episodes=40, training_seed=20260930,
