@@ -31,8 +31,7 @@ GOALS = {
     "U3": [("source", "land_battle", "western_europe"),
            ("trigger", "special_88", None), ("choice", "build_army", "western_europe")],
     "J1": [("source", "land_battle", "eastern_china"),
-           ("trigger", "special_199", None), ("choice", "build_army", "eastern_china"),
-           ("choice", "land_battle", "western_china")],
+           ("trigger", "special_199", None), ("choice", "build_army", "eastern_china")],
     "J2": [("trigger", "special_190", None), ("choice", "destroy", "eastern_china"),
            ("trigger", "special_189", None), ("choice", "recruit_army", "eastern_china")],
 }

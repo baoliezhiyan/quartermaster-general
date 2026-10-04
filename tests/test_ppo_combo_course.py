@@ -3,6 +3,7 @@ import json
 import tempfile
 import unittest
 import random
+from copy import deepcopy
 from collections import Counter
 from pathlib import Path
 
@@ -111,9 +112,9 @@ class ComboCourseTests(unittest.TestCase):
                 result = summarize(tracker, {"winner": "allies",
                     "allianceScores": {"axis": 1, "allies": 4}})
                 self.assertTrue(result["tacticalResultAchieved"], name)
-                # J1's second attack was selected but produced no board action:
-                # the old whole-game counter falsely called this a full chain.
-                self.assertEqual(result["specifiedComboAchieved"], name != "J1", name)
+                # J1 ends at the linked Chinese East build; the card's later
+                # attack still resolves by ordinary engine rules.
+                self.assertTrue(result["specifiedComboAchieved"], name)
                 if name == "U1":
                     self.assertEqual(result["firstUSWestEuropeLanding"]["source"], "patton")
                     self.assertEqual(result["pattonAttacksStarted"], 1)
@@ -192,6 +193,80 @@ class ComboCourseTests(unittest.TestCase):
             self.assertTrue(result["tacticalResultAchieved"])
             self.assertFalse(result["specifiedComboAchieved"])
             self.assertEqual(result["comboMatchedSteps"], 1)
+        finally:
+            client.close()
+
+    def test_all_real_g1_starts_are_checked_without_splicing_partial_chains(self):
+        with gzip.open(POOL, "rt", encoding="utf-8") as stream:
+            entry = next(item for item in json.load(stream)["entries"] if
+                item["template"] == "G1" and item["variant"] == "positive" and
+                item["layer"] == "payoff")
+        client = ppo.ArenaClient(card_set="signals")
+        try:
+            actual = probe(client, entry, combo_telemetry=True)
+            tracker = new_tracker("G1:positive:payoff", entry["snapshot"])
+            for index, step in enumerate(actual["steps"]):
+                record_step(tracker, step["telemetry"], index)
+            outcome = {"winner": "axis", "allianceScores": {"axis": 0, "allies": 0}}
+            self.assertTrue(summarize(tracker, outcome)["specifiedComboAchieved"])
+            first = next(op for op in tracker["operations"] if
+                op["source"] == "land_battle" and op["action"] == "land_battle")
+            earlier = {**deepcopy(first), "epoch": -1, "serial": 0,
+                       "eventId": "event:earlier", "frameId": "frame:earlier"}
+            with_earlier = deepcopy(tracker)
+            with_earlier["operations"].insert(0, earlier)
+            result = summarize(with_earlier, outcome)
+            self.assertTrue(result["specifiedComboAchieved"])
+            self.assertEqual(result["comboMatchedSteps"], 2)
+            with_earlier["triggerDeclines"]["special_136"] += 1
+            self.assertEqual(summarize(with_earlier, outcome)["comboStatus"], "complete")
+            # Both attacks are genuine observed settlements, but neither is
+            # an ancestor of this deliberately unrelated build.
+            unrelated = deepcopy(with_earlier)
+            build = next(op for op in unrelated["operations"] if op["source"] == "special_136")
+            build["parentEventId"] = "event:another-action"
+            build["ancestorIds"] = []
+            result = summarize(unrelated, outcome)
+            self.assertFalse(result["specifiedComboAchieved"])
+            self.assertEqual(result["comboMatchedSteps"], 1)
+        finally:
+            client.close()
+
+    def test_j1_goal_ends_at_linked_build_not_optional_followup_attack(self):
+        with gzip.open(POOL, "rt", encoding="utf-8") as stream:
+            entry = next(item for item in json.load(stream)["entries"] if
+                item["template"] == "J1" and item["variant"] == "positive" and
+                item["layer"] == "payoff")
+        client = ppo.ArenaClient(card_set="signals")
+        try:
+            actual = probe(client, entry, combo_telemetry=True)
+            self.assertEqual((actual["goalsCompleted"], actual["goalsTotal"]), (3, 3))
+            tracker = new_tracker("J1:positive:payoff", entry["snapshot"])
+            for index, step in enumerate(actual["steps"]):
+                record_step(tracker, step["telemetry"], index)
+            outcome = {"winner": "axis", "allianceScores": {"axis": 0, "allies": 0}}
+            result = summarize(tracker, outcome)
+            self.assertTrue(result["specifiedComboAchieved"])
+            self.assertEqual(result["comboRequiredSteps"], 2)
+            self.assertFalse(any(op["source"] == "special_199" and
+                op["action"] == "land_battle" and op["removed"]
+                for op in tracker["operations"]))
+            absent = deepcopy(tracker)
+            absent["operations"] = [op for op in absent["operations"] if
+                                    op["source"] != "special_199"]
+            self.assertFalse(summarize(absent, outcome)["specifiedComboAchieved"])
+            ordinary = deepcopy(tracker)
+            for op in ordinary["operations"]:
+                if op["source"] == "special_199" and op["action"] == "build_army":
+                    op["source"] = "build_army"
+            self.assertTrue(summarize(ordinary, outcome)["tacticalResultAchieved"])
+            self.assertFalse(summarize(ordinary, outcome)["specifiedComboAchieved"])
+            unrelated_response = deepcopy(tracker)
+            for op in unrelated_response["operations"]:
+                if op["source"] == "special_199" and op["action"] == "build_army":
+                    op["parentEventId"] = "event:unrelated"
+                    op["ancestorIds"] = []
+            self.assertFalse(summarize(unrelated_response, outcome)["specifiedComboAchieved"])
         finally:
             client.close()
 

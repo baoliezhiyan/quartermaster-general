@@ -7,7 +7,7 @@ import json
 import os
 from pathlib import Path
 
-VERSION = "combo-report-v4-linked-settlement"
+VERSION = "combo-report-v5-all-linked-starts-j1-occupation"
 CARD_TYPES = {"状态": "status", "响应": "response"}
 CARD_IDS = {
     "G1": ("special_136",), "G2": ("special_136", "special_137"),
@@ -249,65 +249,82 @@ def _chain(tracker: dict) -> tuple[bool, int, int, str]:
         "U3": [("land_battle", "western_europe", "land_battle", None, None),
                ("special_88", "western_europe", "build_army", None, "united_states")],
         "J1": [("land_battle", "eastern_china", "land_battle", "china", None),
-               ("special_199", "eastern_china", "build_army", None, "japan"),
-               ("special_199", None, "land_battle", None, None)],
+               ("special_199", "eastern_china", "build_army", None, "japan")],
         "J2": [("special_190", "eastern_china", "destroy", "china", None),
                ("special_189", "eastern_china", "recruit_army", None, "japan")],
     }[template]
-    matches: list[dict] = []
+    # One representative path per end operation is enough: every later
+    # condition depends on the immediate predecessor, not on the whole path.
+    # This keeps matching polynomial in the number of settlement operations,
+    # even when many attacks in one game fit the same first pattern.
+    frontier: dict[int, list[dict]] = {}
+    best: list[dict] = []
     for position, (source, region, action, removed_country, added_country) in enumerate(patterns):
-        eligible = [op for op in ops if op["source"] == source and op["action"] == action and
+        next_frontier: dict[int, list[dict]] = {}
+        for index, op in enumerate(ops):
+            if not (op["source"] == source and op["action"] == action and
                     (region is None or op["region"] == region) and
                     (not removed_country or _removed(op, removed_country, region)) and
-                    (not added_country or _added(op, added_country, region))]
-        if template == "G3" and position in (0, 1):
-            eligible = [op for op in eligible if any(unit["country"] in
-                ("united_kingdom", "united_states") and unit["regionId"] == "western_europe"
-                for unit in op["removed"])]
-        if template in ("U1", "U3") and position == len(patterns) - 1 and action == "land_battle":
-            eligible = [op for op in eligible if bool(op["removed"])]
-        if template == "U3" and position == 0:
-            eligible = [op for op in eligible if bool(op["removed"])]
-        if template == "J1" and position == 2:
-            eligible = [op for op in eligible if bool(op["removed"])]
-        if template == "G3" and position == 1 and matches:
-            previous_countries = {unit["country"] for unit in matches[-1]["removed"]}
-            eligible = [op for op in eligible if any(unit["country"] not in previous_countries
-                        for unit in op["removed"])]
-        if matches:
-            parent = matches[-1]
-            if template == "U1":
-                eligible = [op for op in eligible if op["frameId"] == parent["frameId"] and
-                            op["epoch"] == parent["epoch"] and op["serial"] > parent["serial"]]
-            elif template == "J2":
-                eligible = [op for op in eligible if op["round"] == parent["round"] and
-                            op["activeSeat"] == parent["activeSeat"] == "japan" and
-                            op["phase"] == parent["phase"] == "PLAY" and
-                            op["epoch"] == parent["epoch"] and
-                            op["parentEventId"] == parent["parentEventId"] and
-                            op["serial"] > parent["serial"]]
-            else:
-                eligible = [op for op in eligible if _linked(parent, op)]
-        if not eligible:
+                    (not added_country or _added(op, added_country, region))):
+                continue
+            if template == "G3" and position in (0, 1) and not any(
+                    unit["country"] in ("united_kingdom", "united_states") and
+                    unit["regionId"] == "western_europe" for unit in op["removed"]):
+                continue
+            if template in ("U1", "U3") and position == len(patterns) - 1 and action == "land_battle" and not op["removed"]:
+                continue
+            if template == "U3" and position == 0 and not op["removed"]:
+                continue
+            if position == 0:
+                next_frontier[index] = [op]
+                continue
+            for path in frontier.values():
+                parent = path[-1]
+                if template == "G3" and position == 1:
+                    previous_countries = {unit["country"] for unit in parent["removed"]}
+                    if not any(unit["country"] not in previous_countries
+                               for unit in op["removed"]):
+                        continue
+                if template == "U1":
+                    related = (bool(parent["frameId"]) and
+                        op["frameId"] == parent["frameId"] and
+                        op["epoch"] == parent["epoch"] and
+                        op["serial"] > parent["serial"])
+                elif template == "J2":
+                    related = (op["round"] == parent["round"] and
+                        op["activeSeat"] == parent["activeSeat"] == "japan" and
+                        op["phase"] == parent["phase"] == "PLAY" and
+                        op["epoch"] == parent["epoch"] and
+                        bool(parent["parentEventId"]) and
+                        op["parentEventId"] == parent["parentEventId"] and
+                        op["serial"] > parent["serial"])
+                else:
+                    related = _linked(parent, op)
+                if related:
+                    next_frontier[index] = [*path, op]
+                    break
+        if not next_frontier:
             break
-        matches.append(eligible[0])
-    if len(matches) == len(patterns):
-        return True, len(matches), len(patterns), "complete"
+        frontier = next_frontier
+        # Operation order is chronological across epochs; serial may restart.
+        best = frontier[max(frontier)]
+    if len(best) == len(patterns):
+        return True, len(best), len(patterns), "complete"
     if tracker["telemetryMissing"]:
-        return False, len(matches), len(patterns), "source_unresolved"
+        return False, len(best), len(patterns), "source_unresolved"
     relevant_cancel = any(cancel["epoch"] == op["epoch"] and
         (op["eventId"] == cancel["parentEventId"] or
          op["eventId"] in cancel["ancestorIds"]) for cancel in tracker["cancellations"]
-        for op in matches if op["eventId"])
+        for op in best if op["eventId"])
     if relevant_cancel and any((cancel["epoch"], cancel["eventId"]) in trigger["parents"] or
         any((cancel["epoch"], ancestor) in trigger["parents"] for ancestor in
             cancel["ancestorIds"]) for trigger in tracker["opponentTriggers"]
         for cancel in tracker["cancellations"]):
-        return False, len(matches), len(patterns), "opponent_countered"
-    if tracker["triggerDeclines"] and len(matches):
-        return False, len(matches), len(patterns), "voluntary_decline_after_partial"
-    if len(matches):
-        return False, len(matches), len(patterns), "partial"
+        return False, len(best), len(patterns), "opponent_countered"
+    if tracker["triggerDeclines"] and best:
+        return False, len(best), len(patterns), "voluntary_decline_after_partial"
+    if best:
+        return False, len(best), len(patterns), "partial"
     if tracker["variant"] == "control":
         return False, 0, len(patterns), "control_conditions_or_decline"
     offered = sum(tracker["triggerOpportunities"].values())
