@@ -106,14 +106,15 @@ function resourceOps(current:Record<SeatId,Record<ResourceZone,string[]>>,c:Comm
   }
   return output;
 }
-function applyCommit(s:GameState,c:Commit,cards:Map<string,TrainingCard>,n:number,
+export function applyCommit(s:GameState,c:Commit,cards:Map<string,TrainingCard>,n:number,
   resources:Record<SeatId,Record<ResourceZone,string[]>>,mode:'A'|'B',
-  pendingBattles:Array<{sourceCardId?:string;board:SceneEffect&{kind:'board';defenderId?:string}}>):TrainingStep['operations'] {
+  pendingBattles:Array<{sourceCardId?:string;board:SceneEffect&{kind:'board';defenderId?:string}}>,
+  sourceCardId?:string):TrainingStep['operations'] {
   const ops:TrainingStep['operations']=[];
   timing(s,c.after);
-  // An attack declaration may open a response window before the casualty is
-  // resolved. The scene adapter's board action removes the defender at once,
-  // so defer that operation until the recorded resolution actually removes it.
+  // Attack and direct-destruction declarations may open a response window
+  // before the casualty is resolved. The scene adapter removes the defender
+  // immediately, so wait until the recorded resolution actually removes it.
   for(let index=pendingBattles.length-1;index>=0;index--){
     const pending=pendingBattles[index];
     if(pending.board.defenderId&&c.after.units.some(u=>u.id===pending.board.defenderId))continue;
@@ -124,9 +125,9 @@ function applyCommit(s:GameState,c:Commit,cards:Map<string,TrainingCard>,n:numbe
     const board={kind:'board',...fields} as Extract<SceneEffect,{kind:'board'}>;
     if(['build_army','build_navy','recruit_army','recruit_navy'].includes(board.action)&&
       !board.newUnitId&&same(c.before.units,c.after.units))continue;
-    if((board.action==='land_battle'||board.action==='sea_battle')&&board.defenderId&&
+    if(['land_battle','sea_battle','destroy'].includes(board.action)&&board.defenderId&&
       c.after.units.some(u=>u.id===board.defenderId)){
-      pendingBattles.push({sourceCardId:c.cardId,board});continue;
+      pendingBattles.push({sourceCardId:c.cardId??sourceCardId,board});continue;
     }
     try{applyScene(s,board,cards);}catch(error){fail(n,`场面动作 ${recorded.action} ${JSON.stringify(board)}：${String(error)}`);}ops.push(board);
   }
@@ -163,7 +164,7 @@ function applyCommit(s:GameState,c:Commit,cards:Map<string,TrainingCard>,n:numbe
   if(!same(s.units,c.after.units)){
     const expected=new Map(c.after.units.map(unit=>[unit.id,unit]));
     const actual=new Map(s.units.map(unit=>[unit.id,unit]));
-    fail(n,'场面部队与训练引擎不一致：'+JSON.stringify({
+    fail(n,`场面部队与训练引擎不一致（${c.commandType}，${c.seat}，${c.cardId??''}）：`+JSON.stringify({
       onlyActual:s.units.filter(unit=>!expected.has(unit.id)),
       onlyExpected:c.after.units.filter(unit=>!actual.has(unit.id)),
       changed:s.units.filter(unit=>expected.has(unit.id)&&!same(unit,expected.get(unit.id)))
@@ -267,7 +268,7 @@ export async function exportTrainingReplay(rawText:string):Promise<string>{
           response:true,operations:[],cancelled:false};
       }
       const before=sceneProjection(scene),ops=applyCommit(scene,commit,cardMap,
-        steps.length+1,resources,original.header.mode,pendingBattles);
+        steps.length+1,resources,original.header.mode,pendingBattles,pending?.cardId);
       if(pending)pending.operations.push(...ops);
       else if(ops.length||!same(before,sceneProjection(scene))){
         const actor=COUNTRY_NAMES[commit.seat];

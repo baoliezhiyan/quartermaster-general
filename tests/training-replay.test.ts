@@ -11,6 +11,7 @@ import {parseTrainingReplay,sealTraining} from '../src/actionReplay/trainingCode
 import {TrainingController} from '../src/actionReplay/TrainingController';
 import {applyResource} from '../src/actionReplay/resources';
 import {openReplay} from '../src/actionReplay/openReplay';
+import {applyCommit} from '../src/training/trainingReplayExport';
 import type {TrainingHeader,TrainingStart,TrainingStep,TrainingCard} from '../src/actionReplay/trainingContract';
 const cards:TrainingCard[]=[{id:'a',definitionId:'build_army',country:'germany',deckOwner:'germany',name:'建设陆军',text:'训练卡面：建设一支陆军',type:'基本牌'},{id:'b',definitionId:'training-custom-card',country:'germany',deckOwner:'germany',name:'构造测试卡',text:'仅用于验证文件内卡面',type:'事件'}];
 async function fixture(){
@@ -58,4 +59,33 @@ it('does not gate trainer versions but rejects unknown capabilities, overrides, 
 });
 it('rejects wrong board result hashes and unknown card references',async()=>{
  const lines=await fixture();lines[2].sceneHash='0'.repeat(64);await expect(openReplay(await sealTraining(lines))).rejects.toThrow('场面摘要');lines[2].cardId='missing';await expect(parseTrainingReplay(await sealTraining(lines))).rejects.toThrow('来源卡未知');
+});
+it('defers a direct destroy through the defender response window and cancels it safely',()=>{
+ const cardMap=new Map<string,TrainingCard>();
+ const army={id:'japan-army',country:'japan',type:'army',regionId:'eastern_china'} as const;
+ const scores=Object.fromEntries(SEATS.map(seat=>[seat,0]));
+ const activeCards=Object.fromEntries(SEATS.map(seat=>[seat,[]]));
+ const resources=()=>Object.fromEntries(SEATS.map(seat=>[seat,{hand:[],drawPile:[],discardPile:[],resourcePool:[]}])) as any;
+ const scene=()=>createTrainingScene({units:[army],scores,round:1,phase:'PLAY',
+  activeSeat:'soviet_union',balance:true,activeCards} as any,'deferred-destroy',cardMap);
+ const frame=(units:unknown[])=>({round:1,phase:'PLAY',activeSeat:'soviet_union',units,
+  scores,unitSerial:0,turnFlags:null,activeCards,resources:resources(),
+  resolutionEvents:[],resolutionScenario:null});
+ const declaration={commandType:'RESOLVE_ENGINE_CHOICE',seat:'soviet_union',
+  before:frame([army]),after:frame([army]),boardEvents:[{type:'TRAINING_BOARD_APPLIED',
+   revision:1,country:'china',action:'destroy',regionId:'eastern_china',
+   defenderId:army.id,mode:'battle'}]};
+ const pending:any[]=[];const s=scene(),zones=resources();
+ expect(applyCommit(s,declaration as any,cardMap,1,zones,'A',pending,'soviet_union:special_69')).toEqual([]);
+ expect(s.units).toEqual([army]);expect(pending).toHaveLength(1);
+ const resolved={...declaration,before:frame([army]),after:frame([]),boardEvents:[],
+  cardOutcomes:[{id:'soviet_union:special_69',outcome:'resolved',appliedEffects:1}]};
+ expect(applyCommit(s,resolved as any,cardMap,2,zones,'A',pending,'soviet_union:special_69'))
+  .toMatchObject([{kind:'board',action:'destroy',defenderId:army.id}]);
+ expect(s.units).toEqual([]);expect(pending).toHaveLength(0);
+ const kept=scene(),cancelledPending:any[]=[],cancelledZones=resources();
+ applyCommit(kept,declaration as any,cardMap,1,cancelledZones,'A',cancelledPending,'soviet_union:special_69');
+ const cancelled={...declaration,boardEvents:[],cardOutcomes:[{id:'soviet_union:special_69',outcome:'cancelled',appliedEffects:0}]};
+ expect(applyCommit(kept,cancelled as any,cardMap,2,cancelledZones,'A',cancelledPending,'soviet_union:special_69')).toEqual([]);
+ expect(kept.units).toEqual([army]);expect(cancelledPending).toHaveLength(0);
 });
