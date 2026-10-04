@@ -655,7 +655,7 @@ def model_weights_sha256(model):
 
 def experiment_config_sha256(experiment_id, mode, entropy_coefficient, initial_hash,
                              training_seed, build_fingerprint, card_set="events", architecture=None,
-                             auxiliary_config=None):
+                             auxiliary_config=None, course_config=None):
     if experiment_id is None:
         return None
     config = {"experimentId": experiment_id, "resourceMode": mode,
@@ -668,6 +668,8 @@ def experiment_config_sha256(experiment_id, mode, entropy_coefficient, initial_h
         config["networkArchitecture"] = architecture
     if auxiliary_config is not None:
         config["auxiliaryConfig"] = auxiliary_config
+    if course_config is not None:
+        config["comboCourseConfig"] = course_config
     return hashlib.sha256(json.dumps(config, sort_keys=True).encode()).hexdigest()
 
 
@@ -1025,7 +1027,8 @@ def ppo_update(model, optimizer, samples, device, rng, epochs=4, minibatch=256,
 def checkpoint_payload(model, optimizer, encoder, client, mode, update, decisions, rng, next_seed,
                        card_set="events", completed_episodes=0, training_seed=None,
                        experiment_id=None, entropy_coefficient=None, initial_weights_sha256=None,
-                       architecture=None, auxiliary_config=None, sampling_config=None):
+                       architecture=None, auxiliary_config=None, sampling_config=None,
+                       course_config=None):
     payload = {"format": "quartermaster-ppo-checkpoint-v1", "encoderVersion": encoder_version(card_set),
             "networkArchitecture": architecture,
             "trainerVersion": TRAINER_VERSION,
@@ -1043,7 +1046,7 @@ def checkpoint_payload(model, optimizer, encoder, client, mode, update, decision
             "experimentConfigSha256": experiment_config_sha256(experiment_id, mode,
                 OPTIMIZER_CONFIG["entropy"] if entropy_coefficient is None else entropy_coefficient,
                 initial_weights_sha256, training_seed, client.fingerprint, card_set, architecture,
-                auxiliary_config),
+                auxiliary_config, course_config),
             "update": update, "policyVersion": update,
             "completedDecisions": decisions, "completedEpisodes": completed_episodes,
             "episodesPerUpdate": 40, "nextSeed": next_seed, "trainingSeed": training_seed,
@@ -1054,13 +1057,15 @@ def checkpoint_payload(model, optimizer, encoder, client, mode, update, decision
         payload["auxiliaryConfig"] = auxiliary_config
     if sampling_config is not None:
         payload["samplingConfig"] = sampling_config
+    if course_config is not None:
+        payload["comboCourseConfig"] = course_config
     return payload
 
 
 def restore_checkpoint(path, model, optimizer, encoder, client, mode, rng, card_set="events",
                        training_seed=None, experiment_id=None, entropy_coefficient=None,
                        initial_weights_sha256=None, architecture=None, auxiliary_config=None,
-                       approved_resume_parent_sha256=None):
+                       approved_resume_parent_sha256=None, course_config=None):
     saved = torch.load(path, map_location="cpu", weights_only=False)
     expected = {"format": "quartermaster-ppo-checkpoint-v1", "encoderVersion": encoder_version(card_set),
                 "trainerVersion": TRAINER_VERSION,
@@ -1079,12 +1084,14 @@ def restore_checkpoint(path, model, optimizer, encoder, client, mode, rng, card_
                 "experimentConfigSha256": experiment_config_sha256(experiment_id, mode,
                     OPTIMIZER_CONFIG["entropy"] if entropy_coefficient is None else entropy_coefficient,
                     initial_weights_sha256, training_seed, client.fingerprint, card_set, architecture,
-                    auxiliary_config),
+                    auxiliary_config, course_config),
                 "episodesPerUpdate": 40}
     if architecture is not None:
         expected["networkArchitecture"] = architecture
     if auxiliary_config is not None:
         expected["auxiliaryConfig"] = auxiliary_config
+    if course_config is not None:
+        expected["comboCourseConfig"] = course_config
     if any(saved.get(key) != value for key, value in expected.items()):
         raise ValueError("Checkpoint schema, mode, or rules build differs")
     source_compatible = saved.get("trainerSourceSha256") in ({TRAINER_SOURCE_HASH} |
@@ -1097,7 +1104,7 @@ def restore_checkpoint(path, model, optimizer, encoder, client, mode, rng, card_
                              "87b7fa23046c8a38a0bb06623085ad414353f413fad16c976a56544bb924c8d2")
     if not source_compatible:
         raise ValueError("Checkpoint trainer source differs")
-    if experiment_id in ("A2S1", "A2S1W1") and saved.get("update", 0) > 1 and saved.get("samplingConfig") != {
+    if experiment_id in ("A2S1", "A2S1W1", "A2S1C1") and saved.get("update", 0) > 1 and saved.get("samplingConfig") != {
             "version": "chunk-shuffle-epoch-v1", "cacheLimitBytes": 1536 * 1024 ** 2,
             "prefetchLimitBytes": 256 * 1024 ** 2, "gradientMicrobatch": 64,
             "logicalMinibatch": 256, "epochs": 4}:

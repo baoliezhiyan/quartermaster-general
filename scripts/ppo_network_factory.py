@@ -11,7 +11,7 @@ STAGE2_EXPERIMENTS = {"S2FLAT": FLAT, "S2MAP": MAP}
 ADAPTED_MAP = "map-contextual-opening-adapter-v1"
 A2S1_ADAPTER = "map-contextual-opening-adapter-a2s1-v1"
 ACTIVE_EXPERIMENTS = {"A1S2": ADAPTED_MAP, "A2S1": A2S1_ADAPTER,
-                      "A2S1W1": A2S1_ADAPTER}
+                      "A2S1W1": A2S1_ADAPTER, "A2S1C1": A2S1_ADAPTER}
 
 
 def make_network(architecture, encoder):

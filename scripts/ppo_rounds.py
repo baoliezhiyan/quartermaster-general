@@ -84,6 +84,7 @@ def export_weights(checkpoint: Path, target: Path, mode: str,
                "entropyCoefficient": saved.get("optimizerConfig", ppo.OPTIMIZER_CONFIG)["entropy"],
                "initialWeightsSha256": saved.get("initialWeightsSha256"),
                "auxiliaryConfig": saved.get("auxiliaryConfig"),
+               "comboCourseConfig": saved.get("comboCourseConfig"),
                "experimentConfigSha256": saved.get("experimentConfigSha256"),
                "rewardConfig": saved.get("rewardConfig", ppo.REWARD_CONFIG),
                "round": round_number, "policyVersion": saved["policyVersion"],
@@ -107,7 +108,7 @@ def record_game(checkpoint: Path, target: Path, mode: str, round_number: int,
                 training_seed: int, model_sha256: str, max_decisions: int = 3000,
                 experiment_id=None, entropy_coefficient=None, initial_weights_sha256=None,
                 architecture=None, auxiliary_config=None, card_set="events",
-                deterministic=True, seed_override=None):
+                deterministic=True, seed_override=None, course_config=None):
     seed = selected_game(training_seed, mode, round_number) if seed_override is None else seed_override
     raw_target = target.with_name(".training-raw.jsonl")
     client = ppo.ArenaClient(log_path=raw_target, log_snapshots=True, card_set=card_set)
@@ -127,7 +128,8 @@ def record_game(checkpoint: Path, target: Path, mode: str, round_number: int,
                                        entropy_coefficient=entropy_coefficient,
                                        initial_weights_sha256=initial_weights_sha256,
                                        architecture=architecture,
-                                       auxiliary_config=auxiliary_config)
+                                       auxiliary_config=auxiliary_config,
+                                       course_config=course_config)
         if saved["update"] != round_number * UPDATES_PER_ROUND:
             raise ValueError("记录所用模型与目标轮数不符")
         model.eval()
@@ -141,6 +143,7 @@ def record_game(checkpoint: Path, target: Path, mode: str, round_number: int,
                     "policy-probability", "modelSha256": model_sha256,
                     "networkArchitecture": architecture,
                     "auxiliaryConfig": auxiliary_config,
+                    "comboCourseConfig": course_config,
                     "recordScope": "full-training-scene-replay-v1"}
         result = ppo.play_episode(client, encoder, model, device, mode, seed,
                                   max_decisions, trace="full",

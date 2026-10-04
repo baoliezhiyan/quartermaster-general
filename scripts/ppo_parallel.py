@@ -161,6 +161,9 @@ class Episode:
     environment: int
     observation: dict
     rng: random.Random
+    start_decision_count: int = 0
+    course_tracker: dict | None = None
+    last_chosen: dict | None = None
     started: float = field(default_factory=time.perf_counter)
     samples: list = field(default_factory=list)
     rewards: list = field(default_factory=list)
@@ -192,11 +195,28 @@ class Episode:
     outcome: dict | None = None
 
 
-def make_tasks(start_seed: int, count: int, update: int, mode: str) -> list[dict]:
+def make_tasks(start_seed: int, count: int, update: int, mode: str,
+               combo_entries: dict | None = None) -> list[dict]:
     if count < 1:
         raise ValueError("Episode count must be positive")
-    return [{"jobId": f"{mode}-update-{update}-job-{i}", "seed": start_seed + i,
-             "policyVersion": update - 1} for i in range(count)]
+    tasks = [{"jobId": f"{mode}-update-{update}-job-{i}", "seed": start_seed + i,
+              "policyVersion": update - 1} for i in range(count)]
+    if combo_entries is not None:
+        if count != BATCH_EPISODES:
+            raise ValueError("Combo course requires exactly 40 complete episodes")
+        from scripts.ppo_combo_course import TEMPLATES
+        for index in range(12):
+            global_slot = (update - 1) * 12 + index
+            template = TEMPLATES[global_slot % len(TEMPLATES)].key
+            layer = "preparation" if index % 3 == 2 else "payoff"
+            # Each template alternates its own variant across appearances.
+            # Slot parity would permanently pair even templates with positives.
+            variant = "control" if (global_slot // len(TEMPLATES)) % 2 else "positive"
+            course_id = f"{template}:{variant}:{layer}"
+            if course_id not in combo_entries:
+                raise ValueError(f"Course pool lacks deterministic quota: {course_id}")
+            tasks[28 + index]["courseId"] = course_id
+    return tasks
 
 
 def policy_rng(seed: int, policy_version: int, training_seed: int) -> random.Random:
@@ -247,7 +267,12 @@ def episode_summary(episode: Episode, snapshot: dict) -> dict:
     outcome = episode.outcome
     action_digest = hashlib.sha256(json.dumps([(sample["seat"], sample["action"])
         for sample in episode.samples], separators=(",", ":")).encode()).hexdigest()
-    return {"jobId": episode.task["jobId"], "seed": episode.task["seed"],
+    summary = {"jobId": episode.task["jobId"], "seed": episode.task["seed"],
+            "arenaSeed": (episode.course_tracker or {}).get("preparationSeed", episode.task["seed"]),
+            "policySampleSeed": episode.task["seed"],
+            "startType": "course" if episode.task.get("courseId") else "normal",
+            "courseId": episode.task.get("courseId"),
+            "startDecisionCount": episode.start_decision_count,
             "policyVersion": episode.task["policyVersion"],
             "termination": outcome["termination"], "winner": outcome["winner"],
             "round": outcome["round"], "allianceScores": outcome["allianceScores"],
@@ -285,12 +310,16 @@ def episode_summary(episode: Episode, snapshot: dict) -> dict:
             "candidateMean": statistics.fmean(episode.candidate_counts),
             "candidateMax": max(episode.candidate_counts),
             "wallSeconds": time.perf_counter() - episode.started}
+    if episode.course_tracker is not None:
+        from scripts.ppo_combo_metrics import summarize
+        summary["comboCourse"] = summarize(episode.course_tracker, outcome, state)
+    return summary
 
 
 def collect_batch(clients, encoder, model, device, tasks, mode, card_set, training_seed,
                   max_decisions, inference_batch_size=8, inference_wait_ms=2.0,
                   diagnostic_path: Path | None = None, trace="none", on_progress=None,
-                  store: TrajectoryStore | None = None):
+                  store: TrajectoryStore | None = None, combo_entries: dict | None = None):
     """No weight changes occur here. Each task is claimed once, then finishes naturally."""
     if len({task["jobId"] for task in tasks}) != len(tasks):
         raise ValueError("Duplicate episode jobs")
@@ -319,11 +348,17 @@ def collect_batch(clients, encoder, model, device, tasks, mode, card_set, traini
             if not waiting:
                 return
             task = waiting.popleft()
+            course = combo_entries[task["courseId"]] if "courseId" in task else None
             tag = {"environmentId": environment, "jobId": task["jobId"],
-                   "episodeId": f"ppo-{mode}-{task['seed']}", "decisionId": -1,
+                   "episodeId": course["snapshot"]["header"]["gameId"] if course else
+                       f"ppo-{mode}-{task['seed']}", "decisionId": -1,
                    "policyVersion": task["policyVersion"]}
-            submit(environment, "reset", task, op="reset", seed=task["seed"], mode=mode,
-                   cardSet=card_set, trace=trace, gameId=tag["episodeId"], tag=tag)
+            if course:
+                submit(environment, "reset", task, op="restore",
+                       snapshot=course["snapshot"], trace="full", tag=tag)
+            else:
+                submit(environment, "reset", task, op="reset", seed=task["seed"], mode=mode,
+                       cardSet=card_set, trace=trace, gameId=tag["episodeId"], tag=tag)
 
         for environment in range(min(len(clients), len(tasks))):
             start_next(environment)
@@ -350,8 +385,13 @@ def collect_batch(clients, encoder, model, device, tasks, mode, card_set, traini
                             raise RuntimeError("Reset produced no decision")
                         if response["header"]["gameId"] != tag["episodeId"]:
                             raise RuntimeError("Reset game ID mismatch")
+                        course = combo_entries[item["courseId"]] if "courseId" in item else None
+                        if course:
+                            from scripts.ppo_combo_metrics import new_tracker
                         active[environment] = Episode(item, environment, obs,
-                            policy_rng(item["seed"], item["policyVersion"], training_seed))
+                            policy_rng(item["seed"], item["policyVersion"], training_seed),
+                            course["snapshot"]["decisionCount"] if course else 0,
+                            new_tracker(item["courseId"], course["snapshot"]) if course else None)
                         ready.append(environment)
                     elif kind == "step":
                         episode = item
@@ -362,6 +402,11 @@ def collect_batch(clients, encoder, model, device, tasks, mode, card_set, traini
                             raise RuntimeError("Stale decision result")
                         previous = episode.observation
                         outcome = response["result"]
+                        if episode.course_tracker is not None:
+                            from scripts.ppo_combo_metrics import record_step
+                            record_step(episode.course_tracker, previous, episode.last_chosen,
+                                        response["observation"] or (outcome or {}).get("finalObservation"),
+                                        response.get("record"))
                         after = outcome["allianceScores"] if outcome else response["observation"]["allianceScores"]
                         base, reward = decision_rewards(previous, after, outcome, info)
                         for team in ("axis", "allies"):
@@ -378,8 +423,14 @@ def collect_batch(clients, encoder, model, device, tasks, mode, card_set, traini
                                 episode.waste_penalties[waste["seat"]] += 1
                                 episode.waste_by_card[waste["definitionId"]] += 1
                         episode.rewards.append(reward)
+                        adjustment_info = info
+                        if episode.start_decision_count and info.get("rewardAdjustments"):
+                            adjustment_info = {**info, "rewardAdjustments": [{**item,
+                                "decisionId": item["decisionId"] - episode.start_decision_count}
+                                for item in info["rewardAdjustments"] if
+                                item["decisionId"] >= episode.start_decision_count]}
                         for adjustment in ppo.apply_reward_adjustments(
-                                episode.rewards, episode.samples, info):
+                                episode.rewards, episode.samples, adjustment_info):
                             episode.waste_penalties[adjustment["seat"]] += 1
                             episode.waste_reasons[adjustment["reason"]] += 1
                             episode.waste_by_card[adjustment["cardId"].split(":")[1]] += 1
@@ -435,6 +486,10 @@ def collect_batch(clients, encoder, model, device, tasks, mode, card_set, traini
                         if len(episode.samples) >= max_decisions:
                             raise RuntimeError(f"Episode {episode.task['jobId']} exceeded {max_decisions} decisions")
                         chosen = observation["candidates"][index]
+                        episode.last_chosen = chosen
+                        if episode.course_tracker is not None:
+                            from scripts.ppo_combo_metrics import record_selection
+                            record_selection(episode.course_tracker, observation, chosen)
                         sample = {"seat": observation["decisionSeat"],
                             "state": state, "candidates": candidates, "action": index,
                             "logprob": math.log(probability), "value": value, "baseline": False}
@@ -551,7 +606,7 @@ def summarize_evaluation(games):
 def main():
     parser = argparse.ArgumentParser(description="Parallel complete-episode PPO training")
     parser.add_argument("--mode", choices=["A", "B"], required=True)
-    parser.add_argument("--experiment-id", choices=["A1", "A2", "A1S1", "S2FLAT", "S2MAP", "A1S2", "A2S1", "A2S1W1"], default=None)
+    parser.add_argument("--experiment-id", choices=["A1", "A2", "A1S1", "S2FLAT", "S2MAP", "A1S2", "A2S1", "A2S1W1", "A2S1C1"], default=None)
     parser.add_argument("--architecture", choices=["flat-v1-effective-straits",
         "shared-regions-actor-adjacency-ordered-actions-v2", "map-contextual-opening-adapter-v1",
         "map-contextual-opening-adapter-a2s1-v1"], default=None)
@@ -562,6 +617,7 @@ def main():
     parser.add_argument("--entropy-coefficient", type=float,
                         default=ppo.OPTIMIZER_CONFIG["entropy"])
     parser.add_argument("--initial-weights", type=Path, default=None)
+    parser.add_argument("--combo-pool", type=Path, default=None)
     parser.add_argument("--expected-initial-hash", default=None)
     parser.add_argument("--card-set", choices=["basics", "events", "signals"], default="events")
     parser.add_argument("--workers", type=int, default=8)
@@ -593,7 +649,7 @@ def main():
     if args.experiment_id and (args.mode != "A" or args.entropy_coefficient !=
                                {"A1": 0.01, "A2": 0.02, "A1S1": 0.01,
                                 "S2FLAT": 0.01, "S2MAP": 0.01, "A1S2": 0.01,
-                                "A2S1": 0.01, "A2S1W1": 0.01}[args.experiment_id] or
+                                "A2S1": 0.01, "A2S1W1": 0.01, "A2S1C1": 0.01}[args.experiment_id] or
                                not args.initial_weights or not args.expected_initial_hash):
         parser.error("A1/A2 require A resource mode, the prescribed entropy, and shared initialization")
     from scripts.ppo_network_factory import STAGE2_EXPERIMENTS, ACTIVE_EXPERIMENTS, make_network
@@ -609,8 +665,10 @@ def main():
             parser.error("Invalid A1S2 auxiliary configuration")
     elif args.auxiliary_data is not None or args.no_auxiliary:
         parser.error("Auxiliary learning is exclusive to A1S2")
-    if args.experiment_id in ("A2S1", "A2S1W1") and args.card_set != "signals":
+    if args.experiment_id in ("A2S1", "A2S1W1", "A2S1C1") and args.card_set != "signals":
         parser.error("A2S1 requires the signals course")
+    if (args.experiment_id == "A2S1C1") != (args.combo_pool is not None):
+        parser.error("Only A2S1C1 uses a required reachable combo start pool")
     torch.set_num_threads(min(4, os.cpu_count() or 1))
     device = torch.device("cpu" if args.cpu or not torch.cuda.is_available() else "cuda")
     rng = random.Random(args.seed)
@@ -634,16 +692,32 @@ def main():
                                                 "candidateDim": encoder.candidate_dim} or
                     args.architecture is not None and initial.get("networkArchitecture") != args.architecture):
                     raise ValueError("Comparison initialization schema differs")
-                if args.experiment_id == "A2S1W1" and (
-                        initial.get("experimentId") != "A2S1W1" or
+                if args.experiment_id in ("A2S1W1", "A2S1C1") and (
+                        initial.get("experimentId") != args.experiment_id or
                         initial.get("rewardConfig") != ppo.reward_config("signals") or
                         initial.get("sourceExperimentId") != "A2S1" or
                         initial.get("optimizerMigration") != "new-Adam-no-old-momentum"):
-                    raise ValueError("A2S1W1 requires its explicit v3 reward migration initializer")
+                    raise ValueError("Revised A2S1 requires its explicit v3 reward migration initializer")
                 model.load_state_dict(initial["modelState"])
             initial_hash = ppo.model_weights_sha256(model)
             if args.expected_initial_hash and initial_hash != args.expected_initial_hash:
                 raise ValueError("Comparison initialization weight hash differs")
+            combo_entries, course_config, combo_generation = None, None, None
+            if args.combo_pool:
+                from scripts.ppo_combo_course import (MIX, VERSION, generation_summary,
+                                                      pool_identity, read_pool)
+                if not args.initial_weights:
+                    raise ValueError("Combo training requires an explicit migrated initializer")
+                expected = pool_identity(clients[0], initial["sourceCheckpointSha256"], initial_hash)
+                pool = read_pool(args.combo_pool, expected)
+                combo_entries = {f"{item['template']}:{item['variant']}:{item['layer']}": item
+                                 for item in pool["entries"]}
+                if len(combo_entries) != 32 or len(pool["entries"]) != 32:
+                    raise ValueError("Combo pool requires all eight templates, two variants and two layers")
+                combo_generation = generation_summary(pool)
+                course_config = {"version": VERSION, "mix": MIX,
+                                 "poolIdentitySha256": expected["identitySha256"],
+                                 "poolFileSha256": hashlib.sha256(args.combo_pool.read_bytes()).hexdigest()}
             auxiliary_config = None
             auxiliary_bundle = None
             if args.experiment_id == "A1S2":
@@ -666,6 +740,7 @@ def main():
                                                initial_weights_sha256=initial_hash if args.experiment_id else None,
                                                architecture=args.architecture,
                                                auxiliary_config=auxiliary_config,
+                                               course_config=course_config,
                                                approved_resume_parent_sha256=args.approved_resume_parent_sha256)
                 next_seed = saved["nextSeed"]
                 completed_decisions = saved["completedDecisions"]
@@ -678,7 +753,7 @@ def main():
                     ["git", "status", "--porcelain"], cwd=ppo.ROOT, text=True).strip())
             except (OSError, subprocess.CalledProcessError):
                 source_commit, source_dirty = None, None
-            gradient_microbatch = (64 if args.experiment_id in ("A2S1", "A2S1W1") else
+            gradient_microbatch = (64 if args.experiment_id in ("A2S1", "A2S1W1", "A2S1C1") else
                                    32 if args.experiment_id in ("S2MAP", "A1S2") else
                                    ppo.OPTIMIZER_CONFIG["minibatch"])
             report = {"mode": args.mode, "experimentId": args.experiment_id,
@@ -689,8 +764,10 @@ def main():
                       "experimentConfigSha256": ppo.experiment_config_sha256(args.experiment_id,
                           args.mode, args.entropy_coefficient, initial_hash if args.experiment_id else None,
                           args.seed, clients[0].fingerprint, args.card_set, args.architecture,
-                          auxiliary_config),
+                          auxiliary_config, course_config),
                       "auxiliaryConfig": auxiliary_config,
+                      "comboCourseConfig": course_config,
+                      "comboStartGeneration": combo_generation,
                       "networkArchitecture": args.architecture,
                       "sourceCommit": source_commit, "sourceDirty": source_dirty,
                       "trainerSourceSha256": ppo.TRAINER_SOURCE_HASH,
@@ -728,7 +805,13 @@ def main():
                 for obsolete in ("baselineEvaluation", "baselineEvaluationSeconds", "evaluations"):
                     report.pop(obsolete, None)
             report["gradientMicrobatch"] = gradient_microbatch
-            if args.experiment_id in ("A2S1", "A2S1W1"):
+            if args.experiment_id == "A2S1C1":
+                report["samplingConfig"] = {"version": "chunk-shuffle-epoch-v1",
+                    "cacheLimitBytes": 1536 * 1024 ** 2,
+                    "prefetchLimitBytes": 256 * 1024 ** 2,
+                    "gradientMicrobatch": gradient_microbatch,
+                    "logicalMinibatch": 256, "epochs": 4}
+            elif args.experiment_id in ("A2S1", "A2S1W1"):
                 report["performanceMigration"] = {
                     "parentCheckpointSha256": args.approved_resume_parent_sha256,
                     "fromUpdate": start_update, "effectiveFromUpdate": start_update + 1,
@@ -748,14 +831,15 @@ def main():
             for update in range(start_update + 1, start_update + args.updates + 1):
                 if device.type == "cuda":
                     torch.cuda.reset_peak_memory_stats()
-                tasks = make_tasks(next_seed, BATCH_EPISODES, update, args.mode)
+                tasks = make_tasks(next_seed, BATCH_EPISODES, update, args.mode,
+                                   combo_entries)
                 diagnostic = args.checkpoint.with_suffix(f".failed-update-{update}.json")
                 monitored_started = time.perf_counter()
                 label = (f"{args.experiment_id or args.mode}（资源{args.mode}，熵{args.entropy_coefficient:.2f}） "
                          f"{ordinal((update - 1) // 10 + 1, '轮')} · "
                          f"{ordinal((update - 1) % 10 + 1, '次更新')}")
                 store = TrajectoryStore(args.mode, update, root=trajectory_root,
-                    read_limit=(1536 * 1024 ** 2 if args.experiment_id in ("A2S1", "A2S1W1") else 16 * 1024 ** 2))
+                    read_limit=(1536 * 1024 ** 2 if args.experiment_id in ("A2S1", "A2S1W1", "A2S1C1") else 16 * 1024 ** 2))
                 phases = {"beforeCollection": phase_resources(clients, store, device)}
                 result = None
                 try:
@@ -764,7 +848,8 @@ def main():
                             samples, episodes, timing = collect_batch(clients, encoder, model, device,
                                 tasks, args.mode, args.card_set, args.seed, args.max_episode_decisions,
                                 args.inference_batch_size, args.inference_wait_ms, diagnostic, args.trace,
-                                on_progress=progress.update, store=store)
+                                on_progress=progress.update, store=store,
+                                combo_entries=combo_entries)
                             phases["afterCollection"] = phase_resources(clients, store, device)
                             progress.set_stage("优化中")
                             optimization_started = time.perf_counter()
@@ -773,7 +858,7 @@ def main():
                                                      entropy_coefficient=args.entropy_coefficient,
                                                      gradient_microbatch=gradient_microbatch,
                                                      sampling=("chunk-shuffle-epoch-v1" if
-                                                         args.experiment_id in ("A2S1", "A2S1W1") else
+                                                         args.experiment_id in ("A2S1", "A2S1W1", "A2S1C1") else
                                                          "global-shuffle-v1"))
                             auxiliary_metrics = (ppo_auxiliary.update(model, optimizer,
                                 auxiliary_bundle, device,
@@ -794,11 +879,12 @@ def main():
                         initial_weights_sha256=initial_hash if args.experiment_id else None,
                         architecture=args.architecture,
                         auxiliary_config=auxiliary_config,
+                        course_config=course_config,
                         sampling_config=({"version": "chunk-shuffle-epoch-v1",
                             "cacheLimitBytes": 1536 * 1024 ** 2,
                             "prefetchLimitBytes": 256 * 1024 ** 2,
                             "gradientMicrobatch": 64, "logicalMinibatch": 256,
-                            "epochs": 4} if args.experiment_id in ("A2S1", "A2S1W1") else None))
+                            "epochs": 4} if args.experiment_id in ("A2S1", "A2S1W1", "A2S1C1") else None))
                     args.checkpoint.parent.mkdir(parents=True, exist_ok=True)
                     temporary = args.checkpoint.with_suffix(".tmp")
                     torch.save(payload, temporary)
@@ -867,6 +953,9 @@ def main():
                               if device.type == "cuda" else 0,
                               "gpuPeakReservedBytes": torch.cuda.max_memory_reserved()
                               if device.type == "cuda" else 0}
+                    if combo_entries is not None:
+                        from scripts.ppo_combo_metrics import aggregate
+                        result["comboCourseSummary"] = aggregate(episodes)
                     report["updates"].append(result)
                     if args.report:
                         args.report.parent.mkdir(parents=True, exist_ok=True)

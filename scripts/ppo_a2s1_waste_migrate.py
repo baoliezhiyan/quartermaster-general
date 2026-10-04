@@ -43,9 +43,12 @@ def inspect(source: Path = SOURCE):
     return original
 
 
-def prepare(source: Path = SOURCE, destination: Path = DESTINATION, dry_run=False):
+def prepare(source: Path = SOURCE, destination: Path = DESTINATION, dry_run=False,
+            experiment_id="A2S1W1"):
+    if experiment_id not in ("A2S1W1", "A2S1C1"):
+        raise ValueError("Unsupported explicit migration target")
     if destination.exists() or destination.with_name("latest.pt").exists():
-        raise FileExistsError("A2S1W1 already has an initializer or a training checkpoint")
+        raise FileExistsError(f"{experiment_id} already has an initializer or a training checkpoint")
     original = inspect(source)
     client = ppo.ArenaClient(card_set="signals")
     try:
@@ -60,7 +63,7 @@ def prepare(source: Path = SOURCE, destination: Path = DESTINATION, dry_run=Fals
         model.load_state_dict(original["modelState"], strict=True)
         source_hash = sha256(source)
         identity = {"format": "quartermaster-ppo-comparison-initial-v1",
-                    "experimentId": "A2S1W1", "networkArchitecture": A2S1_ADAPTER,
+                    "experimentId": experiment_id, "networkArchitecture": A2S1_ADAPTER,
                     "network": original["network"], "encoderVersion": ppo.A2S1_ENCODER_VERSION,
                     "buildFingerprint": client.fingerprint,
                     "sourceCheckpointSha256": source_hash,
@@ -77,7 +80,8 @@ def prepare(source: Path = SOURCE, destination: Path = DESTINATION, dry_run=Fals
         if dry_run:
             print(json.dumps(report, ensure_ascii=False, indent=2))
             return report
-        destination.parent.mkdir(parents=True, exist_ok=False)
+        # A generated course pool may already live next to this initializer.
+        destination.parent.mkdir(parents=True, exist_ok=True)
         temporary = destination.with_suffix(".tmp")
         try:
             torch.save(identity, temporary)
@@ -100,7 +104,9 @@ def prepare(source: Path = SOURCE, destination: Path = DESTINATION, dry_run=Fals
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Explicit A2S1 v2 to A2S1W1 v3 reward migration")
     parser.add_argument("--source", type=Path, default=SOURCE)
-    parser.add_argument("--destination", type=Path, default=DESTINATION)
+    parser.add_argument("--destination", type=Path)
+    parser.add_argument("--experiment-id", choices=["A2S1W1", "A2S1C1"], default="A2S1W1")
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args()
-    prepare(args.source, args.destination, args.dry_run)
+    target = args.destination or ppo.ROOT / "PPO训练" / ".state" / args.experiment_id / "initial.pt"
+    prepare(args.source, target, args.dry_run, args.experiment_id)
