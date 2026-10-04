@@ -41,3 +41,8 @@ class PpoOpeningAdapter(nn.Module):
                          candidate_distance / self.candidate_scale)
         logits = (logits + self.opening_logit * gate).masked_fill(~mask, -1e9)
         return logits, value
+
+
+class A2S1MapAdapter(PpoOpeningAdapter):
+    """The new observation/action schema requires an explicit architecture ID."""
+    architecture = "map-contextual-opening-adapter-a2s1-v1"

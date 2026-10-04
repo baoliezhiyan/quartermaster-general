@@ -33,6 +33,7 @@ GAMMA = 1.0
 LAMBDA_ROUND = 0.95
 POTENTIAL_SCALE = 0.3
 ENCODER_VERSION = "ppo-vector-v7-effective-straits"
+A2S1_ENCODER_VERSION = "ppo-vector-a2s1-v2-discard-count"
 TRAINER_VERSION = "ppo-trainer-v9-actor-map"
 EFFECT_KINDS = ["action", "score", "draw", "deckTop", "forceHand", "signal", "choose", "cards",
                 "extraPlay", "rebuild", "remove", "flag", "balance", "trace", "cancel", "randomReturn",
@@ -58,11 +59,26 @@ OPTIMIZER_CONFIG = {"lr": 3e-4, "epochs": 4, "minibatch": 256, "clip": 0.2,
                     "entropy": 0.01, "valueCoefficient": 0.5, "gradNorm": 0.5}
 REWARD_CONFIG = {"gamma": GAMMA, "lambdaRound": LAMBDA_ROUND, "potential": POTENTIAL_SCALE,
                  "actionWasteVersion": "complete-action-v2", "actionWastePenalty": -0.01}
+def reward_config(card_set):
+    if card_set == "signals":
+        return {**REWARD_CONFIG,
+                "actionWasteVersion": "complete-action-and-optional-trigger-v1"}
+    return REWARD_CONFIG
 ENCODER_DICTIONARY = {"effectKinds": EFFECT_KINDS, "actions": ACTIONS, "phases": PHASES,
                       "choiceKinds": CHOICE_KINDS, "choiceFields": CHOICE_FIELDS,
                       "targetSlots": TARGET_SLOTS, "choiceSlots": CHOICE_SLOTS,
                       "choiceFeatureKinds": CHOICE_FEATURE_KINDS}
 ENCODER_DICTIONARY_HASH = hashlib.sha256(json.dumps(ENCODER_DICTIONARY, sort_keys=True).encode()).hexdigest()
+def encoder_version(card_set):
+    return A2S1_ENCODER_VERSION if card_set == "signals" else ENCODER_VERSION
+
+def encoder_dictionary_hash(encoder):
+    if not encoder.signals:
+        return ENCODER_DICTIONARY_HASH
+    return hashlib.sha256(json.dumps({"base": ENCODER_DICTIONARY,
+        "cards": encoder.cards, "nodes": encoder.nodes,
+        "maxActionSlots": encoder.max_action_slots,
+        "schema": encoder.schema["observationSchemaVersion"]}, sort_keys=True).encode()).hexdigest()
 TRAINER_SOURCE_HASH = hashlib.sha256(Path(__file__).read_bytes() +
     Path(__file__).with_name("ppo_action_semantics.py").read_bytes() +
     (Path(__file__).with_name("ppo_network_factory.py").read_bytes()
@@ -119,8 +135,9 @@ def onehot(value, names):
 
 class ArenaClient:
     def __init__(self, log_path=None, bundle_path=None, entry_path=None,
-                 log_snapshots=False):
+                 log_snapshots=False, card_set="events"):
         command = ["node", "scripts/ppo-arena-server.mjs"]
+        command += ["--card-set", card_set]
         if log_path:
             command += ["--log", str(log_path)]
         if log_snapshots:
@@ -189,6 +206,9 @@ class Encoder:
         self.countries = list(schema["countries"])
         self.seats = list(schema["seats"])
         self.cards = list(schema["basicActions"]) + list(schema["eventIds"])
+        self.signals = schema["courseVersion"] == "ppo-signals-a2s1-v2"
+        self.nodes = NODES + (["AIR_RELOCATE"] if self.signals else [])
+        self.max_action_slots = schema.get("maxActionSlots", MAX_ACTION_SLOTS)
         self.binding_keys = list(schema["bindingKeys"])
         self.max_effects = schema["maxEffectTokens"]
         self.neighbors = {r: set() for r in self.regions}
@@ -232,7 +252,8 @@ class Encoder:
         return out
 
     def _dummy(self):
-        return {"round": 1, "phase": "PLAY", "node": "SOURCE", "mode": "A", "cardSet": "events",
+        return {"round": 1, "phase": "PLAY", "node": "SOURCE", "mode": "A",
+                "cardSet": "signals" if self.signals else "events",
                 "activeSeat": self.seats[0], "decisionSeat": self.seats[0], "sourceSeat": self.seats[0],
                 "unitCountry": None, "scores": {s: 0 for s in self.seats},
                 "allianceScores": {"axis": 0, "allies": 0}, "units": [], "suppliedUnitIds": [],
@@ -241,6 +262,11 @@ class Encoder:
                 "reserves": {c: {"army": 0, "navy": 0, "air": 0} for c in self.countries},
                 "ownResources": {k: {} for k in ("remaining", "open", "discard")},
                 "publicResources": {s: {"remainingTotal": 0, "discardTotal": 0} for s in self.seats},
+                "visibleCards": {"active": {s: [] for s in self.seats}, "ownFaceDown": [],
+                                 "otherFaceDownCount": {s: 0 for s in self.seats}},
+                "effectiveHomes": {c: self.regions[0] for c in self.countries},
+                "effectiveSupply": {c: [False] * len(self.regions) for c in self.countries},
+                "visibleUseCounts": {}, "currentSourceDefinition": None,
                 "activeEffects": [], "currentEffectIndex": 0, "selectedTargets": [],
                 "selectedTargetFacts": [], "bindingFacts": {}, "priorResults": [],
                 "choiceKind": None, "choiceField": None,
@@ -367,10 +393,10 @@ class Encoder:
         static = self.static_map_features
         own = obs["ownResources"]
         values = ([obs["round"] / 20.0, (20 - obs["round"]) / 20.0, float(obs["mode"] == "B"),
-                   float(obs.get("cardSet", "events") == "events"),
+                   float(obs.get("cardSet", "events") in ("events", "signals")),
                    obs["currentEffectIndex"] / 32.0, min(obs.get("choiceMin", 0), 20) / 20.0,
                    min(obs.get("choiceMax", 0), 20) / 20.0, float(obs.get("canSkip", False))] +
-                  onehot(obs["phase"], PHASES) + onehot(obs["node"], NODES) +
+                  onehot(obs["phase"], PHASES) + onehot(obs["node"], self.nodes) +
                   onehot(obs.get("choiceKind"), CHOICE_KINDS) +
                   onehot(obs.get("choiceField"), CHOICE_FIELDS) +
                   onehot(obs["activeSeat"], self.seats) + onehot(obs["decisionSeat"], self.seats) +
@@ -412,6 +438,33 @@ class Encoder:
             if len(flags) != len(self.schema["straits"]):
                 raise ValueError("Effective strait count differs from schema")
             values.extend(float(flag) for flag in flags)
+        if self.signals:
+            visible = obs.get("visibleCards")
+            homes = obs.get("effectiveHomes")
+            supply = obs.get("effectiveSupply")
+            if not visible or not homes or not supply:
+                raise ValueError("A2S1 observation lacks card or dynamic map facts")
+            for seat in self.seats:
+                active = visible["active"][seat]
+                values.extend(min(active.count(card), 4) / 4 for card in self.cards)
+            values.extend(min(visible["ownFaceDown"].count(card), 4) / 4
+                          for card in self.cards)
+            values.extend(min(visible["otherFaceDownCount"][seat], 10) / 10
+                          for seat in self.seats)
+            for country in self.countries:
+                values += onehot(homes[country], self.regions)
+                flags = supply[country]
+                if len(flags) != len(self.regions):
+                    raise ValueError("Effective supply fact count differs")
+                values.extend(float(flag) for flag in flags)
+            origin = obs.get("originAction") or {}
+            values += onehot(origin.get("action"), ACTIONS)
+            values += onehot(origin.get("country"), self.countries)
+            values += onehot(origin.get("regionId"), self.regions)
+            values += onehot(origin.get("sourceRegionId"), self.regions)
+            values += onehot(obs.get("currentSourceDefinition"), self.cards)
+            values.extend(min((obs.get("visibleUseCounts") or {}).get(card, 0), 3) / 3
+                          for card in self.cards)
         if hasattr(self, "state_dim") and len(values) != self.state_dim:
             raise ValueError("Variable state vector dimension")
         return values
@@ -485,13 +538,20 @@ class Encoder:
         if not hasattr(self, "candidate_semantic_start"):
             self.candidate_semantic_start = len(values)
         values += self._action_semantics(obs, candidate)
+        if self.signals:
+            card_type = candidate.get("cardType")
+            if card_type is None and definition:
+                card_type = self.schema["cardTypes"].get(definition)
+            if card_type not in (None, "基本牌", "事件", "状态", "响应"):
+                raise ValueError(f"Unknown A2S1 card type: {card_type}")
+            values += onehot(card_type, ["基本牌", "事件", "状态", "响应"])
         if hasattr(self, "candidate_dim") and len(values) != self.candidate_dim:
             raise ValueError("Variable candidate vector dimension")
         return values
 
     def _action_semantics(self, obs, candidate):
         outcomes = ("unknown", "new", "repeated", "blocked", "target", "empty")
-        facts = action_facts(obs, candidate, self.schema["regions"])
+        facts = action_facts(obs, candidate, self.schema["regions"], self.max_action_slots)
         def token(item):
             return (onehot(item["action"], ACTIONS) +
                     onehot(item["country"], self.countries) +
@@ -510,7 +570,7 @@ class Encoder:
                        "allied": 0, "enemy": 0, "suppliedHere": 0,
                        "supplyPoint": None, "futureTarget": False})
         result = [value for item in facts for value in token(item)]
-        result.extend([0.0] * ((MAX_ACTION_SLOTS - len(facts)) * len(empty)))
+        result.extend([0.0] * ((self.max_action_slots - len(facts)) * len(empty)))
         opportunity = opportunity_facts(candidate)
         result.extend([min(opportunity["extraPlayEffects"], 3) / 3,
                        float(opportunity["replacesSpentPlay"]),
@@ -569,7 +629,7 @@ def experiment_config_sha256(experiment_id, mode, entropy_coefficient, initial_h
               "entropyCoefficient": entropy_coefficient,
               "initialWeightsSha256": initial_hash, "trainingSeed": training_seed,
               "buildFingerprint": build_fingerprint, "cardSet": card_set,
-              "encoderVersion": ENCODER_VERSION, "rewardConfig": REWARD_CONFIG,
+              "encoderVersion": encoder_version(card_set), "rewardConfig": reward_config(card_set),
               "optimizerConfig": {**OPTIMIZER_CONFIG, "entropy": entropy_coefficient}}
     if architecture is not None:
         config["networkArchitecture"] = architecture
@@ -900,11 +960,11 @@ def checkpoint_payload(model, optimizer, encoder, client, mode, update, decision
                        card_set="events", completed_episodes=0, training_seed=None,
                        experiment_id=None, entropy_coefficient=None, initial_weights_sha256=None,
                        architecture=None, auxiliary_config=None):
-    payload = {"format": "quartermaster-ppo-checkpoint-v1", "encoderVersion": ENCODER_VERSION,
+    payload = {"format": "quartermaster-ppo-checkpoint-v1", "encoderVersion": encoder_version(card_set),
             "networkArchitecture": architecture,
             "trainerVersion": TRAINER_VERSION,
             "trainerSourceSha256": TRAINER_SOURCE_HASH,
-            "encoderDictionarySha256": ENCODER_DICTIONARY_HASH,
+            "encoderDictionarySha256": encoder_dictionary_hash(encoder),
             "observationSchemaVersion": client.schema["observationSchemaVersion"],
             "actionSchemaVersion": client.schema["actionSchemaVersion"],
             "buildFingerprint": client.fingerprint, "eventIds": client.schema["eventIds"],
@@ -912,7 +972,7 @@ def checkpoint_payload(model, optimizer, encoder, client, mode, update, decision
             "network": {"stateDim": encoder.state_dim, "candidateDim": encoder.candidate_dim},
             "optimizerConfig": {**OPTIMIZER_CONFIG,
                 "entropy": OPTIMIZER_CONFIG["entropy"] if entropy_coefficient is None else entropy_coefficient},
-            "rewardConfig": REWARD_CONFIG,
+            "rewardConfig": reward_config(card_set),
             "experimentId": experiment_id, "initialWeightsSha256": initial_weights_sha256,
             "experimentConfigSha256": experiment_config_sha256(experiment_id, mode,
                 OPTIMIZER_CONFIG["entropy"] if entropy_coefficient is None else entropy_coefficient,
@@ -933,16 +993,16 @@ def restore_checkpoint(path, model, optimizer, encoder, client, mode, rng, card_
                        training_seed=None, experiment_id=None, entropy_coefficient=None,
                        initial_weights_sha256=None, architecture=None, auxiliary_config=None):
     saved = torch.load(path, map_location="cpu", weights_only=False)
-    expected = {"format": "quartermaster-ppo-checkpoint-v1", "encoderVersion": ENCODER_VERSION,
+    expected = {"format": "quartermaster-ppo-checkpoint-v1", "encoderVersion": encoder_version(card_set),
                 "trainerVersion": TRAINER_VERSION,
-                "encoderDictionarySha256": ENCODER_DICTIONARY_HASH,
+                "encoderDictionarySha256": encoder_dictionary_hash(encoder),
                 "observationSchemaVersion": client.schema["observationSchemaVersion"],
                 "actionSchemaVersion": client.schema["actionSchemaVersion"],
                 "buildFingerprint": client.fingerprint, "eventIds": client.schema["eventIds"],
                 "mode": mode, "cardSet": card_set,
                 "network": {"stateDim": encoder.state_dim,
                             "candidateDim": encoder.candidate_dim},
-                "rewardConfig": REWARD_CONFIG,
+                "rewardConfig": reward_config(card_set),
                 "optimizerConfig": {**OPTIMIZER_CONFIG,
                     "entropy": OPTIMIZER_CONFIG["entropy"] if entropy_coefficient is None else entropy_coefficient},
                 "experimentId": experiment_id,

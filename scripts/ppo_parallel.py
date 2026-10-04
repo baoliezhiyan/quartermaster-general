@@ -160,6 +160,13 @@ class Episode:
     elapsed: list = field(default_factory=list)
     choices: dict = field(default_factory=lambda: defaultdict(int))
     sources: dict = field(default_factory=lambda: defaultdict(int))
+    source_types: dict = field(default_factory=lambda: defaultdict(int))
+    trigger_opportunities: dict = field(default_factory=lambda: defaultdict(int))
+    trigger_activations: dict = field(default_factory=lambda: defaultdict(int))
+    trigger_skips: int = 0
+    trigger_depths: dict = field(default_factory=lambda: defaultdict(int))
+    fee_cards_spent: int = 0
+    waste_by_card: dict = field(default_factory=lambda: defaultdict(int))
     submitted: dict = field(default_factory=lambda: defaultdict(int))
     resolved: dict = field(default_factory=lambda: defaultdict(int))
     openness: list = field(default_factory=list)
@@ -229,6 +236,13 @@ def episode_summary(episode: Episode, snapshot: dict) -> dict:
             "decisions": len(episode.samples), "countryTurns": sum(episode.elapsed),
             "actionSequenceSha256": action_digest,
             "choices": dict(episode.choices), "sources": dict(episode.sources),
+            "sourceTypes": dict(episode.source_types),
+            "triggerOpportunities": dict(episode.trigger_opportunities),
+            "triggerActivations": dict(episode.trigger_activations),
+            "triggerSkips": episode.trigger_skips,
+            "triggerDepths": dict(episode.trigger_depths),
+            "feeCardsSpent": episode.fee_cards_spent,
+            "wastePenaltiesByCard": dict(episode.waste_by_card),
             "submitted": dict(episode.submitted), "resolved": dict(episode.resolved),
             "shaped": dict(episode.base_reward_totals),
             "trainingReward": {team: sum(r[team] for r in episode.rewards)
@@ -342,11 +356,16 @@ def collect_batch(clients, encoder, model, device, tasks, mode, card_set, traini
                             episode.waste_reasons[waste["reason"]] += 1
                             if waste["penalty"]:
                                 episode.waste_penalties[waste["seat"]] += 1
+                                episode.waste_by_card[waste["definitionId"]] += 1
                         episode.rewards.append(reward)
                         for adjustment in ppo.apply_reward_adjustments(
                                 episode.rewards, episode.samples, info):
                             episode.waste_penalties[adjustment["seat"]] += 1
                             episode.waste_reasons[adjustment["reason"]] += 1
+                            episode.waste_by_card[adjustment["cardId"].split(":")[1]] += 1
+                        episode.fee_cards_spent += info.get("feeCardsSpent", 0)
+                        if info.get("triggerDepth"):
+                            episode.trigger_depths[str(info["triggerDepth"])] += 1
                         for assessment in info.get("wasteAssessments") or ():
                             if not assessment["penalized"]:
                                 episode.waste_exemptions[assessment["reason"]] += 1
@@ -409,6 +428,20 @@ def collect_batch(clients, encoder, model, device, tasks, mode, card_set, traini
                         episode.choices[chosen["kind"]] += 1
                         if chosen["kind"] == "source":
                             episode.sources[chosen.get("definitionId") or "unknown"] += 1
+                            episode.source_types[chosen.get("cardType") or "unknown"] += 1
+                        if observation.get("choiceKind") == "TRIGGER":
+                            for candidate in observation["candidates"]:
+                                for feature in candidate.get("choices") or []:
+                                    if feature.get("kind") == "trigger":
+                                        episode.trigger_opportunities[
+                                            feature.get("definitionId") or "unknown"] += 1
+                            if chosen.get("choiceIds"):
+                                for feature in chosen.get("choices") or []:
+                                    if feature.get("kind") == "trigger":
+                                        episode.trigger_activations[
+                                            feature.get("definitionId") or "unknown"] += 1
+                            else:
+                                episode.trigger_skips += 1
                         own = observation["ownResources"]
                         remaining = sum(own["remaining"].values())
                         if remaining:
@@ -456,12 +489,12 @@ def collect_batch(clients, encoder, model, device, tasks, mode, card_set, traini
     return store, summaries, dict(timing)
 
 
-def open_clients(count: int, directory: Path):
+def open_clients(count: int, directory: Path, card_set="events"):
     clients = []
     bundle = directory / "ppo-arena-bundle.mjs"
     try:
         for _ in range(count):
-            client = ppo.ArenaClient(bundle_path=bundle)
+            client = ppo.ArenaClient(bundle_path=bundle, card_set=card_set)
             if clients and (client.fingerprint != clients[0].fingerprint or client.schema != clients[0].schema):
                 client.close()
                 raise RuntimeError("Workers have different rule builds")
@@ -496,9 +529,10 @@ def summarize_evaluation(games):
 def main():
     parser = argparse.ArgumentParser(description="Parallel complete-episode PPO training")
     parser.add_argument("--mode", choices=["A", "B"], required=True)
-    parser.add_argument("--experiment-id", choices=["A1", "A2", "A1S1", "S2FLAT", "S2MAP", "A1S2"], default=None)
+    parser.add_argument("--experiment-id", choices=["A1", "A2", "A1S1", "S2FLAT", "S2MAP", "A1S2", "A2S1"], default=None)
     parser.add_argument("--architecture", choices=["flat-v1-effective-straits",
-        "shared-regions-actor-adjacency-ordered-actions-v2", "map-contextual-opening-adapter-v1"], default=None)
+        "shared-regions-actor-adjacency-ordered-actions-v2", "map-contextual-opening-adapter-v1",
+        "map-contextual-opening-adapter-a2s1-v1"], default=None)
     parser.add_argument("--auxiliary-data", type=Path)
     parser.add_argument("--auxiliary-weight", type=float, default=0.05)
     parser.add_argument("--auxiliary-decay-updates", type=int, default=20)
@@ -507,7 +541,7 @@ def main():
                         default=ppo.OPTIMIZER_CONFIG["entropy"])
     parser.add_argument("--initial-weights", type=Path, default=None)
     parser.add_argument("--expected-initial-hash", default=None)
-    parser.add_argument("--card-set", choices=["basics", "events"], default="events")
+    parser.add_argument("--card-set", choices=["basics", "events", "signals"], default="events")
     parser.add_argument("--workers", type=int, default=8)
     parser.add_argument("--inference-batch-size", type=int, default=8)
     parser.add_argument("--inference-wait-ms", type=float, default=2.0)
@@ -535,7 +569,7 @@ def main():
         parser.error("entropy coefficient must be finite and nonnegative")
     if args.experiment_id and (args.mode != "A" or args.entropy_coefficient !=
                                {"A1": 0.01, "A2": 0.02, "A1S1": 0.01,
-                                "S2FLAT": 0.01, "S2MAP": 0.01, "A1S2": 0.01}[args.experiment_id] or
+                                "S2FLAT": 0.01, "S2MAP": 0.01, "A1S2": 0.01, "A2S1": 0.01}[args.experiment_id] or
                                not args.initial_weights or not args.expected_initial_hash):
         parser.error("A1/A2 require A resource mode, the prescribed entropy, and shared initialization")
     from scripts.ppo_network_factory import STAGE2_EXPERIMENTS, ACTIVE_EXPERIMENTS, make_network
@@ -551,6 +585,8 @@ def main():
             parser.error("Invalid A1S2 auxiliary configuration")
     elif args.auxiliary_data is not None or args.no_auxiliary:
         parser.error("Auxiliary learning is exclusive to A1S2")
+    if args.experiment_id == "A2S1" and args.card_set != "signals":
+        parser.error("A2S1 requires the signals course")
     torch.set_num_threads(min(4, os.cpu_count() or 1))
     device = torch.device("cpu" if args.cpu or not torch.cuda.is_available() else "cuda")
     rng = random.Random(args.seed)
@@ -561,7 +597,7 @@ def main():
         print(f"{args.experiment_id or args.mode}（资源{args.mode}，熵{args.entropy_coefficient:.2f}）："
               f"启动 {min(args.workers, BATCH_EPISODES)} 个环境并加载模型...", flush=True)
         startup_started = time.perf_counter()
-        clients = open_clients(min(args.workers, BATCH_EPISODES), Path(directory))
+        clients = open_clients(min(args.workers, BATCH_EPISODES), Path(directory), args.card_set)
         try:
             encoder = ppo.Encoder(clients[0].schema)
             model = (make_network(args.architecture, encoder) if args.architecture else
@@ -611,12 +647,13 @@ def main():
                     ["git", "status", "--porcelain"], cwd=ppo.ROOT, text=True).strip())
             except (OSError, subprocess.CalledProcessError):
                 source_commit, source_dirty = None, None
-            gradient_microbatch = (32 if args.experiment_id in ("S2MAP", "A1S2") else
+            gradient_microbatch = (16 if args.experiment_id == "A2S1" else
+                                   32 if args.experiment_id in ("S2MAP", "A1S2") else
                                    ppo.OPTIMIZER_CONFIG["minibatch"])
             report = {"mode": args.mode, "experimentId": args.experiment_id,
                       "entropyCoefficient": args.entropy_coefficient,
                       "optimizerConfig": {**ppo.OPTIMIZER_CONFIG, "entropy": args.entropy_coefficient},
-                      "rewardConfig": ppo.REWARD_CONFIG,
+                      "rewardConfig": ppo.reward_config(args.card_set),
                       "initialWeightsSha256": initial_hash, "cardSet": args.card_set,
                       "experimentConfigSha256": ppo.experiment_config_sha256(args.experiment_id,
                           args.mode, args.entropy_coefficient, initial_hash if args.experiment_id else None,
@@ -629,7 +666,7 @@ def main():
                       "buildFingerprint": clients[0].fingerprint,
                       "observationSchemaVersion": clients[0].schema["observationSchemaVersion"],
                       "actionSchemaVersion": clients[0].schema["actionSchemaVersion"],
-                      "encoderVersion": ppo.ENCODER_VERSION,
+                      "encoderVersion": ppo.encoder_version(args.card_set),
                       "courseVersion": clients[0].schema["courseVersion"],
                       "overridesVersion": clients[0].schema["overridesVersion"],
                       "device": str(device), "workers": len(clients),
@@ -732,6 +769,23 @@ def main():
                               "trajectory": store.stats(),
                               "completedDecisionsPerSecond": batch_decisions / timing["collectionSeconds"],
                               "optimization": metrics, "auxiliary": auxiliary_metrics,
+                              "signals": {
+                                  "sourceTypes": {kind: sum(e["sourceTypes"].get(kind, 0) for e in episodes)
+                                      for kind in ("基本牌", "事件", "状态", "响应")},
+                                  "triggerOpportunities": {card: sum(e["triggerOpportunities"].get(card, 0)
+                                      for e in episodes) for card in sorted({card for e in episodes
+                                      for card in e["triggerOpportunities"]})},
+                                  "triggerActivations": {card: sum(e["triggerActivations"].get(card, 0)
+                                      for e in episodes) for card in sorted({card for e in episodes
+                                      for card in e["triggerActivations"]})},
+                                  "triggerSkips": sum(e["triggerSkips"] for e in episodes),
+                                  "feeCardsSpent": sum(e["feeCardsSpent"] for e in episodes),
+                                  "triggerDepths": {depth: sum(e["triggerDepths"].get(depth, 0)
+                                      for e in episodes) for depth in sorted({depth for e in episodes
+                                      for depth in e["triggerDepths"]})},
+                                  "wastePenaltiesByCard": {card: sum(e["wastePenaltiesByCard"].get(card, 0)
+                                      for e in episodes) for card in sorted({card for e in episodes
+                                      for card in e["wastePenaltiesByCard"]})}},
                               "actionWaste": {
                                   "opportunityDecisions": sum(e["wasteOpportunityDecisions"] for e in episodes),
                                   "opportunityChoices": sum(e["wasteOpportunityChoices"] for e in episodes),

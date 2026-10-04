@@ -27,7 +27,7 @@ def _flatten(effects):
             yield from _flatten(branch)
 
 
-def action_facts(obs, candidate, regions):
+def action_facts(obs, candidate, regions, max_slots=MAX_ACTION_SLOTS):
     """Return ordered action facts without adding information unavailable to PPO."""
     known_regions = {r["id"]: r for r in regions}
     units = obs["units"]
@@ -48,7 +48,9 @@ def action_facts(obs, candidate, regions):
     # The original ordered effect encoding retains the whole sequence (up to
     # its schema cap). This contextual block augments its first eight actions;
     # it must not reject a legal multi-effect candidate with more actions.
-    actions = actions[:MAX_ACTION_SLOTS]
+    if len(actions) > max_slots and obs.get("cardSet") == "signals":
+        raise ValueError(f"A2S1 action sequence exceeds schema cap: {len(actions)} > {max_slots}")
+    actions = actions[:max_slots]
     result = []
     for effect, chosen in actions:
         action = chosen.get("action") or effect.get("action")

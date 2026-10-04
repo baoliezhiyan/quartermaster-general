@@ -106,10 +106,11 @@ def export_weights(checkpoint: Path, target: Path, mode: str,
 def record_game(checkpoint: Path, target: Path, mode: str, round_number: int,
                 training_seed: int, model_sha256: str, max_decisions: int = 3000,
                 experiment_id=None, entropy_coefficient=None, initial_weights_sha256=None,
-                architecture=None, auxiliary_config=None):
-    seed = selected_game(training_seed, mode, round_number)
+                architecture=None, auxiliary_config=None, card_set="events",
+                deterministic=True, seed_override=None):
+    seed = selected_game(training_seed, mode, round_number) if seed_override is None else seed_override
     raw_target = target.with_name(".training-raw.jsonl")
-    client = ppo.ArenaClient(log_path=raw_target, log_snapshots=True)
+    client = ppo.ArenaClient(log_path=raw_target, log_snapshots=True, card_set=card_set)
     try:
         encoder = ppo.Encoder(client.schema)
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -120,7 +121,7 @@ def record_game(checkpoint: Path, target: Path, mode: str, round_number: int,
             model = ppo.PpoNetwork(encoder.state_dim, encoder.candidate_dim).to(device)
         optimizer = torch.optim.Adam(model.parameters(), lr=3e-4)
         saved = ppo.restore_checkpoint(checkpoint, model, optimizer, encoder, client,
-                                       mode, random.Random(), "events",
+                                       mode, random.Random(), card_set,
                                        training_seed=training_seed,
                                        experiment_id=experiment_id,
                                        entropy_coefficient=entropy_coefficient,
@@ -136,14 +137,15 @@ def record_game(checkpoint: Path, target: Path, mode: str, round_number: int,
                     "initialWeightsSha256": saved.get("initialWeightsSha256"),
                     "trainingSeed": training_seed, "recordSeed": seed,
                     "controller": "same-policy-self-play-both-teams",
-                    "actionSampling": "deterministic-greedy-argmax", "modelSha256": model_sha256,
+                    "actionSampling": "deterministic-greedy-argmax" if deterministic else
+                    "policy-probability", "modelSha256": model_sha256,
                     "networkArchitecture": architecture,
                     "auxiliaryConfig": auxiliary_config,
                     "recordScope": "full-training-scene-replay-v1"}
         result = ppo.play_episode(client, encoder, model, device, mode, seed,
                                   max_decisions, trace="full",
-                                  rng=random.Random(seed + 19), card_set="events",
-                                  record_metadata=metadata, deterministic=True)
+                                  rng=random.Random(seed + 19), card_set=card_set,
+                                  record_metadata=metadata, deterministic=deterministic)
     finally:
         client.close()
     if result["outcome"]["termination"] != "natural":

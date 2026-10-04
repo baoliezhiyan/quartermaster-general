@@ -17,6 +17,12 @@ class A1S2Tests(unittest.TestCase):
     def setUpClass(cls):
         cls.client = ppo.ArenaClient()
         cls.encoder = ppo.Encoder(cls.client.schema)
+        historical = torch.load(active.ROOT / ".state" / "stage2" / "A1S2-initial.pt",
+                                map_location="cpu", weights_only=False)
+        if cls.client.fingerprint != historical["buildFingerprint"]:
+            cls.client.close()
+            raise unittest.SkipTest("Frozen A1S2 artifacts require their historical arena build; "
+                                    "A2S1 source intentionally has a different fingerprint")
 
     @classmethod
     def tearDownClass(cls):

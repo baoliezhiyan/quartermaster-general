@@ -9,7 +9,8 @@ FLAT = "flat-v1-effective-straits"
 MAP = "shared-regions-actor-adjacency-ordered-actions-v2"
 STAGE2_EXPERIMENTS = {"S2FLAT": FLAT, "S2MAP": MAP}
 ADAPTED_MAP = "map-contextual-opening-adapter-v1"
-ACTIVE_EXPERIMENTS = {"A1S2": ADAPTED_MAP}
+A2S1_ADAPTER = "map-contextual-opening-adapter-a2s1-v1"
+ACTIVE_EXPERIMENTS = {"A1S2": ADAPTED_MAP, "A2S1": A2S1_ADAPTER}
 
 
 def make_network(architecture, encoder):
@@ -21,6 +22,9 @@ def make_network(architecture, encoder):
     if architecture == ADAPTED_MAP:
         from scripts.ppo_opening_adapter import PpoOpeningAdapter
         return PpoOpeningAdapter(encoder)
+    if architecture == A2S1_ADAPTER:
+        from scripts.ppo_opening_adapter import A2S1MapAdapter
+        return A2S1MapAdapter(encoder)
     raise ValueError(f"Unknown PPO architecture: {architecture}")
 
 

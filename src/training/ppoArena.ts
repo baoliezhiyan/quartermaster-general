@@ -1,15 +1,20 @@
-import {cardOptions} from '../core/actions';
+import {airDestinations,cardOptions} from '../core/actions';
 import {boardOptions} from '../core/boardEffects';
 import {extraEffects} from '../core/extraCards';
-import {BASIC_COUNTS,BASIC_NAMES,COUNTRY_NAMES,reserve} from '../core/basic';
+import {BASIC_COUNTS,BASIC_NAMES,COUNTRY_NAMES,reserve,seatOf} from '../core/basic';
 import {regularCatalog,specialCard} from '../core/cardCatalog';
-import {canPayEffectFees} from '../core/resolution';
+import {canExecuteEffects,canPayEffectFees} from '../core/resolution';
+import {statusActionEffects} from '../core/statusActions';
+import {coversCost} from '../core/cardCosts';
 import {barbarossaTargets,cardEffects} from '../core/specialCards';
 import {createGame,transition} from '../core/game';
 import {MAP} from '../core/map';
+import {homeRegion,supplySource} from '../core/modifiers';
 import {adjacent,allianceScores,suppliedUnits,unsuppliedForPhase} from '../core/supply';
 import {TRAINING_COURSE_VERSION,TRAINING_EVENT_IDS,TRAINING_EVENT_IDS_BY_SEAT,
-  TRAINING_OVERRIDES_VERSION,basicOpenProbability,openSpecialCount} from '../core/trainingCourse';
+  TRAINING_OVERRIDES_VERSION,TRAINING_A2S1_COURSE_VERSION,TRAINING_A2S1_OVERRIDES_VERSION,
+  TRAINING_A2S1_IDS_BY_SEAT,TRAINING_A2S1_IDS,TRAINING_SIGNAL_IDS_BY_SEAT,
+  basicOpenProbability,openSpecialCount} from '../core/trainingCourse';
 import {SEATS,type CardInstance,type Command,type CountryId,type GameState,type SeatId,type Unit} from '../core/types';
 import type {Effect,ChoiceRequest} from '../core/resolutionTypes';
 import {BASIC_ACTIONS,type BasicAction,type DecisionContext,type TraceLevel} from './basicArena';
@@ -24,8 +29,16 @@ export const PPO_STATIC_SCHEMA={observationSchemaVersion:PPO_OBSERVATION_SCHEMA_
   straits:MAP.straits,seats:SEATS,countries:Object.keys(COUNTRY_NAMES),
   basicActions:BASIC_ACTIONS,eventIds:Object.values(TRAINING_EVENT_IDS_BY_SEAT).flat(),
   bindingKeys:['built-navy','new-china','xiangxi-battle'],maxEffectTokens:32};
+/** The v1 schema is immutable for historical checkpoints. */
+export const PPO_A2S1_STATIC_SCHEMA={...PPO_STATIC_SCHEMA,
+  observationSchemaVersion:'ppo-observation-a2s1-v1',actionSchemaVersion:'ppo-actions-a2s1-v2',
+  courseVersion:TRAINING_A2S1_COURSE_VERSION,overridesVersion:TRAINING_A2S1_OVERRIDES_VERSION,
+  eventIds:[...Object.values(TRAINING_EVENT_IDS_BY_SEAT).flat(),
+    ...Object.values(TRAINING_SIGNAL_IDS_BY_SEAT).flat()],maxEffectTokens:32,maxActionSlots:12,
+  cardTypes:Object.fromEntries([...TRAINING_A2S1_IDS].map(id=>[id,
+    specialCard(id,true)?.type??'未知']))};
 export type CourseMode='A'|'B';
-export type CardSet='basics'|'events';
+export type CardSet='basics'|'events'|'signals';
 export type PpoArenaOptions={mode:CourseMode;buildFingerprint:string;trace?:TraceLevel;cardSet?:CardSet;captureReplay?:boolean};
 export type UnitFact={country:CountryId;type:Unit['type'];regionId:string};
 export type EffectFeature={kind:string;action?:string;country?:CountryId;seat?:SeatId;
@@ -36,13 +49,15 @@ export type EffectFeature={kind:string;action?:string;country?:CountryId;seat?:S
   filter?:string;from?:string;to?:string;tag?:string;newOnly?:boolean;
   children:EffectFeature[][]};
 export type PpoCandidate={id:string;kind:'source'|'pass'|'choice'|'targets';label:string;
-  cardId?:string;definitionId?:string;optionId?:string;choiceIds?:string[];targetIds?:string[];effects?:EffectFeature[];
+  cardId?:string;definitionId?:string;cardType?:string;optionId?:string;statusAction?:boolean;
+  randomDiscardCount?:number;
+  choiceIds?:string[];targetIds?:string[];effects?:EffectFeature[];
   choices?:ChoiceFeature[]};
 export type ChoiceFeature={kind:string;action?:string;nextAction?:string;country?:CountryId;
   regionId?:string;unitType?:Unit['type'];source?:UnitFact;target?:UnitFact;
   definitionId?:string;repeated?:boolean;intercept?:boolean;effects?:EffectFeature[]};
 export type PpoObservation={decision:DecisionContext;mode:CourseMode;cardSet:CardSet;courseVersion:string;
-  node:'SOURCE'|'TARGETS'|'ENGINE_CHOICE';round:number;phase:GameState['phase'];
+  node:'SOURCE'|'TARGETS'|'ENGINE_CHOICE'|'AIR_RELOCATE';round:number;phase:GameState['phase'];
   activeSeat:SeatId;decisionSeat:SeatId;sourceSeat:SeatId;unitCountry:CountryId|null;
   scores:GameState['scores'];allianceScores:ReturnType<typeof allianceScores>;
   units:Unit[];suppliedUnitIds:string[];
@@ -51,6 +66,13 @@ export type PpoObservation={decision:DecisionContext;mode:CourseMode;cardSet:Car
   reserves:Record<CountryId,Record<Unit['type'],number>>;
   ownResources:{remaining:Record<string,number>;open:Record<string,number>;discard:Record<string,number>};
   publicResources:Record<SeatId,{remainingTotal:number;discardTotal:number}>;
+  visibleCards?:{active:Record<SeatId,string[]>;ownFaceDown:string[];
+    otherFaceDownCount:Record<SeatId,number>};
+  effectiveHomes?:Record<CountryId,string>;
+  effectiveSupply?:Record<CountryId,boolean[]>;
+  originAction?:{action:string;country:CountryId;regionId?:string;sourceRegionId?:string};
+  currentSourceDefinition?:string|null;
+  visibleUseCounts?:Record<string,number>;
   activeEffects:EffectFeature[];currentEffectIndex:number;selectedTargets:string[];
   selectedTargetFacts:UnitFact[];bindingFacts:Record<string,UnitFact[]>;
   priorResults:{applied:boolean;cancelled:boolean;action?:string;regionId?:string}[];
@@ -69,6 +91,7 @@ export type PpoStepInfo={decision:DecisionContext;nextDecision:DecisionContext|n
   wasteOpportunity?:{candidateCount:number;chosen:boolean};
   rewardAdjustments?:{decisionId:number;seat:SeatId;cardId:string;reason:string;
     penalty:number;beforeCap:number;afterCap:number;effects:string[];exemption?:string}[];
+  feeCardsSpent?:number;triggerDepth?:number;
   wasteAssessments?:{decisionId:number;seat:SeatId;cardId:string;reason:string;
     actualEffects:string[];newUnitIds:string[];alternative:boolean;penalized:boolean}[];
   termination:'ongoing'|'natural'|'truncated';winner:GameState['winner']};
@@ -76,12 +99,16 @@ export type PpoSnapshot={format:typeof PPO_ARENA_FORMAT;header:PpoTrainingArena[
   decisionCount:number;pendingCardId:string|null;terminationReason:string|null;
   finalObservation:PpoObservation|null;knownUnits:Record<string,UnitFact>;
   pendingSubmissions:Record<string,string>;actionLedgers:Record<string,ActionLedger>;
-  resolutionEventOutcomes:Record<string,string>};
+  resolutionEventOutcomes:Record<string,string>;
+  pendingTriggers:PendingTrigger[];triggerLedgers:Record<string,TriggerLedger>};
 
 type ActionLedger={cardId:string;definitionId:string;seat:SeatId;originDecisionId:number;
   alternative:boolean;supported:boolean;positive:string[];newUnitIds:string[];
   usedUnitIds:string[];penalized:boolean;extraCard:boolean;supplyEligible:boolean;
   supplyCandidates:string[]};
+type PendingTrigger={ruleId:string;label:string;cardId:string;seat:SeatId;decisionId:number;
+  definitionId:string;supported:boolean};
+type TriggerLedger=PendingTrigger&{frameId:string;positive:string[];penalized:boolean};
 
 const countryIds=Object.keys(COUNTRY_NAMES) as CountryId[];
 const basicType=(id:string):id is BasicAction=>BASIC_ACTIONS.some(type=>type===id);
@@ -158,8 +185,11 @@ export class PpoTrainingArena {
   private pendingSubmissions:Record<string,string>={};
   private actionLedgers:Record<string,ActionLedger>={};
   private resolutionEventOutcomes:Record<string,string>={};
+  private pendingTriggers:PendingTrigger[]=[];
+  private triggerLedgers:Record<string,TriggerLedger>={};
   private rewardAdjustments:NonNullable<PpoStepInfo['rewardAdjustments']>=[];
   private wasteAssessments:NonNullable<PpoStepInfo['wasteAssessments']>=[];
+  private feeCardsSpent=0;
   private readonly captureReplay:boolean;
   private replayCommits:unknown[]=[];
   readonly records:unknown[]=[];
@@ -172,7 +202,7 @@ export class PpoTrainingArena {
     if(!Number.isSafeInteger(seed)||seed<0||seed>0xffffffff||!gameId.trim()||
       !['A','B'].includes(options.mode)||!isSha(options.buildFingerprint))throw new Error('Invalid PPO arena configuration');
     const cardSet=options.cardSet??'events';
-    if(!['basics','events'].includes(cardSet))throw new Error('Invalid PPO card set');
+    if(!['basics','events','signals'].includes(cardSet))throw new Error('Invalid PPO card set');
     if(TRAINING_EVENT_IDS.size!==58||TRAINING_EVENT_IDS.has('special_227'))throw new Error('Event whitelist is invalid');
     this.trace=options.trace??'none';
     this.captureReplay=!!options.captureReplay;
@@ -183,29 +213,36 @@ export class PpoTrainingArena {
         seat==='italy'&&['build_navy','sea_battle'].includes(type)?1:0)},(_,i)=>({
         id:`${seat}:${type}:${i+1}`,definitionId:type,country:seat,deckOwner:seat,balance:true,
       })));
-      const events=cardSet==='events'?catalog.filter(d=>TRAINING_EVENT_IDS_BY_SEAT[seat].includes(d.id)):[];
-      if(events.length!==(cardSet==='events'?TRAINING_EVENT_IDS_BY_SEAT[seat].length:0)||
-        events.some(e=>e.type!=='事件'))
-        throw new Error(`Event catalog mismatch for ${seat}`);
-      s.decks[seat]={hand:[...basic,...events.map(d=>({id:`${seat}:${d.id}`,definitionId:d.id,
+      const allowed=cardSet==='signals'?TRAINING_A2S1_IDS_BY_SEAT[seat]:
+        cardSet==='events'?TRAINING_EVENT_IDS_BY_SEAT[seat]:[];
+      const specials=catalog.filter(d=>allowed.includes(d.id));
+      if(specials.length!==allowed.length||specials.some(d=>
+        cardSet==='events'&&d.type!=='事件'||cardSet==='signals'&&
+        !['事件','状态','响应'].includes(d.type)))
+        throw new Error(`Training catalog mismatch for ${seat}`);
+      s.decks[seat]={hand:[...basic,...specials.map(d=>({id:`${seat}:${d.id}`,definitionId:d.id,
         country:d.country,deckOwner:seat,balance:true}))],drawPile:[],discardPile:[],
         active:[],faceDown:[],resolving:[],removed:[]};
     }
     s.status='PLAYING';s.round=1;s.phase='TURN_START_WINDOW';s.setupCompleted=[...SEATS];
     s.viewSeat=s.operatorSeat=s.activeSeat='germany';s.settings.ignoreOtherPlayerInterrupts=false;
     s.events=[];s.publicLog=[];s.trainingBasicOnly=false;
-    s.trainingCourse={version:'ppo-events-v1',mode:options.mode,openIds:Object.fromEntries(
+    s.trainingCourse={version:cardSet==='signals'?TRAINING_A2S1_COURSE_VERSION:TRAINING_COURSE_VERSION,
+      mode:options.mode,openIds:Object.fromEntries(
       SEATS.map(seat=>[seat,[] as string[]])) as Record<SeatId,string[]>,
       openRandomState:(seed^0x7f4a7c15)>>>0,discardRandomState:(seed^0xd1b54a32)>>>0,
       ...(this.captureReplay?{captureReplay:true}:{})};
     this.state=s;
     for(const seat of SEATS)this.refreshOpen(seat);
-    const eventIds=cardSet==='events'?SEATS.flatMap(seat=>TRAINING_EVENT_IDS_BY_SEAT[seat]):[];
+    const eventIds=cardSet==='signals'?SEATS.flatMap(seat=>TRAINING_A2S1_IDS_BY_SEAT[seat]):
+      cardSet==='events'?SEATS.flatMap(seat=>TRAINING_EVENT_IDS_BY_SEAT[seat]):[];
+    const courseVersion=cardSet==='signals'?TRAINING_A2S1_COURSE_VERSION:TRAINING_COURSE_VERSION;
+    const overridesVersion=cardSet==='signals'?TRAINING_A2S1_OVERRIDES_VERSION:TRAINING_OVERRIDES_VERSION;
     this.header={format:PPO_ARENA_FORMAT,gameId,episodeId:globalThis.crypto.randomUUID(),seed,
-      mode:options.mode,cardSet,courseVersion:TRAINING_COURSE_VERSION,overridesVersion:TRAINING_OVERRIDES_VERSION,
-      mapVersion:MAP.version,eventIds,configHash:fnv({mode:options.mode,course:TRAINING_COURSE_VERSION,
+      mode:options.mode,cardSet,courseVersion,overridesVersion,
+      mapVersion:MAP.version,eventIds,configHash:fnv({mode:options.mode,course:courseVersion,
         cardSet,observation:PPO_OBSERVATION_SCHEMA_VERSION,action:PPO_ACTION_SCHEMA_VERSION,
-        overrides:TRAINING_OVERRIDES_VERSION,map:MAP.version,eventIds,basic:BASIC_COUNTS,balance:true}),
+        overrides:overridesVersion,map:MAP.version,eventIds,basic:BASIC_COUNTS,balance:true}),
       buildFingerprint:options.buildFingerprint};
     this.advance();
   }
@@ -285,6 +322,8 @@ export class PpoTrainingArena {
       this.resolutionEventOutcomes[event.id]=event.outcome??'unknown';
       if(event.outcome!=='succeeded'||!event.effect)continue;
       const effect=event.effect;
+      if(effect.fee) this.feeCardsSpent+=effect.kind==='cards'?
+        effect.selectedIds?.length??effect.min:effect.kind==='deckTop'?effect.count:0;
       if(effect.kind==='action'&&effect.option?.attackerId)
         for(const placement of Object.values(this.actionLedgers))if(
           placement.newUnitIds.includes(effect.option.attackerId))
@@ -298,6 +337,17 @@ export class PpoTrainingArena {
         }
       }
       const cardId=frames.get(event.frameId),action=cardId?this.actionLedgers[cardId]:undefined;
+      const activation=this.triggerLedgers[event.frameId];
+      if(activation){
+        if(effect.kind==='action'){
+          const id=effect.resultUnitId;
+          if(id&&!beforeIds.has(id)&&after.units.some(unit=>unit.id===id))
+            activation.positive.push(`new_unit:${event.id}`);
+          else if(['land_battle','sea_battle','destroy'].includes(effect.action)&&
+            effect.option?.defenderId)activation.positive.push(`attack:${event.id}`);
+        }else if(effect.kind==='remove'||effect.kind==='score'&&effect.amount>0)
+          activation.positive.push(`effect:${event.id}`);
+      }
       if(!action)continue;
       if(effect.kind==='action'){
         const id=effect.resultUnitId;
@@ -329,7 +379,38 @@ export class PpoTrainingArena {
       for(const [id,action] of Object.entries(this.actionLedgers))if(action.newUnitIds.length)
         delete this.actionLedgers[id];
   }
+  private assessTriggerFrames(after:GameState){
+    for(const [frameId,activation] of Object.entries(this.triggerLedgers)){
+      const frame=after.resolution?.frames.find(frame=>frame.id===frameId);
+      if(frame?.status!=='COMPLETE')continue;
+      const ownEvents=after.resolution?.events.filter(event=>event.frameId===frameId)??[];
+      const descendant=after.resolution?.events.some(event=>event.ancestorIds.some(id=>
+        ownEvents.some(parent=>parent.id===id))&&event.applied&&!!event.effect&&
+        !event.effect.fee&&event.effect.kind!=='signal')??false;
+      if(activation.supported&&!frame.cancelled&&!activation.positive.length&&!descendant){
+        activation.penalized=true;
+        this.rewardAdjustments.push({decisionId:activation.decisionId,seat:activation.seat,
+          cardId:activation.cardId,reason:'optional_trigger_no_effect',penalty:-0.01,
+          beforeCap:-0.01,afterCap:-0.01,effects:[activation.label]});
+      }
+      delete this.triggerLedgers[frameId];
+    }
+  }
   private commit(command:Command){const before=this.state;
+    if(command.type==='RESOLVE_ENGINE_CHOICE'&&before.resolution?.choice?.kind==='TRIGGER'&&
+      command.ids.length){
+      const option=command.ids[0];
+      const rule=before.resolution.rules.find(rule=>option.endsWith('/'+rule.id));
+      if(rule&&rule.sourceInstanceId.startsWith(rule.owner+':special_')){
+        const nonfee=rule.effects.filter(effect=>!effect.fee);
+        const supported=nonfee.length===1&&nonfee[0].kind==='action'&&
+          ['build_army','build_navy','recruit_army','recruit_navy','destroy'].includes(nonfee[0].action)&&
+          rule.effects.every(effect=>effect.fee||effect===nonfee[0]);
+        this.pendingTriggers.push({ruleId:rule.id,label:rule.label,cardId:rule.sourceInstanceId,
+          seat:rule.owner,decisionId:this.decisionCount,
+          definitionId:rule.sourceInstanceId.split(':')[1],supported});
+      }
+    }
     const extraSubmitted=command.type==='RESOLVE_ENGINE_CHOICE'&&
       before.resolution?.choice?.kind==='EXTRA_CARD'?command.ids.flatMap(id=>{
         const card=Object.values(before.decks).flatMap(deck=>
@@ -353,8 +434,17 @@ export class PpoTrainingArena {
     const outcome=transition(before,command);
     if(!outcome.ok)throw new Error(`Core rejected ${command.type}: ${outcome.error}`);
     this.state=outcome.state;
+    const oldFrames=new Set(before.resolution?.frames.map(frame=>frame.id)??[]);
+    for(const frame of this.state.resolution?.frames??[]){
+      if(oldFrames.has(frame.id)||frame.noticeKind!=='trigger')continue;
+      const index=this.pendingTriggers.findIndex(p=>p.cardId===frame.cardId&&p.label===frame.source);
+      if(index<0)continue;
+      const [pending]=this.pendingTriggers.splice(index,1);
+      this.triggerLedgers[frame.id]={...pending,frameId:frame.id,positive:[],penalized:false};
+    }
     if(!before.resolution?.running&&this.state.resolution?.running)this.resolutionEventOutcomes={};
     this.recordActionEffects(before,this.state,command);
+    this.assessTriggerFrames(this.state);
     this.submittedThisStep.push(...extraSubmitted);
     this.completedThisStep.push(...(this.state.trainingCourse?.cardOutcomes??[]).slice(
       before.trainingCourse?.cardOutcomes?.length??0));
@@ -380,8 +470,11 @@ export class PpoTrainingArena {
     const s=this.state;
     const frame=s.resolution?.frames.find(f=>f.id===choice.frameId);
     const effect=frame?.effects[frame.nextEffectIndex];
-    const randomPayment=choice.kind==='PAY_COST'||choice.kind==='FORCE_HAND'||choice.kind==='CARDS'&&
-      effect?.kind==='cards'&&(!!effect.fee||effect.from==='hand'&&effect.to==='discardPile');
+    const typed=(choice.requirements??(effect?.kind==='cards'?effect.requirements:undefined)??[])
+      .some(requirement=>requirement!=='*');
+    const randomPayment=choice.kind==='FORCE_HAND'||choice.min===choice.max&&!typed&&
+      (choice.kind==='PAY_COST'||choice.kind==='CARDS'&&effect?.kind==='cards'&&
+      (effect.fee||effect.from==='hand'&&effect.to==='discardPile'));
     if(randomPayment){
       const options=choice.options.map(o=>o.id);
       const count=Math.min(choice.min,options.length);
@@ -411,7 +504,8 @@ export class PpoTrainingArena {
         Math.min(choice.count,s.decks[choice.seat].hand.length),s.trainingCourse!,'discardRandomState').map(c=>c.id);
       this.commit({type:'RESOLVE_FORCED_DISCARD',seat:choice.seat,expectedRevision:s.revision,cardIds:ids});continue;
     }
-    if(s.pendingAir.length)throw new Error('Air choice in no-air curriculum');
+    if(s.pendingAir.length){if(this.header.cardSet!=='signals')throw new Error('Air choice in no-air curriculum');
+      return;}
     if(s.phase==='PLAY'){
       if(!this.pendingCardId&&this.sourceCandidates().length===1){
         this.commit({type:'ADVANCE_PHASE',seat:s.activeSeat,expectedRevision:s.revision});continue;
@@ -432,6 +526,14 @@ export class PpoTrainingArena {
 
   private sourceCandidates():PpoCandidate[]{const s=this.state,seat=s.activeSeat,
     open=new Set(s.trainingCourse!.openIds[seat]),seen=new Set<string>(),candidates:PpoCandidate[]=[];
+    if(this.header.cardSet==='signals')for(const card of s.decks[seat].active){
+      const effects=statusActionEffects(s,card);
+      if(!effects.length||!canExecuteEffects(s,effects))continue;
+      candidates.push({id:`status-action:${card.id}`,kind:'source',cardId:card.id,
+        definitionId:card.definitionId,cardType:'状态',statusAction:true,
+        label:`发动：${specialCard(card.definitionId,card.balance)?.name??card.definitionId}`,
+        effects:effects.map(e=>structure(e,this.unitFact))});
+    }
     for(const card of s.decks[seat].hand){
       if(!open.has(card.id)||seen.has(card.definitionId))continue;
       if(basicType(card.definitionId)){
@@ -440,6 +542,7 @@ export class PpoTrainingArena {
         seen.add(card.definitionId);
         for(const option of options)candidates.push({id:`source:${card.definitionId}:${option.id}`,
           kind:'source',cardId:card.id,definitionId:card.definitionId,optionId:option.id,
+          cardType:'基本牌',
           label:`${BASIC_NAMES[card.definitionId]} · ${option.label}`,
           choices:[{kind:'action_plan',action:option.replacement??card.definitionId,
             country:card.country,regionId:option.regionId,unitType:option.unitType,
@@ -459,7 +562,8 @@ export class PpoTrainingArena {
       }
       seen.add(card.definitionId);
       candidates.push({id:`source:${card.definitionId}`,kind:'source',cardId:card.id,
-        definitionId:card.definitionId,label:specialCard(card.definitionId,card.balance)?.name??
+        definitionId:card.definitionId,cardType:specialCard(card.definitionId,card.balance)?.type,
+        label:specialCard(card.definitionId,card.balance)?.name??
           BASIC_NAMES[card.definitionId as keyof typeof BASIC_NAMES]??card.definitionId,
         effects:effectSequence(s,card,this.unitFact)});
     }
@@ -479,10 +583,26 @@ export class PpoTrainingArena {
           other.deckOwner===card.deckOwner&&other.balance===card.balance;
       })===index;
     }):ids;
-    const picks=combinations(semanticIds,choice.min,choice.max,ordered);
-    if(choice.canSkip&&!picks.some(p=>p.length===0))picks.unshift([]);
     const frame=this.state.resolution?.frames.find(f=>f.id===choice.frameId);
     const effect=frame?.effects[frame.nextEffectIndex];
+    const requirements=choice.requirements??(effect?.kind==='cards'?effect.requirements:undefined);
+    const typedPayment=!!requirements?.some(requirement=>requirement!=='*')&&
+      ['PAY_COST','CARDS'].includes(choice.kind);
+    // A flexible arbitrary discard is a decision about quantity, not a
+    // combinatorial choice among individual resource instances. The selected
+    // identities are sampled only after the model submits the count.
+    if(this.header.cardSet==='signals'&&choice.kind==='CARDS'&&effect?.kind==='cards'&&
+      effect.from==='hand'&&effect.to==='discardPile'&&!typedPayment&&choice.min<choice.max)
+      return Array.from({length:choice.max-choice.min+1},(_,index)=>{
+        const count=choice.min+index;
+        return {id:`random-discard-count:${count}`,kind:'choice' as const,
+          choiceIds:count?[`__random_discard__:${count}`]:[],randomDiscardCount:count,
+          label:`随机弃置 ${count} 张可用资源`,choices:count?[{kind:'cards'}]:[],
+          effects:[{...structure(effect,this.unitFact),min:count,max:count}]};
+      });
+    const picks=typedPayment?this.paymentChoices(choice,requirements!):
+      combinations(semanticIds,choice.min,choice.max,ordered);
+    if(choice.canSkip&&!picks.some(p=>p.length===0))picks.unshift([]);
     const resolution=this.state.resolution;
     const cardById=(id:string)=>Object.values(this.state.decks).flatMap(deck=>
       [...deck.hand,...deck.drawPile,...deck.discardPile,...deck.active,...deck.faceDown,...deck.resolving,...deck.removed])
@@ -585,17 +705,40 @@ export class PpoTrainingArena {
           const card=lookup(id);return card?effectSequence(this.state,card,this.unitFact):[];
         }):selected.flatMap(id=>choiceFeature(id).effects??[])}));
   }
+  private paymentChoices(choice:ChoiceRequest,requirements:string[]):string[][]{
+    const deck=this.state.decks[choice.seat];
+    const cards=[...deck.hand,...deck.faceDown,...deck.active,...deck.drawPile,...deck.discardPile];
+    const byId=new Map(cards.map(card=>[card.id,card]));
+    const groups=new Map<string,string[]>();
+    for(const option of choice.options){const card=byId.get(option.id);
+      if(!card)throw new Error(`Unknown payment card ${option.id}`);
+      const group=groups.get(card.definitionId)??[];group.push(card.id);groups.set(card.definitionId,group);}
+    const entries=[...groups.values()],out:string[][]=[];
+    const visit=(index:number,selected:string[])=>{
+      if(selected.length>choice.max)return;
+      if(index===entries.length){if(selected.length>=choice.min&&selected.length<=choice.max&&
+        coversCost(selected.map(id=>byId.get(id)!),requirements))out.push(selected);return;}
+      for(let count=0;count<=Math.min(entries[index].length,choice.max-selected.length);count++)
+        visit(index+1,[...selected,...entries[index].slice(0,count)]);
+    };
+    visit(0,[]);
+    return out;
+  }
   observe():PpoObservation|null{
     if(this.cached!==undefined)return this.cached;
     if(this.done)return null;
-    const s=this.state,choice=s.resolution?.choice,card=this.pendingCardId?
+    const s=this.state,choice=s.resolution?.choice,air=s.pendingAir.length?
+      s.units.find(unit=>unit.id===s.pendingAir[0]):undefined,card=this.pendingCardId?
       s.decks[s.activeSeat].hand.find(c=>c.id===this.pendingCardId):undefined;
-    const node=choice?'ENGINE_CHOICE':card?'TARGETS':'SOURCE';
+    const node=choice?'ENGINE_CHOICE':air?'AIR_RELOCATE':card?'TARGETS':'SOURCE';
     const targets=card&&node==='TARGETS'?[...barbarossaTargets(s)].sort():[];
-    const candidates=choice?this.choiceCandidates(choice):card?combinations(targets,1,Math.min(3,targets.length),true)
+    const candidates=choice?this.choiceCandidates(choice):air?airDestinations(s,air.id).map(regionId=>({
+      id:`air-relocate:${air.id}:${regionId}`,kind:'choice' as const,choiceIds:[regionId],
+      label:regionId,choices:[{kind:'relocate',action:'air_move',regionId,
+        source:this.unitFact(air.id)}]})):card?combinations(targets,1,Math.min(3,targets.length),true)
       .map(ids=>({id:`targets:${JSON.stringify(ids)}`,kind:'targets' as const,targetIds:ids,
         label:ids.join('、'),effects:effectSequence(s,card,this.unitFact,ids)})):this.sourceCandidates();
-    const decisionSeat=choice?.seat??s.activeSeat;
+    const decisionSeat=choice?.seat??(air?seatOf(air.country):s.activeSeat);
     const frame=s.resolution?.frames.find(f=>f.id===choice?.frameId)??s.resolution?.frames.at(-1);
     const current=frame?.effects[frame.nextEffectIndex];
     const selectedTargets=frame?.effects.flatMap(effect=>effect.kind==='action'?[...(effect.targetIds??[]),
@@ -607,13 +750,27 @@ export class PpoTrainingArena {
       ...(event.effect?.kind==='action'?{action:event.effect.action,
         regionId:event.effect.option?.regionId??event.effect.selection?.regionId}:{}),
     }))??[];
+    const origin=s.resolution?.events.at(-1)?.effect;
+    const originAction=origin?.kind==='action'?{action:origin.action,country:origin.country,
+      regionId:origin.option?.regionId??origin.selection?.regionId,
+      sourceRegionId:s.units.find(u=>u.id===origin.option?.attackerId)?.regionId}:undefined;
     const own=s.decks[decisionSeat],open=new Set(s.trainingCourse!.openIds[decisionSeat]);
+    const visibleInstalled=SEATS.flatMap(seat=>[
+      ...s.decks[seat].active,...(seat===decisionSeat?s.decks[seat].faceDown:[])]);
+    const visibleUseCounts=Object.fromEntries(visibleInstalled.map(card=>[card.definitionId,
+      (s.resolution?.turnUses?Object.entries(s.resolution.turnUses).filter(([key])=>
+        key.includes(`:${card.id}:`)).reduce((sum,[,count])=>sum+count,0):0)+
+        Number(s.roundUses?.[card.id]===s.round)]));
+    const sourceCard=frame?.cardId?Object.values(s.decks).flatMap(deck=>[
+      ...deck.resolving,...deck.active,...deck.discardPile,...deck.hand,...deck.faceDown])
+      .find(card=>card.id===frame.cardId):undefined;
     const counts=(cards:CardInstance[])=>Object.fromEntries(
-      [...new Set([...BASIC_ACTIONS,...TRAINING_EVENT_IDS_BY_SEAT[decisionSeat]])].map(id=>
+      [...new Set([...BASIC_ACTIONS,...(this.header.cardSet==='signals'?
+        TRAINING_A2S1_IDS_BY_SEAT[decisionSeat]:TRAINING_EVENT_IDS_BY_SEAT[decisionSeat])])].map(id=>
         [id,cards.filter(c=>c.definitionId===id).length]));
     const observation:PpoObservation={decision:{episodeId:this.header.episodeId,gameId:this.header.gameId,
       decisionId:this.decisionCount,revision:s.revision},mode:this.header.mode,
-      cardSet:this.header.cardSet,courseVersion:TRAINING_COURSE_VERSION,node,round:s.round,phase:s.phase,
+      cardSet:this.header.cardSet,courseVersion:this.header.courseVersion,node,round:s.round,phase:s.phase,
       activeSeat:s.activeSeat,decisionSeat,sourceSeat:frame?.owner??s.activeSeat,
       unitCountry:current?.kind==='action'?current.country:null,
       scores:scoreCopy(s),allianceScores:allianceScores(s),units:s.units.map(u=>({...u})),
@@ -627,6 +784,21 @@ export class PpoTrainingArena {
         discard:counts(own.discardPile)},
       publicResources:Object.fromEntries(SEATS.map(seat=>[seat,{remainingTotal:s.decks[seat].hand.length,
         discardTotal:s.decks[seat].discardPile.length}])) as PpoObservation['publicResources'],
+      ...(this.header.cardSet==='signals'?{
+        visibleCards:{active:Object.fromEntries(SEATS.map(seat=>[seat,
+          s.decks[seat].active.map(card=>card.definitionId)])) as Record<SeatId,string[]>,
+          ownFaceDown:own.faceDown.map(card=>card.definitionId),
+          otherFaceDownCount:Object.fromEntries(SEATS.map(seat=>[seat,
+            seat===decisionSeat?0:s.decks[seat].faceDown.length])) as Record<SeatId,number>},
+        effectiveHomes:Object.fromEntries(countryIds.map(country=>[country,
+          homeRegion(s,country)])) as Record<CountryId,string>,
+        effectiveSupply:Object.fromEntries(countryIds.map(country=>[country,
+          MAP.regions.map(region=>supplySource(s,country,region.id,region.supply))])) as
+          Record<CountryId,boolean[]>,
+        visibleUseCounts,
+        currentSourceDefinition:frame?.publicDeclared||frame?.owner===decisionSeat?
+          sourceCard?.definitionId??null:null,
+        ...(originAction?{originAction}:{})}:{}),
       activeEffects:card?effectSequence(s,card,this.unitFact):frame?.effects.map(e=>structure(e,this.unitFact))??[],
       currentEffectIndex:frame?.nextEffectIndex??0,selectedTargets,
       selectedTargetFacts:selectedTargets.flatMap(id=>this.unitFact(id)??[]),bindingFacts,priorResults,
@@ -643,7 +815,8 @@ export class PpoTrainingArena {
       throw new Error('Stale PPO decision');
     const selected=obs.candidates.find(c=>c.id===request.actionId);
     if(!selected)throw new Error('Invalid PPO candidate');
-    const s=this.state,beforeScore=scoreCopy(s),beforeTotals=allianceScores(s),beforeT=turnClock(s);
+    const s=this.state,beforeScore=scoreCopy(s),beforeTotals=allianceScores(s),beforeT=turnClock(s),
+      beforeEventCount=s.events.length;
     const basicBuild=selected.kind==='source'&&!!selected.optionId&&
       (selected.definitionId==='build_army'||selected.definitionId==='build_navy');
     const buildPlan=basicBuild?selected.choices?.[0]:undefined;
@@ -665,11 +838,18 @@ export class PpoTrainingArena {
     let wasteCheck:PpoStepInfo['wasteCheck'];
     this.rewardAdjustments=[];
     this.wasteAssessments=[];
+    this.feeCardsSpent=0;
     this.submittedThisStep=[];
     this.completedThisStep=[];
     this.replayCommits=[];
     if(selected.kind==='pass')this.commit({type:'ADVANCE_PHASE',seat:s.activeSeat,expectedRevision:s.revision});
     else if(selected.kind==='source'){
+      if(selected.statusAction){
+        this.beginAction(selected.cardId!,selected.definitionId!,s.activeSeat,
+          !!hasStockAlternative,selected.effects??[]);
+        this.commit({type:'STATUS_ACTION',seat:s.activeSeat,expectedRevision:s.revision,
+          cardId:selected.cardId!,guided:true});
+      }else {
       if(selected.optionId&&['land_battle','sea_battle'].includes(selected.definitionId??'')){
         const used=cardOptions(s,selected.cardId!).find(option=>option.id===selected.optionId)?.attackerId;
         if(used)for(const action of Object.values(this.actionLedgers))if(action.newUnitIds.includes(used))
@@ -702,6 +882,10 @@ export class PpoTrainingArena {
             regionId:buildPlan?.regionId??'',repeated,penalty:reason==='repeated_basic_build',reason};
         }}
       else this.playCard(selected.cardId!,[]);
+      }
+    }else if(obs.node==='AIR_RELOCATE'){
+      this.commit({type:'RELOCATE_AIR',seat:obs.decisionSeat,expectedRevision:s.revision,
+        regionId:selected.choiceIds![0]});
     }else if(selected.kind==='targets'){
       const cardId=this.pendingCardId!;this.pendingCardId=null;this.playCard(cardId,selected.targetIds!);
     }else{
@@ -721,8 +905,11 @@ export class PpoTrainingArena {
           }
         }
       }
+      const ids=selected.randomDiscardCount===undefined?selected.choiceIds!:
+        sampleWithoutReplacement(choice.options,selected.randomDiscardCount,
+          s.trainingCourse!,'discardRandomState').map(option=>option.id);
       this.commit({type:'RESOLVE_ENGINE_CHOICE',seat:choice.seat,expectedRevision:s.revision,
-        choiceId:choice.id,ids:selected.choiceIds!,guided:true});
+        choiceId:choice.id,ids,guided:true});
     }
     this.advance();this.decisionCount++;this.cached=undefined;
     const after=this.state,next=this.observe(),totals=allianceScores(after),result=this.result;
@@ -759,6 +946,12 @@ export class PpoTrainingArena {
       ...(wasteCheck?{wasteCheck}:{}),
       ...(this.rewardAdjustments.length?{rewardAdjustments:[...this.rewardAdjustments]}:{}),
       ...(this.wasteAssessments.length?{wasteAssessments:[...this.wasteAssessments]}:{}),
+      feeCardsSpent:this.feeCardsSpent,
+      ...(obs.choiceKind==='TRIGGER'&&selected.choiceIds?.length?{triggerDepth:(()=>{
+        const option=s.resolution?.choice?.options.find(option=>option.id===selected.choiceIds![0]);
+        const window=s.resolution?.windows.find(window=>window.id===option?.windowId);
+        return 1+(s.resolution?.events.find(event=>event.id===window?.originEventId)?.ancestorIds.length??0);
+      })()}:{}),
       wasteOpportunity:{candidateCount:opportunityIds.length,chosen:opportunityIds.includes(selected.id)},
       winner:result?.winner??null};
     const record=this.trace==='none'?null:{type:'ppo-decision',decision:obs.decision,
@@ -766,10 +959,13 @@ export class PpoTrainingArena {
       action:selected,info,
       ...(this.trace==='full'?{before:{scores:beforeScore,units:obs.units},
         after:{scores:scoreCopy(after),units:after.units.map(u=>({...u}))},
-        events:[...after.events],publicLog:[...(after.publicLog??[])],
+        events:after.events.slice(beforeEventCount),publicLog:[...(after.publicLog??[])],
         ...(this.captureReplay?{replayCommits:this.replayCommits}:{})}:{})};
     if(record)this.records.push(record);
-    after.events=[];after.publicLog=[];
+    // Trigger handlers can recheck UNIT_PLACED across an AI decision boundary.
+    // Only discard transient board facts once the whole resolution has closed.
+    if(!after.resolution?.running)after.events=[];
+    after.publicLog=[];
     return {observation:next,info,result,record};
   }
   private playCard(cardId:string,targets:string[]){const s=this.state,card=s.decks[s.activeSeat].hand.find(c=>c.id===cardId);
@@ -785,16 +981,21 @@ export class PpoTrainingArena {
     decisionCount:this.decisionCount,pendingCardId:this.pendingCardId,terminationReason:this.terminationReason,
     finalObservation:this.finalObservation,knownUnits:this.knownUnits,
     pendingSubmissions:this.pendingSubmissions,actionLedgers:this.actionLedgers,
-    resolutionEventOutcomes:this.resolutionEventOutcomes});}
+    resolutionEventOutcomes:this.resolutionEventOutcomes,
+    pendingTriggers:this.pendingTriggers,triggerLedgers:this.triggerLedgers});}
   static fromSnapshot(input:PpoSnapshot,options:PpoArenaOptions){const saved=structuredClone(input);
     if(saved?.format!==PPO_ARENA_FORMAT||saved.header?.mode!==options.mode||
       saved.header.cardSet!==(options.cardSet??'events')||
       saved.header.buildFingerprint!==options.buildFingerprint||!isSha(options.buildFingerprint)||
-      saved.state?.trainingCourse?.version!=='ppo-events-v1'||
+      saved.state?.trainingCourse?.version!==(saved.header.cardSet==='signals'?
+        TRAINING_A2S1_COURSE_VERSION:TRAINING_COURSE_VERSION)||
       saved.state.trainingCourse.mode!==options.mode||saved.state.trainingBasicOnly!==false||
-      saved.header.eventIds.length!==(saved.header.cardSet==='events'?58:0)||
-      saved.header.overridesVersion!==TRAINING_OVERRIDES_VERSION||!saved.knownUnits||
-      !saved.pendingSubmissions||!saved.actionLedgers||!saved.resolutionEventOutcomes)
+      saved.header.eventIds.length!==(saved.header.cardSet==='signals'?TRAINING_A2S1_IDS.size:
+        saved.header.cardSet==='events'?58:0)||
+      saved.header.overridesVersion!==(saved.header.cardSet==='signals'?
+        TRAINING_A2S1_OVERRIDES_VERSION:TRAINING_OVERRIDES_VERSION)||!saved.knownUnits||
+      !saved.pendingSubmissions||!saved.actionLedgers||!saved.resolutionEventOutcomes||
+      !saved.pendingTriggers||!saved.triggerLedgers)
       throw new Error('Incompatible PPO snapshot');
     const arena=new PpoTrainingArena(saved.header.seed,saved.header.gameId,options);
     if(arena.header.configHash!==saved.header.configHash)throw new Error('PPO configuration mismatch');
@@ -804,6 +1005,7 @@ export class PpoTrainingArena {
     arena.finalObservation=saved.finalObservation;arena.knownUnits=saved.knownUnits;
     arena.pendingSubmissions=saved.pendingSubmissions;arena.actionLedgers=saved.actionLedgers;
     arena.resolutionEventOutcomes=saved.resolutionEventOutcomes;arena.cached=undefined;
+    arena.pendingTriggers=saved.pendingTriggers;arena.triggerLedgers=saved.triggerLedgers;
     return arena;
   }
 }
