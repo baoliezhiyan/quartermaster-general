@@ -1,7 +1,7 @@
 import {airDestinations,cardOptions} from '../core/actions';
 import {boardOptions} from '../core/boardEffects';
 import {extraEffects} from '../core/extraCards';
-import {BASIC_COUNTS,BASIC_NAMES,COUNTRY_NAMES,reserve,seatOf} from '../core/basic';
+import {BASIC_COUNTS,BASIC_NAMES,COUNTRY_NAMES,allianceOf,reserve,seatOf} from '../core/basic';
 import {regularCatalog,specialCard} from '../core/cardCatalog';
 import {canExecuteEffects,canPayEffectFees} from '../core/resolution';
 import {statusActionEffects} from '../core/statusActions';
@@ -29,9 +29,9 @@ export const PPO_STATIC_SCHEMA={observationSchemaVersion:PPO_OBSERVATION_SCHEMA_
   straits:MAP.straits,seats:SEATS,countries:Object.keys(COUNTRY_NAMES),
   basicActions:BASIC_ACTIONS,eventIds:Object.values(TRAINING_EVENT_IDS_BY_SEAT).flat(),
   bindingKeys:['built-navy','new-china','xiangxi-battle'],maxEffectTokens:32};
-/** The v1 schema is immutable for historical checkpoints. */
+/** Historical A2S1 observations remain identifiable by their schema version. */
 export const PPO_A2S1_STATIC_SCHEMA={...PPO_STATIC_SCHEMA,
-  observationSchemaVersion:'ppo-observation-a2s1-v1',actionSchemaVersion:'ppo-actions-a2s1-v2',
+  observationSchemaVersion:'ppo-observation-a2s1-v2',actionSchemaVersion:'ppo-actions-a2s1-v2',
   courseVersion:TRAINING_A2S1_COURSE_VERSION,overridesVersion:TRAINING_A2S1_OVERRIDES_VERSION,
   eventIds:[...Object.values(TRAINING_EVENT_IDS_BY_SEAT).flat(),
     ...Object.values(TRAINING_SIGNAL_IDS_BY_SEAT).flat()],maxEffectTokens:32,maxActionSlots:12,
@@ -73,6 +73,7 @@ export type PpoObservation={decision:DecisionContext;mode:CourseMode;cardSet:Car
   originAction?:{action:string;country:CountryId;regionId?:string;sourceRegionId?:string};
   currentSourceDefinition?:string|null;
   visibleUseCounts?:Record<string,number>;
+  visibleRoundUseCounts?:Record<string,number>;
   activeEffects:EffectFeature[];currentEffectIndex:number;selectedTargets:string[];
   selectedTargetFacts:UnitFact[];bindingFacts:Record<string,UnitFact[]>;
   priorResults:{applied:boolean;cancelled:boolean;action?:string;regionId?:string}[];
@@ -100,7 +101,8 @@ export type PpoSnapshot={format:typeof PPO_ARENA_FORMAT;header:PpoTrainingArena[
   finalObservation:PpoObservation|null;knownUnits:Record<string,UnitFact>;
   pendingSubmissions:Record<string,string>;actionLedgers:Record<string,ActionLedger>;
   resolutionEventOutcomes:Record<string,string>;
-  pendingTriggers:PendingTrigger[];triggerLedgers:Record<string,TriggerLedger>};
+  pendingTriggers:PendingTrigger[];triggerLedgers:Record<string,TriggerLedger>;
+  pendingTargetChecks:PendingTargetCheck[];penalizedEffectFrames:string[]};
 
 type ActionLedger={cardId:string;definitionId:string;seat:SeatId;originDecisionId:number;
   alternative:boolean;supported:boolean;positive:string[];newUnitIds:string[];
@@ -109,6 +111,8 @@ type ActionLedger={cardId:string;definitionId:string;seat:SeatId;originDecisionI
 type PendingTrigger={ruleId:string;label:string;cardId:string;seat:SeatId;decisionId:number;
   definitionId:string;supported:boolean};
 type TriggerLedger=PendingTrigger&{frameId:string;positive:string[];penalized:boolean};
+type PendingTargetCheck={decisionId:number;seat:SeatId;cardId:string;frameId?:string;
+  effectIndex:number;action:string;regionId:string;relatedAttempt?:boolean};
 
 const countryIds=Object.keys(COUNTRY_NAMES) as CountryId[];
 const basicType=(id:string):id is BasicAction=>BASIC_ACTIONS.some(type=>type===id);
@@ -143,7 +147,9 @@ const structure=(effect:Effect,fact:(id:string)=>UnitFact|undefined):EffectFeatu
   targetIds:effect.kind==='action'?[...(effect.targetIds??[])]:effect.kind==='remove'?[effect.unit.id]:[],
   targetFacts:effect.kind==='action'?(effect.targetIds??[]).flatMap(id=>fact(id)??[]):
     effect.kind==='remove'?[{country:effect.unit.country,type:effect.unit.type,regionId:effect.unit.regionId}]:[],
-  ...('selectedIds'in effect?{selectedIds:[...(effect.selectedIds??[])],
+  // Card-instance IDs encode their definitions in this arena. Resource and
+  // hidden-response selections must never enter an opponent observation.
+  ...('selectedIds'in effect?{selectedIds:(effect.selectedIds??[]).filter(id=>!!fact(id)),
     selectedFacts:(effect.selectedIds??[]).flatMap(id=>fact(id)??[])}:{}),
   ...(effect.kind==='action'&&effect.selection?.regionId?{selectionRegion:effect.selection.regionId}:{}),
   ...(effect.kind==='action'?{bindAs:effect.bindAs,fromBinding:effect.fromBinding,
@@ -187,6 +193,8 @@ export class PpoTrainingArena {
   private resolutionEventOutcomes:Record<string,string>={};
   private pendingTriggers:PendingTrigger[]=[];
   private triggerLedgers:Record<string,TriggerLedger>={};
+  private pendingTargetChecks:PendingTargetCheck[]=[];
+  private penalizedEffectFrames=new Set<string>();
   private rewardAdjustments:NonNullable<PpoStepInfo['rewardAdjustments']>=[];
   private wasteAssessments:NonNullable<PpoStepInfo['wasteAssessments']>=[];
   private feeCardsSpent=0;
@@ -241,7 +249,9 @@ export class PpoTrainingArena {
     this.header={format:PPO_ARENA_FORMAT,gameId,episodeId:globalThis.crypto.randomUUID(),seed,
       mode:options.mode,cardSet,courseVersion,overridesVersion,
       mapVersion:MAP.version,eventIds,configHash:fnv({mode:options.mode,course:courseVersion,
-        cardSet,observation:PPO_OBSERVATION_SCHEMA_VERSION,action:PPO_ACTION_SCHEMA_VERSION,
+        cardSet,observation:cardSet==='signals'?PPO_A2S1_STATIC_SCHEMA.observationSchemaVersion:
+          PPO_OBSERVATION_SCHEMA_VERSION,
+        action:cardSet==='signals'?PPO_A2S1_STATIC_SCHEMA.actionSchemaVersion:PPO_ACTION_SCHEMA_VERSION,
         overrides:overridesVersion,map:MAP.version,eventIds,basic:BASIC_COUNTS,balance:true}),
       buildFingerprint:options.buildFingerprint};
     this.advance();
@@ -389,12 +399,71 @@ export class PpoTrainingArena {
         !event.effect.fee&&event.effect.kind!=='signal')??false;
       if(activation.supported&&!frame.cancelled&&!activation.positive.length&&!descendant){
         activation.penalized=true;
+        this.penalizedEffectFrames.add(frameId);
         this.rewardAdjustments.push({decisionId:activation.decisionId,seat:activation.seat,
           cardId:activation.cardId,reason:'optional_trigger_no_effect',penalty:-0.01,
           beforeCap:-0.01,afterCap:-0.01,effects:[activation.label]});
       }
       delete this.triggerLedgers[frameId];
     }
+  }
+  private assessRepeatedTargets(history:GameState,settled:boolean){
+    if(!settled||!this.pendingTargetChecks.length)return;
+    const checks=this.pendingTargetChecks.splice(0),events=history.resolution?.events??[],
+      frames=history.resolution?.frames??[];
+    for(const check of checks){
+      const frame=frames.find(item=>item.id===check.frameId)||
+        frames.find(item=>item.cardId===check.cardId&&
+          (check.effectIndex<0||item.effects[check.effectIndex]?.kind==='action'));
+      const root=events.find(event=>event.frameId===frame?.id&&
+        (check.effectIndex<0||event.effectIndex===check.effectIndex)&&event.effect?.kind==='action'&&
+        event.effect.action===check.action&&
+        (event.effect.option?.regionId??event.effect.selection?.regionId)===check.regionId);
+      const descendants=root?events.filter(event=>event.ancestorIds.includes(root.id)):[];
+      // Cancellation, failed application, and effects whose benefit cannot be
+      // classified safely are exemptions. Only this event's descendants count.
+      const uncertain=!root||root.outcome!=='succeeded'||!root.applied||
+        descendants.some(event=>event.cancelled||event.outcome==='cancelled'||
+          event.outcome==='invalid'||event.outcome==='declared');
+      const related=uncertain?[]:[root,...descendants].filter(event=>event.applied&&
+        event.outcome==='succeeded'&&event.effect&&
+        (event.id===root?.id||frames.find(item=>item.id===event.frameId)?.owner===check.seat));
+      const beneficial=!!check.relatedAttempt||related.some(event=>{
+        const effect=event.effect!;
+        if(effect.kind==='action')return event.id!==root?.id&&!!effect.resultUnitId&&
+          !effect.option?.existingId||
+          ['land_battle','sea_battle','destroy'].includes(effect.action)&&
+          !!effect.option?.defenderId;
+        if(effect.kind==='score')return effect.amount>0&&
+          allianceOf(effect.seat)===allianceOf(check.seat);
+        if(effect.kind==='cards')return effect.to==='discardPile'&&
+          allianceOf(effect.seat)!==allianceOf(check.seat)&&
+          !!effect.selectedIds?.length;
+        if(effect.kind==='remove')return allianceOf(effect.unit.country)!==allianceOf(check.seat);
+        return false;
+      });
+      const unknownBenefit=related.some(event=>{
+        const effect=event.effect!;
+        return !effect.fee&&!['action','score','cards','remove','signal','trace'].includes(effect.kind);
+      });
+      const ledger=this.actionLedgers[check.cardId];
+      const alreadyPenalized=!!ledger?.penalized||!!frame&&this.penalizedEffectFrames.has(frame.id);
+      const reason=alreadyPenalized?'penalized':uncertain?'rule_cancelled_or_unresolved':
+        beneficial?'related_benefit':unknownBenefit?'uncertain_effect_structure':
+        !ledger&&!frame?'missing_effect_identity':'avoidable_repeated_target';
+      if(reason==='avoidable_repeated_target'){
+        if(ledger)this.penalize(ledger,reason,[`repeated:${check.action}:${check.regionId}`],
+          check.decisionId,true,check.seat);
+        else if(frame){this.penalizedEffectFrames.add(frame.id);
+          this.rewardAdjustments.push({decisionId:check.decisionId,seat:check.seat,
+            cardId:check.cardId,reason,penalty:-0.01,beforeCap:-0.01,afterCap:-0.01,
+            effects:[`repeated:${check.action}:${check.regionId}`]});}
+      }
+      this.wasteAssessments.push({decisionId:check.decisionId,seat:check.seat,
+        cardId:check.cardId,reason,actualEffects:beneficial?['related_benefit']:[],
+        newUnitIds:[],alternative:true,penalized:reason==='avoidable_repeated_target'});
+    }
+    this.penalizedEffectFrames.clear();
   }
   private commit(command:Command){const before=this.state;
     if(command.type==='RESOLVE_ENGINE_CHOICE'&&before.resolution?.choice?.kind==='TRIGGER'&&
@@ -430,9 +499,30 @@ export class PpoTrainingArena {
       before.resolution?.choice?.kind==='TRIGGER'&&command.ids.length?
       before.resolution.rules.find(rule=>command.ids.some(id=>id===rule.id||id.endsWith('/'+rule.id)))
         ?.sourceInstanceId:undefined;
+    const relatedChoices:PendingTargetCheck[]=[];
+    if(command.type==='RESOLVE_ENGINE_CHOICE'&&before.resolution?.choice?.kind==='ACTION'&&
+      command.ids.length){
+      const choice=before.resolution.choice,frame=before.resolution.frames.find(f=>f.id===choice.frameId),
+        effect=frame?.effects[frame.nextEffectIndex];
+      if(frame&&effect?.kind==='action')for(const check of this.pendingTargetChecks){
+        const origin=before.resolution.events.find(event=>
+          event.frameId===(check.frameId??before.resolution?.frames.find(f=>f.cardId===check.cardId)?.id)&&
+          (check.effectIndex<0||event.effectIndex===check.effectIndex)&&
+          event.effect?.kind==='action'&&
+          event.effect.action===check.action);
+        if(!origin||frame.owner!==check.seat||!frame.ancestorIds.includes(origin.id))continue;
+        const plans=boardOptions(before,effect).filter(plan=>plan.regionId===command.ids[0]||
+          plan.id===command.ids[0]);
+        if(['land_battle','sea_battle','destroy'].includes(effect.action)&&
+          plans.some(plan=>!!plan.defenderId)||
+          ['build_army','build_navy','recruit_army','recruit_navy'].includes(effect.action)&&
+          plans.some(plan=>!plan.existingId))relatedChoices.push(check);
+      }
+    }
     for(const unit of before.units)this.knownUnits[unit.id]={country:unit.country,type:unit.type,regionId:unit.regionId};
     const outcome=transition(before,command);
     if(!outcome.ok)throw new Error(`Core rejected ${command.type}: ${outcome.error}`);
+    for(const check of relatedChoices)check.relatedAttempt=true;
     this.state=outcome.state;
     const oldFrames=new Set(before.resolution?.frames.map(frame=>frame.id)??[]);
     for(const frame of this.state.resolution?.frames??[]){
@@ -445,6 +535,12 @@ export class PpoTrainingArena {
     if(!before.resolution?.running&&this.state.resolution?.running)this.resolutionEventOutcomes={};
     this.recordActionEffects(before,this.state,command);
     this.assessTriggerFrames(this.state);
+    const previousEvents=before.resolution?.events??[],currentEvents=this.state.resolution?.events??[];
+    const resolutionSwitched=!!before.resolution?.running&&(
+      before.phase!==this.state.phase||currentEvents.length<previousEvents.length||
+      before.resolution.scenario!==this.state.resolution?.scenario);
+    this.assessRepeatedTargets(resolutionSwitched?before:this.state,
+      resolutionSwitched||!this.state.resolution?.running);
     this.submittedThisStep.push(...extraSubmitted);
     this.completedThisStep.push(...(this.state.trainingCourse?.cardOutcomes??[]).slice(
       before.trainingCourse?.cardOutcomes?.length??0));
@@ -742,7 +838,8 @@ export class PpoTrainingArena {
     const frame=s.resolution?.frames.find(f=>f.id===choice?.frameId)??s.resolution?.frames.at(-1);
     const current=frame?.effects[frame.nextEffectIndex];
     const selectedTargets=frame?.effects.flatMap(effect=>effect.kind==='action'?[...(effect.targetIds??[]),
-      ...(effect.selectedIds??[])]:effect.selectedIds??[])??[];
+      ...(effect.selectedIds??[]).filter(id=>!!this.unitFact(id))]:
+      (effect.selectedIds??[]).filter(id=>!!this.unitFact(id)))??[];
     const bindingFacts=Object.fromEntries(Object.entries(frame?.memory??{}).map(([key,ids])=>[
       key,ids.flatMap(id=>this.unitFact(id)??[])]));
     const priorResults=s.resolution?.events.filter(event=>event.applied||event.cancelled).slice(-8).map(event=>({
@@ -757,10 +854,15 @@ export class PpoTrainingArena {
     const own=s.decks[decisionSeat],open=new Set(s.trainingCourse!.openIds[decisionSeat]);
     const visibleInstalled=SEATS.flatMap(seat=>[
       ...s.decks[seat].active,...(seat===decisionSeat?s.decks[seat].faceDown:[])]);
-    const visibleUseCounts=Object.fromEntries(visibleInstalled.map(card=>[card.definitionId,
-      (s.resolution?.turnUses?Object.entries(s.resolution.turnUses).filter(([key])=>
-        key.includes(`:${card.id}:`)).reduce((sum,[,count])=>sum+count,0):0)+
-        Number(s.roundUses?.[card.id]===s.round)]));
+    const visibleUseCounts:Record<string,number>={},visibleRoundUseCounts:Record<string,number>={};
+    for(const card of visibleInstalled){
+      const scopePrefix=`${s.round}:${s.activeSeat}:${card.id}:`;
+      const used=Object.entries(s.resolution?.turnUses??{}).reduce((total,[key,count])=>
+        total+(key.startsWith(scopePrefix)?count:0),0);
+      visibleUseCounts[card.definitionId]=(visibleUseCounts[card.definitionId]??0)+used;
+      visibleRoundUseCounts[card.definitionId]=(visibleRoundUseCounts[card.definitionId]??0)+
+        Number(s.roundUses?.[card.id]===s.round);
+    }
     const sourceCard=frame?.cardId?Object.values(s.decks).flatMap(deck=>[
       ...deck.resolving,...deck.active,...deck.discardPile,...deck.hand,...deck.faceDown])
       .find(card=>card.id===frame.cardId):undefined;
@@ -795,7 +897,7 @@ export class PpoTrainingArena {
         effectiveSupply:Object.fromEntries(countryIds.map(country=>[country,
           MAP.regions.map(region=>supplySource(s,country,region.id,region.supply))])) as
           Record<CountryId,boolean[]>,
-        visibleUseCounts,
+        visibleUseCounts,visibleRoundUseCounts,
         currentSourceDefinition:frame?.publicDeclared||frame?.owner===decisionSeat?
           sourceCard?.definitionId??null:null,
         ...(originAction?{originAction}:{})}:{}),
@@ -858,7 +960,12 @@ export class PpoTrainingArena {
       this.beginAction(selected.cardId!,selected.definitionId!,s.activeSeat,
         !!hasStockAlternative,selected.effects??[]);
       if(selected.definitionId==='special_162'&&barbarossaTargets(s).length)this.pendingCardId=selected.cardId!;
-      else if(selected.optionId){this.commit({type:'PLAY_BASIC',seat:s.activeSeat,
+      else if(selected.optionId){
+        if(this.header.cardSet==='signals'&&basicBuild&&buildPlan?.repeated&&validAlternative)
+          this.pendingTargetChecks.push({decisionId:this.decisionCount,seat:s.activeSeat,
+            cardId:selected.cardId!,effectIndex:-1,action:selected.definitionId!,
+            regionId:buildPlan.regionId!});
+        this.commit({type:'PLAY_BASIC',seat:s.activeSeat,
         expectedRevision:s.revision,cardId:selected.cardId!,optionId:selected.optionId});
         this.submittedThisStep.push({id:selected.cardId!,definitionId:selected.definitionId!});
         if(basicBuild){
@@ -875,7 +982,15 @@ export class PpoTrainingArena {
           const changed=JSON.stringify(s.units)!==JSON.stringify(now.units)||
             Object.keys(s.decks).some(seat=>s.decks[seat as SeatId].drawPile.length!==
               now.decks[seat as SeatId].drawPile.length);
+          const plainWaste=repeated&&validAlternative&&plain&&resolved&&
+            !now.resolution?.running&&placed&&!changed;
+          if(this.header.cardSet==='signals'&&plainWaste){
+            const ledger=this.actionLedgers[selected.cardId!];
+            if(ledger)this.penalize(ledger,'avoidable_repeated_target',
+              [`repeated:${selected.definitionId}:${buildPlan?.regionId}`],this.decisionCount,true);
+          }
           const reason=!repeated?'not_repeated':!validAlternative?'no_valid_alternative':
+            this.header.cardSet==='signals'?'deferred_target_assessment':
             !plain?'additional_effect_uncertain':!resolved||now.resolution?.running?'not_resolved':
             !placed||changed?'other_effect_uncertain':'repeated_basic_build';
           wasteCheck={seat:s.activeSeat,definitionId:selected.definitionId!,
@@ -894,13 +1009,17 @@ export class PpoTrainingArena {
         const frame=s.resolution?.frames.find(f=>f.id===choice.frameId);
         const effect=frame?.effects[frame.nextEffectIndex];
         const ledger=frame?.cardId?this.actionLedgers[frame.cardId]:undefined;
-        if(effect?.kind==='action'&&['build_army','build_navy','recruit_army','recruit_navy'].includes(effect.action)&&ledger){
+        if(effect?.kind==='action'&&['build_army','build_navy','recruit_army','recruit_navy'].includes(effect.action)&&frame?.cardId){
           const plans=boardOptions(s,effect),region=selected.choiceIds[0];
           const chosen=plans.filter(plan=>plan.regionId===region);
           if(chosen.length&&chosen.every(plan=>!!plan.existingId)&&
             plans.some(plan=>!plan.existingId)){
-            ledger.alternative=true;
-            this.penalize(ledger,'avoidable_repeated_target',
+            if(ledger)ledger.alternative=true;
+            if(this.header.cardSet==='signals')
+              this.pendingTargetChecks.push({decisionId:this.decisionCount,seat:choice.seat,
+                cardId:frame.cardId,frameId:frame.id,effectIndex:frame.nextEffectIndex,
+                action:effect.action,regionId:region});
+            else if(ledger)this.penalize(ledger,'avoidable_repeated_target',
               [`repeated:${effect.action}:${region}`],this.decisionCount,true,choice.seat);
           }
         }
@@ -982,7 +1101,9 @@ export class PpoTrainingArena {
     finalObservation:this.finalObservation,knownUnits:this.knownUnits,
     pendingSubmissions:this.pendingSubmissions,actionLedgers:this.actionLedgers,
     resolutionEventOutcomes:this.resolutionEventOutcomes,
-    pendingTriggers:this.pendingTriggers,triggerLedgers:this.triggerLedgers});}
+    pendingTriggers:this.pendingTriggers,triggerLedgers:this.triggerLedgers,
+    pendingTargetChecks:this.pendingTargetChecks,
+    penalizedEffectFrames:[...this.penalizedEffectFrames]});}
   static fromSnapshot(input:PpoSnapshot,options:PpoArenaOptions){const saved=structuredClone(input);
     if(saved?.format!==PPO_ARENA_FORMAT||saved.header?.mode!==options.mode||
       saved.header.cardSet!==(options.cardSet??'events')||
@@ -995,7 +1116,8 @@ export class PpoTrainingArena {
       saved.header.overridesVersion!==(saved.header.cardSet==='signals'?
         TRAINING_A2S1_OVERRIDES_VERSION:TRAINING_OVERRIDES_VERSION)||!saved.knownUnits||
       !saved.pendingSubmissions||!saved.actionLedgers||!saved.resolutionEventOutcomes||
-      !saved.pendingTriggers||!saved.triggerLedgers)
+      !saved.pendingTriggers||!saved.triggerLedgers||!saved.pendingTargetChecks||
+      !saved.penalizedEffectFrames)
       throw new Error('Incompatible PPO snapshot');
     const arena=new PpoTrainingArena(saved.header.seed,saved.header.gameId,options);
     if(arena.header.configHash!==saved.header.configHash)throw new Error('PPO configuration mismatch');
@@ -1006,6 +1128,8 @@ export class PpoTrainingArena {
     arena.pendingSubmissions=saved.pendingSubmissions;arena.actionLedgers=saved.actionLedgers;
     arena.resolutionEventOutcomes=saved.resolutionEventOutcomes;arena.cached=undefined;
     arena.pendingTriggers=saved.pendingTriggers;arena.triggerLedgers=saved.triggerLedgers;
+    arena.pendingTargetChecks=saved.pendingTargetChecks;
+    arena.penalizedEffectFrames=new Set(saved.penalizedEffectFrames);
     return arena;
   }
 }

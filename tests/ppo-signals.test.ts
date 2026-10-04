@@ -99,7 +99,7 @@ describe('A2S1 signals course',()=>{
     expect(arena.exportSnapshot().state.decks.united_kingdom.discardPile).toHaveLength(2);
     expect(next.observation?.choiceKind).not.toBe('PAY_COST');
   });
-  it('lets Germany choose Steel Pact discard quantity without enumerating resource identities',()=>{
+  it('chooses a generic zero-to-five random discard quantity without enumerating identities',()=>{
     const saved=new PpoTrainingArena(5,'signals-steel-count',options).exportSnapshot();
     const state=saved.state;
     state.phase='PLAY';state.activeSeat=state.operatorSeat=state.viewSeat='italy';
@@ -118,6 +118,81 @@ describe('A2S1 signals course',()=>{
     const after=arena.exportSnapshot().state.decks.germany;
     expect(after.hand).toHaveLength(before-3);
     expect(after.discardPile).toHaveLength(3);
+  });
+
+  it('plays the real Steel Pact with Italy paying two, Italy hiding a response, then Germany choosing a status',()=>{
+    const saved=new PpoTrainingArena(31,'signals-real-steel',options).exportSnapshot();
+    const state=saved.state;
+    state.phase='PLAY';state.activeSeat=state.operatorSeat=state.viewSeat='italy';
+    const initialItaly=[...state.decks.italy.hand],initialGermany=[...state.decks.germany.hand];
+    const responses=initialItaly.filter(card=>
+      regularCatalog(true,false).some(def=>def.id===card.definitionId&&def.type==='响应'));
+    state.decks.italy.hand=initialItaly.filter(card=>card.definitionId==='special_227'||
+      responses.some(response=>response.id===card.id));
+    state.decks.italy.drawPile=initialItaly.filter(card=>!state.decks.italy.hand.some(kept=>kept.id===card.id));
+    expect(responses.length).toBeGreaterThan(2);
+    const arena=PpoTrainingArena.fromSnapshot(saved,options);
+    let observation=arena.observe()!;
+    const steel=observation.candidates.find(candidate=>candidate.definitionId==='special_227');
+    expect(steel).toBeDefined();
+    let step=arena.step({...observation.decision,actionId:steel!.id});
+    expect(arena.exportSnapshot().state.decks.italy.discardPile).toHaveLength(2);
+    observation=step.observation!;
+    expect(observation.choiceKind).toBe('CARDS');
+    expect(observation.decisionSeat).toBe('italy');
+    const hidden=observation.candidates.find(candidate=>candidate.choiceIds?.length===1)!;
+    expect(hidden).toBeDefined();
+    const hiddenId=hidden.choiceIds![0];
+    const hiddenDefinition=arena.exportSnapshot().state.decks.italy.hand.find(card=>card.id===hiddenId)!.definitionId;
+    step=arena.step({...observation.decision,actionId:hidden.id});
+    observation=step.observation!;
+    expect(observation.choiceKind).toBe('EXTRA_CARD');
+    expect(observation.decisionSeat).toBe('germany');
+    const visible=JSON.stringify(observation),leakAt=visible.indexOf(hiddenDefinition);
+    if(leakAt>=0)throw Error(`Hidden response leaked near ${visible.slice(leakAt-90,leakAt+90)}`);
+    const germanStatus=observation.candidates.find(candidate=>candidate.choiceIds?.some(id=>
+      id===initialGermany.find(card=>card.definitionId==='special_137')?.id));
+    expect(germanStatus).toBeDefined();
+    arena.step({...observation.decision,actionId:germanStatus!.id});
+    const italy=arena.exportSnapshot().state.decks.italy;
+    const germany=arena.exportSnapshot().state.decks.germany;
+    expect(italy.faceDown.map(card=>card.id)).toContain(hiddenId);
+    expect(italy.discardPile.some(card=>card.definitionId==='special_227')).toBe(true);
+    expect(italy.discardPile).toHaveLength(3);
+    expect(germany.active.some(card=>card.definitionId==='special_137')).toBe(true);
+    const allItaly=[...italy.hand,...italy.drawPile,...italy.discardPile,...italy.active,
+      ...italy.faceDown,...italy.resolving,...italy.removed];
+    expect(new Set(allItaly.map(card=>card.id)).size).toBe(initialItaly.length);
+  });
+  it('rejects Steel Pact without two payable resources',()=>{
+    const saved=new PpoTrainingArena(32,'signals-steel-poor',options).exportSnapshot();
+    const state=saved.state;
+    state.phase='PLAY';state.activeSeat=state.operatorSeat=state.viewSeat='italy';
+    const steel=state.decks.italy.hand.find(card=>card.definitionId==='special_227')!;
+    const one=state.decks.italy.hand.find(card=>card.definitionId==='build_army')!;
+    state.decks.italy.drawPile=state.decks.italy.hand.filter(card=>
+      card.id!==steel.id&&card.id!==one.id);
+    state.decks.italy.hand=[steel,one];
+    const arena=PpoTrainingArena.fromSnapshot(saved,options);
+    expect(arena.observe()!.candidates.some(candidate=>candidate.definitionId==='special_227')).toBe(false);
+  });
+  it('skips Steel Pact response placement when none remains after the two-card cost',()=>{
+    const saved=new PpoTrainingArena(33,'signals-steel-no-response',options).exportSnapshot();
+    const state=saved.state;
+    state.phase='PLAY';state.activeSeat=state.operatorSeat=state.viewSeat='italy';
+    const steel=state.decks.italy.hand.find(card=>card.definitionId==='special_227')!;
+    const basics=state.decks.italy.hand.filter(card=>card.definitionId==='build_army').slice(0,3);
+    state.decks.italy.drawPile=state.decks.italy.hand.filter(card=>
+      card.id!==steel.id&&!basics.some(kept=>kept.id===card.id));
+    state.decks.italy.hand=[steel,...basics];
+    const arena=PpoTrainingArena.fromSnapshot(saved,options),observation=arena.observe()!;
+    const source=observation.candidates.find(candidate=>candidate.definitionId==='special_227');
+    expect(source).toBeDefined();
+    const next=arena.step({...observation.decision,actionId:source!.id}).observation!;
+    expect(next.choiceKind).toBe('EXTRA_CARD');
+    expect(next.decisionSeat).toBe('germany');
+    expect(arena.exportSnapshot().state.decks.italy.faceDown).toHaveLength(0);
+    expect(arena.exportSnapshot().state.decks.italy.discardPile).toHaveLength(2);
   });
 
 });

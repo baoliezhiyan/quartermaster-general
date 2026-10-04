@@ -33,7 +33,7 @@ GAMMA = 1.0
 LAMBDA_ROUND = 0.95
 POTENTIAL_SCALE = 0.3
 ENCODER_VERSION = "ppo-vector-v7-effective-straits"
-A2S1_ENCODER_VERSION = "ppo-vector-a2s1-v2-discard-count"
+A2S1_ENCODER_VERSION = "ppo-vector-a2s1-v3-use-scopes"
 TRAINER_VERSION = "ppo-trainer-v9-actor-map"
 EFFECT_KINDS = ["action", "score", "draw", "deckTop", "forceHand", "signal", "choose", "cards",
                 "extraPlay", "rebuild", "remove", "flag", "balance", "trace", "cancel", "randomReturn",
@@ -62,7 +62,7 @@ REWARD_CONFIG = {"gamma": GAMMA, "lambdaRound": LAMBDA_ROUND, "potential": POTEN
 def reward_config(card_set):
     if card_set == "signals":
         return {**REWARD_CONFIG,
-                "actionWasteVersion": "complete-action-and-optional-trigger-v1"}
+                "actionWasteVersion": "complete-action-and-deferred-target-v2"}
     return REWARD_CONFIG
 ENCODER_DICTIONARY = {"effectKinds": EFFECT_KINDS, "actions": ACTIONS, "phases": PHASES,
                       "choiceKinds": CHOICE_KINDS, "choiceFields": CHOICE_FIELDS,
@@ -266,7 +266,8 @@ class Encoder:
                                  "otherFaceDownCount": {s: 0 for s in self.seats}},
                 "effectiveHomes": {c: self.regions[0] for c in self.countries},
                 "effectiveSupply": {c: [False] * len(self.regions) for c in self.countries},
-                "visibleUseCounts": {}, "currentSourceDefinition": None,
+                "visibleUseCounts": {}, "visibleRoundUseCounts": {},
+                "currentSourceDefinition": None,
                 "activeEffects": [], "currentEffectIndex": 0, "selectedTargets": [],
                 "selectedTargetFacts": [], "bindingFacts": {}, "priorResults": [],
                 "choiceKind": None, "choiceField": None,
@@ -465,6 +466,10 @@ class Encoder:
             values += onehot(obs.get("currentSourceDefinition"), self.cards)
             values.extend(min((obs.get("visibleUseCounts") or {}).get(card, 0), 3) / 3
                           for card in self.cards)
+            round_uses = obs.get("visibleRoundUseCounts")
+            if round_uses is None:
+                raise ValueError("A2S1 observation lacks current-round use facts")
+            values.extend(min(round_uses.get(card, 0), 3) / 3 for card in self.cards)
         if hasattr(self, "state_dim") and len(values) != self.state_dim:
             raise ValueError("Variable state vector dimension")
         return values
