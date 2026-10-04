@@ -8,6 +8,8 @@ import os
 from pathlib import Path
 
 VERSION = "combo-report-v5-all-linked-starts-j1-occupation"
+PREPARATION_SCHEMA_VERSION = "combo-preparation-v1"
+LEGACY_PREPARATION_REPORT_VERSIONS = {"combo-report-v4-linked-settlement"}
 CARD_TYPES = {"状态": "status", "响应": "response"}
 CARD_IDS = {
     "G1": ("special_136",), "G2": ("special_136", "special_137"),
@@ -457,11 +459,23 @@ def preparation_metadata(pool_path: Path, entries: list[dict], client,
                          cache_path: Path | None = None) -> dict:
     """Replay the existing legal-action pool once; never alter its snapshots."""
     cache_path = cache_path or pool_path.with_name("course-telemetry-v3.json")
-    identity = {"metricsVersion": VERSION, "poolSha256": hashlib.sha256(
+    identity = {"cacheSchemaVersion": PREPARATION_SCHEMA_VERSION, "poolSha256": hashlib.sha256(
         pool_path.read_bytes()).hexdigest(), "buildFingerprint": client.fingerprint}
+    expected_keys = {":".join(entry[key] for key in ("template", "variant", "layer"))
+                     for entry in entries}
     if cache_path.exists():
         cached = json.loads(cache_path.read_text(encoding="utf-8"))
-        if cached.get("identity") == identity and len(cached.get("entries", {})) == len(entries):
+        previous = cached.get("identity") or {}
+        same_source = all(previous.get(key) == identity[key] for key in
+                          ("poolSha256", "buildFingerprint"))
+        known_schema = (previous.get("cacheSchemaVersion") == PREPARATION_SCHEMA_VERSION or
+                        previous.get("metricsVersion") in LEGACY_PREPARATION_REPORT_VERSIONS)
+        cached_entries = cached.get("entries") or {}
+        complete = (set(cached_entries) == expected_keys and all(
+            isinstance(item, dict) and isinstance(item.get("installations"), list) and
+            "firstUSWestEuropeLanding" in item and isinstance(item.get("decisionCount"), int)
+            for item in cached_entries.values()))
+        if same_source and known_schema and complete:
             return cached["entries"]
         raise ValueError("Existing preparation telemetry belongs to a different pool or schema")
     result = {}

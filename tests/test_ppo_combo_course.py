@@ -336,6 +336,41 @@ class ComboCourseTests(unittest.TestCase):
         finally:
             client.close()
 
+    def test_preparation_cache_survives_report_version_only_change(self):
+        if not POOL.exists():
+            self.skipTest("Local ignored course pool is absent")
+        legacy_path = POOL.with_name("course-telemetry-v3.json")
+        if not legacy_path.exists():
+            self.skipTest("Local ignored v4 preparation cache is absent")
+        with gzip.open(POOL, "rt", encoding="utf-8") as stream:
+            entries = json.load(stream)["entries"]
+        legacy = json.loads(legacy_path.read_text(encoding="utf-8"))
+        client = ppo.ArenaClient(card_set="signals")
+        try:
+            with tempfile.TemporaryDirectory() as directory:
+                path = Path(directory) / "preparation.json"
+                path.write_text(json.dumps(legacy), encoding="utf-8")
+                reused = preparation_metadata(POOL, entries, client, path)
+                self.assertEqual(reused, legacy["entries"])
+                self.assertEqual(json.loads(path.read_text(encoding="utf-8")), legacy)
+                wrong_pool = deepcopy(legacy)
+                wrong_pool["identity"]["poolSha256"] = "different"
+                path.write_text(json.dumps(wrong_pool), encoding="utf-8")
+                with self.assertRaisesRegex(ValueError, "different pool or schema"):
+                    preparation_metadata(POOL, entries, client, path)
+                wrong_build = deepcopy(legacy)
+                wrong_build["identity"]["buildFingerprint"] = "different"
+                path.write_text(json.dumps(wrong_build), encoding="utf-8")
+                with self.assertRaisesRegex(ValueError, "different pool or schema"):
+                    preparation_metadata(POOL, entries, client, path)
+                incomplete = deepcopy(legacy)
+                incomplete["entries"].pop(next(iter(incomplete["entries"])))
+                path.write_text(json.dumps(incomplete), encoding="utf-8")
+                with self.assertRaisesRegex(ValueError, "different pool or schema"):
+                    preparation_metadata(POOL, entries, client, path)
+        finally:
+            client.close()
+
     def test_compact_telemetry_does_not_change_rules_choices_or_rewards(self):
         def without_session_ids(value):
             if isinstance(value, dict):
