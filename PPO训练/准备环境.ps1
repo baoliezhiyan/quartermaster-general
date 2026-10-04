@@ -6,7 +6,7 @@ $nodeFile = Join-Path $runtimeRoot 'node\node.exe'
 $pnpmFile = Join-Path $runtimeRoot 'pnpm\bin\pnpm.mjs'
 $venvPython = Join-Path $runtimeRoot 'python\Scripts\python.exe'
 
-New-Item -ItemType Directory -Force -Path $runtimeRoot, (Join-Path $trainingRoot 'A'), (Join-Path $trainingRoot 'B') | Out-Null
+New-Item -ItemType Directory -Force -Path $runtimeRoot | Out-Null
 
 if (-not (Test-Path -LiteralPath $nodeFile) -or -not (Test-Path -LiteralPath $pnpmFile)) {
     # This computer's Codex runtime already contains Node and pnpm. Make a
