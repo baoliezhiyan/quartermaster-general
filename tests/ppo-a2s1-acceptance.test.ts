@@ -68,6 +68,46 @@ describe('A2S1 independent acceptance regressions',()=>{
     expect(resumed.visibleRoundUseCounts?.special_137).toBe(1);
   });
 
+  it('uses the active country scope for a hidden response on another country turn',()=>{
+    const saved=new PpoTrainingArena(109,'a2s1-response-use-scope',options).exportSnapshot();
+    const s=saved.state;
+    const response=s.decks.soviet_union.hand.find(card=>card.definitionId==='special_57')!;
+    s.decks.soviet_union.hand=s.decks.soviet_union.hand.filter(card=>card.id!==response.id);
+    s.decks.soviet_union.faceDown.push(response);
+    s.units.push({id:'g-east-scope',country:'germany',type:'army',regionId:'eastern_europe'});
+    const arena=PpoTrainingArena.fromSnapshot(saved,options);
+    const start=arena.observe()!;
+    const build=find(start,c=>c.definitionId==='build_army'&&
+      c.choices?.some(choice=>choice.regionId==='ukraine'&&!choice.repeated)===true);
+    const next=act(arena,start,build).observation!;
+    expect(next.choiceKind).toBe('TRIGGER');
+    expect(next.decisionSeat).toBe('soviet_union');
+    const awaiting=arena.exportSnapshot();
+    awaiting.state.resolution!.turnUses={
+      [`${awaiting.state.round}:germany:${response.id}:response`]:1,
+      [`${awaiting.state.round}:soviet_union:${response.id}:other`]:5,
+    };
+    const visible=PpoTrainingArena.fromSnapshot(awaiting,options).observe()!;
+    expect(visible.activeSeat).toBe('germany');
+    expect(visible.decisionSeat).toBe('soviet_union');
+    expect(visible.visibleUseCounts?.special_57).toBe(1);
+    expect(visible.visibleCards?.ownFaceDown).toContain('special_57');
+  });
+
+  it('preserves a committed card’s legitimate one-or-two quantity choice',()=>{
+    const saved=new PpoTrainingArena(110,'a2s1-one-or-two',options).exportSnapshot();
+    saved.state.phase='PLAY';
+    saved.state.activeSeat=saved.state.operatorSeat=saved.state.viewSeat='germany';
+    const arena=PpoTrainingArena.fromSnapshot(saved,options);
+    const source=arena.observe()!;
+    const next=act(arena,source,find(source,c=>c.definitionId==='special_161')).observation!;
+    expect(next.choiceMin).toBe(1);
+    expect(next.choiceMax).toBe(2);
+    expect(next.candidates.some(c=>c.choiceIds?.length===1)).toBe(true);
+    expect(next.candidates.some(c=>c.choiceIds?.length===2)).toBe(true);
+    expect(next.candidates.some(c=>c.choiceIds?.length===0)).toBe(false);
+  });
+
   it('requires the committed special_166 extra play when a legal matching card remains',()=>{
     const saved=new PpoTrainingArena(102,'a2s1-166-committed',options).exportSnapshot();
     const s=saved.state;
