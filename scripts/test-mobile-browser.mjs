@@ -21,6 +21,7 @@ try{
  await page.getByText('已导入历史文件。',{exact:true}).first().waitFor({timeout:60000});
  assert(largeUploadHeader,'Missing authenticated history upload route');
  assert((await page.getByLabel('存档回合').locator('option').count())>0,'Missing rebuilt slots');
+ const portrait=await browser.newContext({viewport:{width:390,height:844},hasTouch:true,isMobile:true});const entry=await portrait.newPage();await entry.goto(`http://127.0.0.1:${port}/`);await entry.getByRole('textbox').first().fill('方向检查');assert(await entry.locator('.rotate-device').count()===0,'Entry blocked by orientation');await portrait.close();
  const source=page.url();
  const mobile=await browser.newContext({viewport:{width:844,height:390},hasTouch:true,isMobile:true,acceptDownloads:true});
  const phone=await mobile.newPage();phone.on('pageerror',e=>errors.push(e.message));await phone.goto(source);await phone.locator('.map-viewport').waitFor();
@@ -68,10 +69,10 @@ try{
  assert(mutations===0,'Display gestures sent a game mutation');
  await phone.screenshot({path:'outputs/mobile-hand-v180.png'});
  await phone.getByRole('button',{name:'手牌',exact:true}).click();
- await phone.setViewportSize({width:390,height:844});await phone.getByText('请将设备横屏使用',{exact:true}).waitFor({state:'visible'});
- await phone.setViewportSize({width:844,height:390});await phone.getByText('请将设备横屏使用',{exact:true}).waitFor({state:'hidden'});
+ await phone.setViewportSize({width:390,height:844});assert(await phone.locator('.rotate-device').count()===0,'Orientation must not block the UI');await phone.locator('.record-toggle').click();await phone.getByLabel('关闭记录侧栏').click();
+ await phone.setViewportSize({width:844,height:390});await phone.locator('.map-viewport').waitFor();
  await phone.screenshot({path:'outputs/mobile-v180.png'});
- console.log('PASS: phone default sidebar, four viewport layouts, visible footer, record drawer, atlas, region tap/details, actual two-touch pinch without selecting, hand swipe and card details/reorder without game mutations; chat unread/draft, portrait guard and restoration');
+ console.log('PASS: phone default sidebar, four viewport layouts, visible footer, record drawer, atlas, region tap/details, actual two-touch pinch without selecting, hand swipe and card details/reorder without game mutations; chat unread/draft, portrait-reported viewport remains interactive');
  await mobile.close();
  assert((await page.title()).includes('1.8.0'),'Wrong version');
  assert(errors.length===0,errors.join('\n'));
