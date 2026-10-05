@@ -2,7 +2,7 @@ import {sortCardChoices} from './cardChoiceOrder';
 import {fact} from './factObserver';
 import {publicCostIds} from './cardCosts';
 import {ACTION_NAMES} from './effectNames';
-import {applyBalanceEffect} from './balanceEffects';
+import {applyBalanceEffect,balanceEffect} from './balanceEffects';
 import {isLastOwnEffect,inWindowLane,isBatchScore,closeWindow} from './resolutionLifecycle';
 import {copiedStatusRules} from './copiedStatus';
 import {checkNeutralitySupply,checkNeutralityAttack,mayReallocate} from './neutrality';
@@ -75,6 +75,7 @@ function validEffect(s:ReadState,e:Effect,f?:ResolutionFrame):boolean {
     const cards=s.decks[e.seat][e.from].filter(c=>(!e.allowedIds||e.allowedIds.includes(c.id))&&(!e.filter||matchesCard(c,e.filter)));return cards.length>=e.min&&(!e.requirements||coversCost(cards,e.requirements));
   }
   if(e.kind==='extraPlay')return extraCandidates(s,e).some(c=>(!e.onlyRemember||!!f?.memory?.[e.onlyRemember]?.includes(c.id))&&(!e.selectedCardId||c.id===e.selectedCardId));
+  if(e.kind==='rebuild'&&e.selective)return !!e.remaining||!!e.withdrawnUnits||s.units.some(u=>u.country===e.country&&u.type!=='air');
   if(e.kind==='rebuild')return e.withdrawnIds?e.withdrawnIds.some(id=>!s.units.some(u=>u.id===id)):s.units.some(u=>u.country===e.country&&u.type==='army');
   if(e.kind==='action'&&e.fromBinding&&!f?.memory?.[e.fromBinding]?.some(id=>s.units.some(u=>u.id===id)))return false;
   if(e.kind==='action') return boardOptions(s,e).some(o=>!e.option || o.id===e.option.id);
@@ -383,7 +384,23 @@ function apply(s:GameState,f:ResolutionFrame,e:Effect):boolean {
     }
     ask(s,{kind:'CARDS',seat:e.from==='faceDown'?f.owner:e.seat,prompt:e.label,min:Math.min(e.min,cards.length),max:Math.min(e.max,cards.length),options:cards.map((c,i)=>({id:c.id,label:e.from==='faceDown'?`暗置卡牌 ${i+1}`:c.definitionId})),frameId:f.id});return false;
   } else if(e.kind==='rebuild') {
-    if(!e.withdrawnIds) {
+    if(e.selective){
+      const again=(army:number,navy:number):Effect=>({kind:'rebuild',country:e.country,selective:true,remaining:{army,navy},label:'战区移动：继续重新建设收回的部队'});
+      if(e.remaining){
+        const {army,navy}=e.remaining;
+        const options=(['army','navy'] as const).filter(type=>e.remaining![type]>0).map(type=>({id:type,label:type==='army'?'建设陆军':'建设海军',effects:[{kind:'action' as const,country:e.country,action:type==='army'?'build_army' as const:'build_navy' as const,newOnly:true,label:type==='army'?'战区移动：重新建设一支陆军':'战区移动：重新建设一支海军'},again(army-Number(type==='army'),navy-Number(type==='navy'))]})).filter(option=>boardOptions(s,option.effects[0] as Extract<Effect,{kind:'action'}>).length>0);
+        if(options.length)f.effects.splice(f.nextEffectIndex+1,0,options.length===1?options[0].effects[0]:{kind:'choose',seat:seatOf(e.country),min:1,max:1,autoSingle:true,label:'战区移动：选择下一支重新建设的兵种',options},...(options.length===1?[options[0].effects[1]]:[]));
+      }else if(e.withdrawnUnits){
+        const removed=e.withdrawnUnits.filter(u=>!s.units.some(v=>v.id===u.id));
+        f.effects.splice(f.nextEffectIndex+1,0,again(removed.filter(u=>u.type==='army').length,removed.filter(u=>u.type==='navy').length));
+      }else if(e.selectedIds===undefined){
+        const units=s.units.filter(u=>u.country===e.country&&u.type!=='air');
+        ask(s,{kind:'WITHDRAW',seat:seatOf(e.country),prompt:'战区移动：在地图上选择收回的美国陆军及最多一支海军',min:0,max:units.filter(u=>u.type==='army').length+Number(units.some(u=>u.type==='navy')),options:units.map(u=>({id:u.id,label:`${REGION_BY_ID[u.regionId].name} · ${u.type==='army'?'陆军':'海军'}`})),frameId:f.id});return false;
+      }else{
+        const units=s.units.filter(u=>e.selectedIds!.includes(u.id)),supplied=suppliedUnits(s);
+        f.effects.splice(f.nextEffectIndex+1,0,...units.map((unit):Effect=>({kind:'remove',unit:{...unit},supplied:supplied.has(unit.id),cause:'rebuild',label:`收回${REGION_BY_ID[unit.regionId].name}的美国${unit.type==='army'?'陆军':'海军'}`})),{...e,withdrawnUnits:units.map(u=>({...u}))});
+      }
+    }else if(!e.withdrawnIds) {
       const armies=s.units.filter(u=>u.country===e.country&&u.type==='army'),supplied=suppliedUnits(s);
       f.effects.splice(f.nextEffectIndex+1,0,...armies.map((unit):Effect=>({kind:'remove',unit:{...unit},supplied:supplied.has(unit.id),cause:'rebuild',label:'收回陆军'})),{...e,withdrawnIds:armies.map(u=>u.id)});
     }else {
@@ -428,6 +445,7 @@ function apply(s:GameState,f:ResolutionFrame,e:Effect):boolean {
       return false;
     }
     forceDiscardHand(s,e.seat,e.count,hand.slice(0,count).map(c=>c.id));
+    if(e.deckShortfall&&count<e.count)f.effects.splice(f.nextEffectIndex+1,0,{kind:'deckTop',seat:e.seat,count:e.count-count,label:'88毫米防空炮：手牌缺额改弃牌库顶'});
     event.resultText=`${COUNTRY_NAMES[e.seat]}弃置手牌 ${count} 张`;
   } else if(e.kind==='draw') {const count=drawCards(s,e.seat,e.count);event.resultText=`${COUNTRY_NAMES[e.seat]}摸牌 ${count} 张`;}
   else if(e.kind==='deckTop') {const result=discardDeckTop(s,e.seat,e.count,f.owner);if(e.count)event.detailedNoticeSeats=[e.seat];event.resultText=`${COUNTRY_NAMES[e.seat]}弃置牌库顶 ${result.discarded} 张${result.lost?`，牌库不足扣 ${result.lost} 分`:''}`;}
@@ -449,7 +467,7 @@ export function runResolution(s:GameState) {
   while(r.stack.length && !r.choice && !r.revealGroup) {
     if(s.neutralityStatusPending){
       s.neutralityStatusPending=false;
-      const effect:Effect={kind:'extraPlay',seat:'soviet_union',from:'hand',filter:'状态',allowSkip:true,label:'混乱的政局：可以打出一张手牌中的状态牌，或跳过'};
+      const effect:Effect=s.rules?.balanceEnabled?balanceEffect('soviet_union','soviet-neutrality'):{kind:'extraPlay',seat:'soviet_union',from:'hand',filter:'状态',allowSkip:true,label:'混乱的政局：可以打出一张手牌中的状态牌，或跳过'};
       if(validEffect(s,effect)){pushFrame(s,'混乱的政局：参战效果','soviet_union',[effect]);r.frames[r.frames.length-1].noticeKind='neutrality';continue;}
     }
     if(s.pendingAir.length) {
@@ -686,13 +704,17 @@ export function resolveChoice(s:GameState,seat:SeatId,choiceId:string,ids:string
     const parent=[...r.stack].reverse().find(t=>t.kind==='frame');
     const eventId=parent?frameById(r,parent.id).currentEventId:undefined;
     pushFrame(s,'免费强制调度',seatOf(air.country),[effect],undefined,'discardPile',eventId?{originEventId:eventId} as TriggerWindow:undefined);
+  } else if(c.kind==='WITHDRAW'){
+    const f=frameById(r,c.frameId!),e=f.effects[f.nextEffectIndex];
+    if(e.kind!=='rebuild'||!e.selective||ids.some(id=>!s.units.some(u=>u.id===id&&u.country===e.country&&u.type!=='air'))||s.units.filter(u=>ids.includes(u.id)&&u.type==='navy').length>1)return false;
+    e.selectedIds=[...ids];r.choice=null;
   } else if(c.kind==='EXTRA_CARD'||c.kind==='EXTRA_TARGET'||c.kind==='EXTRA_EFFECTS') {
     const f=frameById(r,c.frameId!),e=f.effects[f.nextEffectIndex];
     if(e.kind!=='extraPlay')return false;
     if(c.kind==='EXTRA_CARD') {
       if(r.guided&&ids.length&&!s.trainingCourse)f.extraRollback=structuredClone(s);
       if(!ids.length&&e.allowSkip){
-        if(e.returnOnSkip){const deck=s.decks[e.seat],card=deck[e.from].find(c=>c.id===e.onlyCardIds?.[0]);if(card){deck[e.from]=deck[e.from].filter(c=>c.id!==card.id);deck.drawPile.unshift(card);}}
+        if(e.returnOnSkip){const deck=s.decks[e.seat],card=deck[e.from].find(c=>c.id===e.onlyCardIds?.[0]);if(card){deck[e.from]=deck[e.from].filter(c=>c.id!==card.id);deck.drawPile.unshift(card);if(e.shuffleOnSkip)shuffle(deck.drawPile,s);}}
         f.nextEffectIndex++;f.stage='Validate';f.currentEventId=null;f.extraRollback=undefined;
       }else e.selectedCardId=ids[0];
     }

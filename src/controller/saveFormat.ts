@@ -39,10 +39,17 @@ function validateEffects(value:unknown,depth=0):void {
   for(const e of value) {
     demand(object(e)&&kinds.includes(String(e.kind))&&typeof e.label==='string');
     if(e.kind==='prelude')demand(seat(e.seat)&&integer(e.count)&&['spanish-burn','spanish-pay','spanish-settle','unplayed-from-discard','play-discard','bottom-seven','purge-double','picnic-uk','picnic-pay','play-hand-required','play-hand-or-top','tension','discard','shuffle','shuffle-normal','arm-from-deck','arm-from-discard','install-deck','install-discard','play-hand','play-top','play-selected','purge','inspect-status','play-status','wartime-hand','draw-to-seven','draw-if-installed','draw-bottomed'].includes(String(e.op)));
-    if(e.kind==='balance')demand(seat(e.seat)&&['armament-rebuild','shuffle-deck','italian-ambition','italian-ambition-deck','discard-to-seven','draw-to-seven','bomber-economy','draw-bottomed','end-neutrality','return-source','scry','scry-top','exile-government','relocate-industry','inspect-response','inspect-take','reveal-response','build-battle-region','two-basic-plays','play-vichy'].includes(String(e.op)));
+    if(e.kind==='balance')demand(seat(e.seat)&&['soviet-neutrality','soviet-neutrality-deck','advanced-technology','armament-rebuild','shuffle-deck','italian-ambition','italian-ambition-deck','discard-to-seven','draw-to-seven','bomber-economy','draw-bottomed','end-neutrality','return-source','scry','scry-top','exile-government','relocate-industry','inspect-response','inspect-take','reveal-response','build-battle-region','two-basic-plays','play-vichy'].includes(String(e.op)));
     if(e.kind==='copyStatus')demand(seat(e.seat)&&typeof e.eventId==='string'&&['Before','After'].includes(String(e.timing)));
     if(e.publicDiscard!==undefined)demand(e.kind==='cards'&&typeof e.publicDiscard==='boolean');
     if(e.destroyedType!==undefined)demand(e.kind==='action'&&['army','navy','air'].includes(String(e.destroyedType)));
+    if(e.deckShortfall!==undefined)demand(e.kind==='forceHand'&&typeof e.deckShortfall==='boolean');
+    if(e.shuffleOnSkip!==undefined)demand(e.kind==='extraPlay'&&typeof e.shuffleOnSkip==='boolean');
+    if(e.kind==='rebuild'&&e.selective!==undefined){
+      demand(typeof e.selective==='boolean'&&Object.hasOwn(COUNTRY_NAMES,String(e.country)));
+      if(e.remaining!==undefined)demand(object(e.remaining)&&['army','navy'].every(k=>integer((e.remaining as Record<string,unknown>)[k])&&Number((e.remaining as Record<string,unknown>)[k])>=0)&&Number(e.remaining.navy)<=1);
+      if(e.withdrawnUnits!==undefined)demand(Array.isArray(e.withdrawnUnits)&&e.withdrawnUnits.every(u=>object(u)&&typeof u.id==='string'&&u.country===e.country&&['army','navy'].includes(String(u.type))&&Object.hasOwn(REGION_BY_ID,String(u.regionId)))&&e.withdrawnUnits.filter(u=>(u as Record<string,unknown>).type==='navy').length<=1);
+    }
     if(e.strictFee!==undefined)demand(typeof e.strictFee==='boolean');
     if(e.airMode!==undefined)demand(e.kind==='action'&&e.action==='air_power'&&['deploy','supremacy'].includes(String(e.airMode)));
     if(e.decisionSeat!==undefined)demand(e.kind==='action'&&seat(e.decisionSeat));
@@ -178,7 +185,7 @@ export function validateState(value:unknown,depth=0):asserts value is GameState 
     for(const entry of r.stack as Record<string,unknown>[])demand(entry.kind==='frame'?frames.some(f=>f.id===entry.id):entry.kind==='window'?windows.some(w=>w.id===entry.id):entry.kind==='scoreBatch'&&batchIds.has(String(entry.id)));
     if(r.choice!==null) {
       const c=r.choice;if(object(c)){if(c.preselect!==undefined)demand(typeof c.preselect==='boolean');if(c.requirements!==undefined)demand(strings(c.requirements));}demand(object(c)&&typeof c.id==='string'&&typeof c.prompt==='string'&&seat(c.seat)&&integer(c.min)&&integer(c.max)&&Number(c.min)>=0&&Number(c.max)>=Number(c.min)&&Array.isArray(c.options)&&c.options.every(o=>object(o)&&typeof o.id==='string'&&typeof o.label==='string'));
-      demand(['BUILD_ORDER','EFFECT_DECISION','AIR_DEFENSE','AIR_INTERCEPT','TRIGGER','ORDER_MANDATORY_TRIGGERS','FORCE_HAND','PAY_COST','ACTION','RELOCATE','REALLOCATE','EFFECTS','SELECT','CARDS','EXTRA_CARD','EXTRA_TARGET','EXTRA_EFFECTS'].includes(String(c.kind)));
+      demand(['WITHDRAW','BUILD_ORDER','EFFECT_DECISION','AIR_DEFENSE','AIR_INTERCEPT','TRIGGER','ORDER_MANDATORY_TRIGGERS','FORCE_HAND','PAY_COST','ACTION','RELOCATE','REALLOCATE','EFFECTS','SELECT','CARDS','EXTRA_CARD','EXTRA_TARGET','EXTRA_EFFECTS'].includes(String(c.kind)));
       const validRef=(ref:unknown)=>object(ref)&&windows.some(w=>w.id===ref.windowId)&&(r.rules as Record<string,unknown>[]).some(rule=>rule.id===ref.ruleId&&rule.owner===c.seat);
       if(c.mergedTriggers!==undefined)demand(object(c.mergedTriggers)&&Object.values(c.mergedTriggers).every(refs=>Array.isArray(refs)&&refs.length>0&&refs.every(validRef)));
       if(c.triggerTargets!==undefined)demand(object(c.triggerTargets)&&Object.entries(c.triggerTargets).every(([id,ref])=>Object.hasOwn(REGION_BY_ID,id)&&validRef(ref)));

@@ -88,7 +88,7 @@ export function App({ controller: liveController }: { controller: GameController
   const [playTargets,setPlayTargets]=useState<string[]>([]);
   const projection=useMemo(()=>state&&!readOnly?guidedChoices(state):{cards:{} as Record<string,string[]>,panels:new Set<MapPanel>(),ordered:false},[state,readOnly]);
   const currentChoice=state?.resolution?.running?state.resolution.choice:null;
-  const toggleChoice=(id:string)=>setMapSelectedIds(ids=>ids.includes(id)?ids.filter(v=>v!==id):(currentChoice?.max??1)===1?[id]:ids.length<(currentChoice?.max??1)?[...ids,id]:ids);
+  const toggleChoice=(id:string)=>setMapSelectedIds(ids=>{if(ids.includes(id))return ids.filter(v=>v!==id);if(currentChoice?.kind==='WITHDRAW'&&state?.units.some(u=>u.id===id&&u.type==='navy'))return [...ids.filter(v=>!state.units.some(u=>u.id===v&&u.type==='navy')),id];return (currentChoice?.max??1)===1?[id]:ids.length<(currentChoice?.max??1)?[...ids,id]:ids;});
   const selectCard=(id:string)=>{const options=projection.cards[id];if(options?.length===1){setFocusCard(null);toggleChoice(options[0]);}else if(options?.length){setFocusCard(v=>v===id?null:id);setMapSelectedIds([]);}else{setPlayCardId(v=>v===id?null:id);setPlayTargets([]);}};
   const chosenCards=Object.keys(projection.cards).filter(id=>projection.cards[id].some(v=>mapSelectedIds.includes(v))||id===focusCard).sort((a,b)=>mapSelectedIds.findIndex(id=>projection.cards[a].includes(id))-mapSelectedIds.findIndex(id=>projection.cards[b].includes(id)));
   const choosingBarbarossa=!!state&&!currentChoice&&!!playCardId&&state.decks[state.viewSeat].hand.some(c=>c.id===playCardId&&c.definitionId==='special_162');

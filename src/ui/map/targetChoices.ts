@@ -9,7 +9,7 @@ export interface MapAction { key: string; prompt: string; options: (MapTarget & 
 export function resolutionTargets(state: ReadState): MapTarget[] {
   const r = state.resolution, choice = r?.choice;
   if (!r?.running || !choice || choice.seat !== state.viewSeat) return [];
-  if (!['ACTION', 'RELOCATE', 'EXTRA_TARGET','BUILD_ORDER'].includes(choice.kind)) return [];
+  if (!['ACTION', 'RELOCATE', 'EXTRA_TARGET','WITHDRAW','BUILD_ORDER'].includes(choice.kind)) return [];
   const frame = r.frames.find(f => f.id === choice.frameId);
   const effect = frame?.effects[frame.nextEffectIndex];
   const options = effect?.kind === 'action' && choice.field === 'option' ? boardOptions(state, { ...effect, regions:effect.regions ? [...effect.regions] : undefined, targetIds:effect.targetIds ? [...effect.targetIds] : undefined }) : [];

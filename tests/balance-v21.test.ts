@@ -36,7 +36,7 @@ it('industry triggers before Moscow army removal; installs capital and recruits 
  expect(d.active.some(c=>c.definitionId==='special_42')).toBe(true);expect(s.units.some(u=>u.regionId==='siberia'&&u.country==='soviet_union')).toBe(true);expect(s.units.some(u=>u.id===unit.id)).toBe(false);
 });
 it('Z fleet covers South Pacific construction but not recruitment under balance rules',()=>{
- const s=game('japan');s.decks.united_kingdom.faceDown=[card('prelude_UK-01')];const u={id:'n',country:'japan' as const,type:'navy' as const,regionId:'sea_south_pacific'};s.units=[u];
+ const s=game('japan');s.decks.united_kingdom.faceDown=[card('prelude_UK-01')];const u={id:'n',country:'japan' as const,type:'navy' as const,regionId:'sea_south_china'};s.units=[u];
  for(const action of ['build_navy','recruit_navy'] as const){const e:Effect={kind:'action',country:'japan',action,resultUnitId:'n',option:{regionId:u.regionId} as any,label:'海军'};expect(preludeTriggers(s,frame,e,'After').length).toBe(action==='build_navy'?1:0);}
 });
 it('southern resource enhancement comes from hand at turn start and not later',()=>{

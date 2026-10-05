@@ -21,8 +21,8 @@ it('Malta requires a real own navy and rejects skipping or a stale removal',()=>
  startResolution(s,'马耳他','united_kingdom',cardEffects(s,card(s,'special_26')),[],undefined,'discardPile',true);const q=s.resolution!.choice!;expect(q.seat).toBe('germany');expect(q.options.map(o=>o.id)).toEqual(['discard','de-navy']);expect(resolveChoice(s,q.seat,q.id,[])).toBe(false);
  s.units=[];expect(resolveChoice(s,q.seat,q.id,['de-navy'])).toBe(false);expect(resolveChoice(s,q.seat,q.id,['discard'])).toBe(true);settle(s);
 });
-it.each([151,153,258])('full-deck search %s preserves remaining order and random state',id=>{
- const s=game(id===258?'united_states':'germany'),source=card(s,'special_'+id),d=s.decks[source.deckOwner],before=d.drawPile.map(c=>c.id),rng=s.randomState;
+it.each([151,153,260])('full-deck search %s preserves remaining order and random state',id=>{
+ const s=game(id===260?'united_states':'germany'),source=card(s,'special_'+id),d=s.decks[source.deckOwner],before=d.drawPile.map(c=>c.id),rng=s.randomState;
  startResolution(s,'检索',source.deckOwner,cardEffects(s,source),[]);settle(s);
  expect(d.drawPile.map(c=>c.id)).toEqual(before.filter(id=>d.drawPile.some(c=>c.id===id)));expect(s.randomState).toBe(rng);
 });

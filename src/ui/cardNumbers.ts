@@ -1,5 +1,5 @@
 import {BASIC_NAMES} from '../core/basic';
-import {NEUTRALITY_CARDS,preludeCatalog,regularCatalog} from '../core/cardCatalog';
+import {NEUTRALITY_CARDS,specialCard,preludeCatalog,regularCatalog} from '../core/cardCatalog';
 import {SEATS,type SeatId,type CountryId} from '../core/types';
 /** Public catalog numbers are separate from permanent rules/save definition keys. */
 export interface NumberedCard {id:string;catalogId:string;deckOwner:SeatId;country:CountryId;type:string;name:string;text:string;prelude:boolean;tension?:number;}
@@ -11,7 +11,7 @@ export function numberedCatalog(balance:boolean):readonly NumberedCard[]{
  const result:NumberedCard[]=[];
  for(const seat of SEATS){
   const basic=Object.entries(BASIC_NAMES).map(([id,name])=>({id,name,type:id,text:'',deckOwner:seat,country:seat}));
-  const definitions=[...basic,...regularCatalog(balance,true),...preludeCatalog(balance),...NEUTRALITY_CARDS].filter(c=>c.deckOwner===seat);
+  const definitions=[...basic,...regularCatalog(balance,true),...preludeCatalog(balance),...NEUTRALITY_CARDS.map(c=>specialCard(c.id,balance)!)].filter(c=>c.deckOwner===seat);
   const sorted=definitions.sort((a,b)=>Number(a.country!==seat)-Number(b.country!==seat)||order.indexOf(a.type)-order.indexOf(b.type)||a.id.localeCompare(b.id,'en',{numeric:true}));
   let regular=0,prelude=0;
   for(const c of sorted){const isPrelude=['历史','军备'].includes(c.type);const sequence=isPrelude?++prelude:++regular;result.push({...c,prelude:isPrelude,catalogId:`${prefixes[seat]}-${isPrelude?'P':'R'}${String(sequence).padStart(3,'0')}`});}
