@@ -1,5 +1,4 @@
 import {useCompactLayout} from './deviceLayout';
-import {CardInspect} from './CardInspect';
 import {neutralityDiscardPenalty} from '../core/neutrality';
 import {airActionOptions} from '../core/phaseAvailability';
 import {useHandOrder} from './useHandOrder';
@@ -71,7 +70,7 @@ export function TableHand({state,busy,dispatch,choiceCards,chosenCards,onChoiceC
    const usable=playable.has(card.id)&&(!air||state.airAction==='deploy'||state.airAction==='supremacy');
    const available=!readOnly&&(offered||free&&(selecting||usable));
    const picked=offered?chosenCards.includes(card.id):selecting?selected.includes(card.id):playCardId===card.id;
-   return <div className="card-shell" {...(training?{}:handOrder.props(card.id))} key={card.id} style={(setup||state.prelude?.active)&&deck.hand.length===12?{gridRow:index<5?1:2,gridColumn:index<5?index+2:index-4}:undefined}><button className={`hand-card${available?' available-card':''}${picked?' selected':''}`} aria-label={`${cardName(card)}，${card.id}`} aria-pressed={picked} disabled={!available||busy||sorting} onClick={()=>offered?onChoiceCard(card.id):selecting?toggle(card.id,setup?7:air?1:deck.hand.length):onPlayCard(card.id)}><CardFace card={card} hint={picked?'✓ 已选择':undefined}/></button><CardInspect card={card}/>{sorting&&!training&&<div className="touch-sort-actions"><button aria-label="向前移动" onClick={()=>handOrder.move(card.id,-1)}>←</button><button aria-label="向后移动" onClick={()=>handOrder.move(card.id,1)}>→</button></div>}{!readOnly&&<CardResponseToggle state={state} card={card} dispatch={dispatch} busy={busy}/>}</div>;
+   return <div className="card-shell" {...(training?{}:handOrder.props(card.id))} key={card.id} style={(setup||state.prelude?.active)&&deck.hand.length===12?{gridRow:index<5?1:2,gridColumn:index<5?index+2:index-4}:undefined}><button className={`hand-card${available?' available-card':''}${picked?' selected':''}`} aria-label={`${cardName(card)}，${card.id}`} aria-pressed={picked} disabled={!available||busy||sorting} onClick={()=>offered?onChoiceCard(card.id):selecting?toggle(card.id,setup?7:air?1:deck.hand.length):onPlayCard(card.id)}><CardFace card={card} hint={picked?'✓ 已选择':undefined}/></button>{sorting&&!training&&<div className="touch-sort-actions"><button aria-label="向前移动" onClick={()=>handOrder.move(card.id,-1)}>←</button><button aria-label="向后移动" onClick={()=>handOrder.move(card.id,1)}>→</button></div>}{!readOnly&&<CardResponseToggle state={state} card={card} dispatch={dispatch} busy={busy}/>}</div>;
   })}</div>
   {portal&&prompt&&createPortal(<fieldset disabled={busy} style={{border:0,margin:0}} className="guided-prompt hand-phase-prompt" aria-label="手牌阶段操作">{prompt}</fieldset>,portal)}
  </section>;

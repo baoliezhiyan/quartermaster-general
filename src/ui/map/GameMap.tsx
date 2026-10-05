@@ -1,4 +1,4 @@
-import {LayoutControl,useCompactLayout} from '../deviceLayout';
+import {LayoutControl,useCompactLayout,useRotatedLayout,layoutSize,localPointer} from '../deviceLayout';
 import {CardEncyclopedia} from '../CardEncyclopedia';
 import {UnitArt} from '../UnitArt';
 import { useEffect, useMemo, useRef, useState } from 'react';
@@ -21,7 +21,7 @@ const COUNTRY_NAMES: Record<CountryId, string> = {
 const ALL_SHAPES = MAP_SHAPES;
 
 export function GameMap({ alliance, game, legalRegions = [], onChooseRegion, selectedRegion, selectedRegions=[], targeting=false, children, footer, scoreboard, legalUnitIds=[],selectedUnitIds=[],onChooseUnit,onStandardView }: { alliance: Alliance; game?: ReadState | null; legalRegions?: readonly string[]; onChooseRegion?: (regionId: string | null) => void; selectedRegion?:string|null; selectedRegions?:readonly string[]; targeting?:boolean; children?:ReactNode; footer?:ReactNode; scoreboard?:ReactNode;legalUnitIds?:string[];selectedUnitIds?:string[];onChooseUnit?:(id:string)=>void;onStandardView?:()=>void }) {
-  const compact=useCompactLayout();
+  const compact=useCompactLayout(),rotated=useRotatedLayout();
   const [toolsOpen,setToolsOpen]=useState(false);
   const touches=useRef(new Map<number,{x:number;y:number}>());
   const pinch=useRef<{distance:number;zoom:number;world:{x:number;y:number}}|null>(null);
@@ -100,8 +100,9 @@ export function GameMap({ alliance, game, legalRegions = [], onChooseRegion, sel
     const measure=()=>{
       const currentStage=stage.current;
       if(!currentStage||!view.isConnected)return;
-      const top=currentStage.getBoundingClientRect().top+(fullscreen?0:window.scrollY);
-      view.style.height=`${Math.max(fullscreen||compact?80:320,(window.visualViewport?.height??window.innerHeight)-top-(phaseFooter.current?.getBoundingClientRect().height??0)-(fullscreen?0:8))}px`;
+      const root=document.getElementById('root')!,box=currentStage.getBoundingClientRect();
+      const top=rotated?root.getBoundingClientRect().right-box.right+root.scrollTop:box.top+(fullscreen?0:window.scrollY);
+      view.style.height=`${Math.max(fullscreen||compact?80:320,layoutSize().height-top-(phaseFooter.current?.offsetHeight??0)-(fullscreen?0:8))}px`;
       setSize({width:view.clientWidth,height:view.clientHeight});
     };
     const observer=new ResizeObserver(measure);
@@ -110,7 +111,7 @@ export function GameMap({ alliance, game, legalRegions = [], onChooseRegion, sel
     if(phaseFooter.current)observer.observe(phaseFooter.current);
     window.addEventListener('resize',measure);window.visualViewport?.addEventListener('resize',measure);measure();
     return ()=>{observer.disconnect();window.removeEventListener('resize',measure);window.visualViewport?.removeEventListener('resize',measure);};
-  },[fullscreen,compact]);
+  },[fullscreen,compact,rotated]);
   useEffect(()=>{setPan(p=>clampPan(p,size,zoom));},[size,zoom]);
   const context: AdjacencyContext = useMemo(() => ({alliance,landControllers:game?occupiedLand(game):{}}), [alliance,game]);
   const supplied = useMemo(() => game ? suppliedUnits(game) : new Set<string>(), [game]);
@@ -131,31 +132,34 @@ export function GameMap({ alliance, game, legalRegions = [], onChooseRegion, sel
     }
   };
   const resetView = () => {if(viewLocked)return;setLeftAligned(false);setZoom(1);setPan({x:0,y:0});};
+  const pointerPosition=(event:{clientX:number;clientY:number})=>localPointer(viewport.current!.getBoundingClientRect(),event.clientX,event.clientY);
   const showInfo = (id:string,x:number) => {
     selectRegion(id);
     const bounds=stage.current?.getBoundingClientRect();
-    setInfo({id,left:bounds && x<bounds.left+bounds.width/2?'65%':'35%'});
+    setInfo({id,left:bounds && x<size.width/2?'65%':'35%'});
   };
   const beginPan = (event: PointerEvent<HTMLDivElement>) => {
     if(event.button!==0 && event.button!==2)return;
+    const point=pointerPosition(event);
     if(event.pointerType==='touch'){
-      touches.current.set(event.pointerId,{x:event.clientX,y:event.clientY});
-      if(touches.current.size>=2){const [a,b]=[...touches.current.values()],box=event.currentTarget.getBoundingClientRect();pinch.current={distance:Math.max(1,Math.hypot(a.x-b.x,a.y-b.y)),zoom,world:{x:((a.x+b.x)/2-box.left-size.width/2)/scale-boundedPan.x,y:((a.y+b.y)/2-box.top-size.height/2)/scale-boundedPan.y}};drag.current=null;suppressClick.current=true;return;}
+      touches.current.set(event.pointerId,point);
+      if(touches.current.size>=2){const [a,b]=[...touches.current.values()];pinch.current={distance:Math.max(1,Math.hypot(a.x-b.x,a.y-b.y)),zoom,world:{x:((a.x+b.x)/2-size.width/2)/scale-boundedPan.x,y:((a.y+b.y)/2-size.height/2)/scale-boundedPan.y}};drag.current=null;suppressClick.current=true;return;}
     }
     suppressClick.current=false;
     const target=event.target as Element;
-    drag.current={x:event.clientX,y:event.clientY,pan:boundedPan,moved:false,button:event.button,regionId:target.closest('[data-region-id]')?.getAttribute('data-region-id')??null};
+    drag.current={x:point.x,y:point.y,pan:boundedPan,moved:false,button:event.button,regionId:target.closest('[data-region-id]')?.getAttribute('data-region-id')??null};
     if(event.button===2){event.preventDefault();event.currentTarget.setPointerCapture(event.pointerId);}
   };
   const movePan = (event: PointerEvent<HTMLDivElement>) => {
+    const point=pointerPosition(event);
     if(event.pointerType==='touch'&&touches.current.has(event.pointerId)){
-      touches.current.set(event.pointerId,{x:event.clientX,y:event.clientY});
-      if(pinch.current&&touches.current.size>=2){suppressClick.current=true;if(viewLocked)return;const [a,b]=[...touches.current.values()],p=pinch.current,box=event.currentTarget.getBoundingClientRect(),next=Math.max(.5,Math.min(2,p.zoom*Math.hypot(a.x-b.x,a.y-b.y)/p.distance)),nextScale=size.width/MAP_WIDTH*next;setLeftAligned(false);setZoom(next);setPan(clampPan({x:((a.x+b.x)/2-box.left-size.width/2)/nextScale-p.world.x,y:((a.y+b.y)/2-box.top-size.height/2)/nextScale-p.world.y},size,next));return;}
+      touches.current.set(event.pointerId,point);
+      if(pinch.current&&touches.current.size>=2){suppressClick.current=true;if(viewLocked)return;const [a,b]=[...touches.current.values()],p=pinch.current,next=Math.max(.5,Math.min(2,p.zoom*Math.hypot(a.x-b.x,a.y-b.y)/p.distance)),nextScale=size.width/MAP_WIDTH*next;setLeftAligned(false);setZoom(next);setPan(clampPan({x:((a.x+b.x)/2-size.width/2)/nextScale-p.world.x,y:((a.y+b.y)/2-size.height/2)/nextScale-p.world.y},size,next));return;}
     }
     const start=drag.current;
     if(!start || !event.buttons || !scale)return;
-    if(viewLocked){if(isPanGesture(event.clientX-start.x,event.clientY-start.y))suppressClick.current=true;return;}
-    const dx=event.clientX-start.x,dy=event.clientY-start.y;
+    if(viewLocked){if(isPanGesture(point.x-start.x,point.y-start.y))suppressClick.current=true;return;}
+    const dx=point.x-start.x,dy=point.y-start.y;
     if(start.moved || isPanGesture(dx,dy)) {
       start.moved=true;suppressClick.current=true;
       event.currentTarget.setPointerCapture(event.pointerId);
@@ -163,8 +167,9 @@ export function GameMap({ alliance, game, legalRegions = [], onChooseRegion, sel
     }
   };
   const endPan = (event: PointerEvent<HTMLDivElement>) => {
+    const point=pointerPosition(event);
     const start=drag.current;
-    if(start?.button===2 && !start.moved && !isPanGesture(event.clientX-start.x,event.clientY-start.y) && start.regionId)showInfo(start.regionId,event.clientX);
+    if(start?.button===2 && !start.moved && !isPanGesture(point.x-start.x,point.y-start.y) && start.regionId)showInfo(start.regionId,point.x);
     touches.current.delete(event.pointerId);
     if(pinch.current){suppressClick.current=true;if(touches.current.size<2)pinch.current=null;}
     drag.current=null;
@@ -182,7 +187,7 @@ export function GameMap({ alliance, game, legalRegions = [], onChooseRegion, sel
         className={`map-region ${land ? 'land' : 'sea'}${active ? ' is-selected' : ''}${hovered === info.id ? ' is-hovered' : ''}${legalRegions.includes(info.id) ? ' is-legal-target' : ''}`}
         onContextMenu={event => {
           event.preventDefault(); event.stopPropagation();
-          if(event.button!==2)showInfo(info.id,event.clientX);
+          if(event.button!==2)showInfo(info.id,pointerPosition(event).x);
         }}
         onClick={() => selectRegion(info.id)}
         onKeyDown={event => {
@@ -223,7 +228,7 @@ export function GameMap({ alliance, game, legalRegions = [], onChooseRegion, sel
           <button className="map-tool" aria-pressed={viewLocked} onClick={()=>{drag.current=null;setViewLocked(v=>!v);}}>视角锁定{viewLocked?' · 已开启':''}</button>
           <button className="map-tool" onClick={()=>{setLeftAligned(true);onStandardView?.();}}>标准视图</button>
           <button className={boundaries ? 'map-tool active' : 'map-tool'} aria-pressed={boundaries} onClick={() => setBoundaries(value => !value)}>边界显示</button>
-          <button className="map-tool" disabled={fullscreenBusy} aria-pressed={fullscreen} title="屏幕全屏，按 Esc 退出" onClick={()=>void toggleFullscreen()}>{fullscreen?'退出全屏':'全屏'}</button>
+          <button className="map-tool" disabled={fullscreenBusy||rotated} aria-pressed={fullscreen} title={rotated?"切回默认方向后可使用浏览器全屏":"屏幕全屏，按 Esc 退出"} onClick={()=>void toggleFullscreen()}>{fullscreen?'退出全屏':'全屏'}</button>
         </div>
         {fullscreenError&&<p role="alert">{fullscreenError}</p>}
       </div>
