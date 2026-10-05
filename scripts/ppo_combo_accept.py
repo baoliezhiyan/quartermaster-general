@@ -34,6 +34,9 @@ GOALS = {
            ("trigger", "special_199", None), ("choice", "build_army", "eastern_china")],
     "J2": [("trigger", "special_190", None), ("choice", "destroy", "eastern_china"),
            ("trigger", "special_189", None), ("choice", "recruit_army", "eastern_china")],
+    "U4": [("source", "build_navy", "sea_north_atlantic"),
+           ("trigger", "special_84", None),
+           ("choice", "build_navy", "sea_north_sea")],
 }
 
 
@@ -58,7 +61,7 @@ def _already_resolved(goal, record):
     if kind != "choice":
         return False
     events = record.get("events") or ()
-    if action in ("build_army", "recruit_army"):
+    if action in ("build_army", "build_navy", "recruit_army"):
         return any(event.get("type") == "UNIT_PLACED" and
                    event.get("regionId") == region and not event.get("repeated") for event in events)
     if action == "land_battle":

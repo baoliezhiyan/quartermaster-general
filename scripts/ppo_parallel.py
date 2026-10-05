@@ -197,7 +197,7 @@ class Episode:
 
 
 def make_tasks(start_seed: int, count: int, update: int, mode: str,
-               combo_entries: dict | None = None) -> list[dict]:
+               combo_entries: dict | None = None, combo_version: str | None = None) -> list[dict]:
     if count < 1:
         raise ValueError("Episode count must be positive")
     tasks = [{"jobId": f"{mode}-update-{update}-job-{i}", "seed": start_seed + i,
@@ -205,18 +205,26 @@ def make_tasks(start_seed: int, count: int, update: int, mode: str,
     if combo_entries is not None:
         if count != BATCH_EPISODES:
             raise ValueError("Combo course requires exactly 40 complete episodes")
-        from scripts.ppo_combo_course import TEMPLATES
+        if combo_version == "A2S1C2":
+            from scripts.ppo_combo_course_v2 import TEMPLATES
+        else:
+            from scripts.ppo_combo_course import TEMPLATES
         for index in range(12):
             global_slot = (update - 1) * 12 + index
             template = TEMPLATES[global_slot % len(TEMPLATES)].key
-            layer = "preparation" if index % 3 == 2 else "payoff"
+            layer = ("preparation" if (index + update - 1) % 3 == 2 else "payoff") if (
+                combo_version == "A2S1C2") else ("preparation" if index % 3 == 2 else "payoff")
             # Each template alternates its own variant across appearances.
             # Slot parity would permanently pair even templates with positives.
             variant = "control" if (global_slot // len(TEMPLATES)) % 2 else "positive"
-            course_id = f"{template}:{variant}:{layer}"
-            if course_id not in combo_entries:
-                raise ValueError(f"Course pool lacks deterministic quota: {course_id}")
-            tasks[28 + index]["courseId"] = course_id
+            prefix = f"{template}:{variant}:{layer}"
+            matches = sorted(key for key, entry in combo_entries.items() if
+                             (key == prefix or combo_version == "A2S1C2" and
+                              key.startswith(prefix + ":")) and
+                             (combo_version != "A2S1C2" or entry["split"] == "train"))
+            if not matches:
+                raise ValueError(f"Course pool lacks deterministic quota: {prefix}")
+            tasks[28 + index]["courseId"] = matches[(global_slot // (len(TEMPLATES) * 2)) % len(matches)]
     return tasks
 
 
@@ -618,7 +626,7 @@ def summarize_evaluation(games):
 def main():
     parser = argparse.ArgumentParser(description="Parallel complete-episode PPO training")
     parser.add_argument("--mode", choices=["A", "B"], required=True)
-    parser.add_argument("--experiment-id", choices=["A1", "A2", "A1S1", "S2FLAT", "S2MAP", "A1S2", "A2S1", "A2S1W1", "A2S1C1"], default=None)
+    parser.add_argument("--experiment-id", choices=["A1", "A2", "A1S1", "S2FLAT", "S2MAP", "A1S2", "A2S1", "A2S1W1", "A2S1C1", "A2S1C2"], default=None)
     parser.add_argument("--architecture", choices=["flat-v1-effective-straits",
         "shared-regions-actor-adjacency-ordered-actions-v2", "map-contextual-opening-adapter-v1",
         "map-contextual-opening-adapter-a2s1-v1"], default=None)
@@ -661,7 +669,8 @@ def main():
     if args.experiment_id and (args.mode != "A" or args.entropy_coefficient !=
                                {"A1": 0.01, "A2": 0.02, "A1S1": 0.01,
                                 "S2FLAT": 0.01, "S2MAP": 0.01, "A1S2": 0.01,
-                                "A2S1": 0.01, "A2S1W1": 0.01, "A2S1C1": 0.01}[args.experiment_id] or
+                                "A2S1": 0.01, "A2S1W1": 0.01, "A2S1C1": 0.01,
+                                "A2S1C2": 0.01}[args.experiment_id] or
                                not args.initial_weights or not args.expected_initial_hash):
         parser.error("A1/A2 require A resource mode, the prescribed entropy, and shared initialization")
     from scripts.ppo_network_factory import STAGE2_EXPERIMENTS, ACTIVE_EXPERIMENTS, make_network
@@ -677,10 +686,10 @@ def main():
             parser.error("Invalid A1S2 auxiliary configuration")
     elif args.auxiliary_data is not None or args.no_auxiliary:
         parser.error("Auxiliary learning is exclusive to A1S2")
-    if args.experiment_id in ("A2S1", "A2S1W1", "A2S1C1") and args.card_set != "signals":
+    if args.experiment_id in ("A2S1", "A2S1W1", "A2S1C1", "A2S1C2") and args.card_set != "signals":
         parser.error("A2S1 requires the signals course")
-    if (args.experiment_id == "A2S1C1") != (args.combo_pool is not None):
-        parser.error("Only A2S1C1 uses a required reachable combo start pool")
+    if (args.experiment_id in ("A2S1C1", "A2S1C2")) != (args.combo_pool is not None):
+        parser.error("Combo experiments require their own reachable start pool")
     torch.set_num_threads(min(4, os.cpu_count() or 1))
     device = torch.device("cpu" if args.cpu or not torch.cuda.is_available() else "cuda")
     rng = random.Random(args.seed)
@@ -704,35 +713,57 @@ def main():
                                                 "candidateDim": encoder.candidate_dim} or
                     args.architecture is not None and initial.get("networkArchitecture") != args.architecture):
                     raise ValueError("Comparison initialization schema differs")
-                if args.experiment_id in ("A2S1W1", "A2S1C1") and (
+                if args.experiment_id in ("A2S1W1", "A2S1C1", "A2S1C2") and (
                         initial.get("experimentId") != args.experiment_id or
                         initial.get("rewardConfig") != ppo.reward_config("signals") or
-                        initial.get("sourceExperimentId") != "A2S1" or
                         initial.get("optimizerMigration") != "new-Adam-no-old-momentum"):
                     raise ValueError("Revised A2S1 requires its explicit v3 reward migration initializer")
+                if args.experiment_id == "A2S1C2" and (
+                        initial.get("sourceExperimentId") != "A2S1C1" or
+                        initial.get("sourceUpdate") != 30):
+                    raise ValueError("A2S1C2 must descend from A2S1C1 update 30")
+                if args.experiment_id in ("A2S1W1", "A2S1C1") and initial.get("sourceExperimentId") != "A2S1":
+                    raise ValueError("Historical A2S1 initializer has a different parent")
                 model.load_state_dict(initial["modelState"])
             initial_hash = ppo.model_weights_sha256(model)
             if args.expected_initial_hash and initial_hash != args.expected_initial_hash:
                 raise ValueError("Comparison initialization weight hash differs")
             combo_entries, course_config, combo_generation, combo_preparation = None, None, None, None
             if args.combo_pool:
-                from scripts.ppo_combo_course import (MIX, VERSION, generation_summary,
-                                                      pool_identity, read_pool)
+                if args.experiment_id == "A2S1C2":
+                    from scripts import ppo_combo_course_v2 as combo_module
+                else:
+                    from scripts import ppo_combo_course as combo_module
                 if not args.initial_weights:
                     raise ValueError("Combo training requires an explicit migrated initializer")
-                expected = pool_identity(clients[0], initial["sourceCheckpointSha256"], initial_hash)
-                pool = read_pool(args.combo_pool, expected)
-                combo_entries = {f"{item['template']}:{item['variant']}:{item['layer']}": item
+                expected = combo_module.pool_identity(clients[0], initial["sourceCheckpointSha256"],
+                    initial.get("generatorWeightsSha256", initial_hash)
+                    if args.experiment_id == "A2S1C2" else initial_hash)
+                pool = combo_module.read_pool(args.combo_pool, expected)
+                combo_entries = {combo_module.course_id(item) if args.experiment_id == "A2S1C2"
+                                 else f"{item['template']}:{item['variant']}:{item['layer']}": item
                                  for item in pool["entries"]}
-                if len(combo_entries) != 32 or len(pool["entries"]) != 32:
-                    raise ValueError("Combo pool requires all eight templates, two variants and two layers")
-                combo_generation = generation_summary(pool)
+                if args.experiment_id == "A2S1C1" and (len(combo_entries) != 32 or len(pool["entries"]) != 32):
+                    raise ValueError("A2S1C1 pool requires all eight templates and 32 starts")
+                if args.experiment_id == "A2S1C2":
+                    required = {f"{template.key}:{variant}:{layer}" for template in combo_module.TEMPLATES
+                                for variant in ("positive", "control") for layer in ("payoff", "preparation")}
+                    if not all(any(key.startswith(prefix + ":") for key in combo_entries) for prefix in required):
+                        raise ValueError("A2S1C2 pool is missing a template/variant/layer")
+                    combo_generation = combo_module.generation_summary(pool)
+                else:
+                    combo_generation = combo_module.generation_summary(pool)
                 from scripts.ppo_combo_metrics import VERSION as COMBO_METRICS_VERSION, preparation_metadata
                 combo_preparation = preparation_metadata(args.combo_pool, pool["entries"], clients[0])
-                course_config = {"version": VERSION, "mix": MIX,
+                course_config = {"version": combo_module.VERSION, "mix": combo_module.MIX,
                                  "poolIdentitySha256": expected["identitySha256"],
                                  "poolFileSha256": hashlib.sha256(args.combo_pool.read_bytes()).hexdigest(),
-                                 "metricsVersion": COMBO_METRICS_VERSION}
+                                 "metricsVersion": COMBO_METRICS_VERSION + "-c2"
+                                    if args.experiment_id == "A2S1C2" else COMBO_METRICS_VERSION}
+                if args.experiment_id == "A2S1C2":
+                    if not initial.get("demonstrationAuditSha256"):
+                        raise ValueError("A2S1C2 requires an auditable separate imitation pass")
+                    course_config["demonstrationAuditSha256"] = initial["demonstrationAuditSha256"]
             auxiliary_config = None
             auxiliary_bundle = None
             if args.experiment_id == "A1S2":
@@ -768,7 +799,7 @@ def main():
                     ["git", "status", "--porcelain"], cwd=ppo.ROOT, text=True).strip())
             except (OSError, subprocess.CalledProcessError):
                 source_commit, source_dirty = None, None
-            gradient_microbatch = (64 if args.experiment_id in ("A2S1", "A2S1W1", "A2S1C1") else
+            gradient_microbatch = (64 if args.experiment_id in ("A2S1", "A2S1W1", "A2S1C1", "A2S1C2") else
                                    32 if args.experiment_id in ("S2MAP", "A1S2") else
                                    ppo.OPTIMIZER_CONFIG["minibatch"])
             report = {"mode": args.mode, "experimentId": args.experiment_id,
@@ -820,7 +851,7 @@ def main():
                 for obsolete in ("baselineEvaluation", "baselineEvaluationSeconds", "evaluations"):
                     report.pop(obsolete, None)
             report["gradientMicrobatch"] = gradient_microbatch
-            if args.experiment_id == "A2S1C1":
+            if args.experiment_id in ("A2S1C1", "A2S1C2"):
                 report["samplingConfig"] = {"version": "chunk-shuffle-epoch-v1",
                     "cacheLimitBytes": 1536 * 1024 ** 2,
                     "prefetchLimitBytes": 256 * 1024 ** 2,
@@ -847,14 +878,14 @@ def main():
                 if device.type == "cuda":
                     torch.cuda.reset_peak_memory_stats()
                 tasks = make_tasks(next_seed, BATCH_EPISODES, update, args.mode,
-                                   combo_entries)
+                                   combo_entries, args.experiment_id)
                 diagnostic = args.checkpoint.with_suffix(f".failed-update-{update}.json")
                 monitored_started = time.perf_counter()
                 label = (f"{args.experiment_id or args.mode}（资源{args.mode}，熵{args.entropy_coefficient:.2f}） "
                          f"{ordinal((update - 1) // 10 + 1, '轮')} · "
                          f"{ordinal((update - 1) % 10 + 1, '次更新')}")
                 store = TrajectoryStore(args.mode, update, root=trajectory_root,
-                    read_limit=(1536 * 1024 ** 2 if args.experiment_id in ("A2S1", "A2S1W1", "A2S1C1") else 16 * 1024 ** 2))
+                    read_limit=(1536 * 1024 ** 2 if args.experiment_id in ("A2S1", "A2S1W1", "A2S1C1", "A2S1C2") else 16 * 1024 ** 2))
                 phases = {"beforeCollection": phase_resources(clients, store, device)}
                 result = None
                 try:
@@ -874,7 +905,7 @@ def main():
                                                      entropy_coefficient=args.entropy_coefficient,
                                                      gradient_microbatch=gradient_microbatch,
                                                      sampling=("chunk-shuffle-epoch-v1" if
-                                                         args.experiment_id in ("A2S1", "A2S1W1", "A2S1C1") else
+                                                         args.experiment_id in ("A2S1", "A2S1W1", "A2S1C1", "A2S1C2") else
                                                          "global-shuffle-v1"))
                             auxiliary_metrics = (ppo_auxiliary.update(model, optimizer,
                                 auxiliary_bundle, device,
@@ -900,7 +931,7 @@ def main():
                             "cacheLimitBytes": 1536 * 1024 ** 2,
                             "prefetchLimitBytes": 256 * 1024 ** 2,
                             "gradientMicrobatch": 64, "logicalMinibatch": 256,
-                            "epochs": 4} if args.experiment_id in ("A2S1", "A2S1W1", "A2S1C1") else None))
+                            "epochs": 4} if args.experiment_id in ("A2S1", "A2S1W1", "A2S1C1", "A2S1C2") else None))
                     args.checkpoint.parent.mkdir(parents=True, exist_ok=True)
                     temporary = args.checkpoint.with_suffix(".tmp")
                     torch.save(payload, temporary)
@@ -971,7 +1002,8 @@ def main():
                               if device.type == "cuda" else 0}
                     if combo_entries is not None:
                         from scripts.ppo_combo_metrics import aggregate
-                        result["comboCourseSummary"] = aggregate(episodes)
+                        result["comboCourseSummary"] = aggregate(episodes,
+                            group_by_template=args.experiment_id == "A2S1C2")
                     report["updates"].append(result)
                     if args.report:
                         args.report.parent.mkdir(parents=True, exist_ok=True)

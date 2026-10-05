@@ -16,12 +16,13 @@ CARD_IDS = {
     "G3": ("special_134", "special_136"), "U1": ("special_111",),
     "U2": ("special_78", "special_88"), "U3": ("special_88",),
     "J1": ("special_199",), "J2": ("special_190", "special_189"),
+    "U4": ("special_84",),
 }
 
 
 def new_tracker(course_id: str | None, start: dict, preparation: dict | None = None) -> dict:
     if course_id:
-        template, variant, layer = course_id.split(":")
+        template, variant, layer = course_id.split(":")[:3]
         state = start["state"]
         pre = preparation or {}
         first = pre.get("firstUSWestEuropeLanding")
@@ -254,6 +255,8 @@ def _chain(tracker: dict) -> tuple[bool, int, int, str]:
                ("special_199", "eastern_china", "build_army", None, "japan")],
         "J2": [("special_190", "eastern_china", "destroy", "china", None),
                ("special_189", "eastern_china", "recruit_army", None, "japan")],
+        "U4": [("build_navy", "sea_north_atlantic", "build_navy", None, "united_states"),
+               ("special_84", "sea_north_sea", "build_navy", None, "united_states")],
     }[template]
     # One representative path per end operation is enough: every later
     # condition depends on the immediate predecessor, not on the whole path.
@@ -362,6 +365,8 @@ def summarize(tracker: dict, outcome: dict, final_state: dict | None = None) -> 
                    adds["japan:army:eastern_china"]),
         "J2": bool(removals["china:army:eastern_china"] and
                    adds["japan:army:eastern_china"]),
+        "U4": bool(adds["united_states:navy:sea_north_atlantic"] and
+                   adds["united_states:navy:sea_north_sea"]),
     }[template]
     complete, matched, required, status = _chain(tracker)
     if tactical and not complete and any(op["source"] is None for op in
@@ -397,7 +402,7 @@ def landing_summary(tracker: dict) -> dict:
             "source": first["source"] if first else "never_landed"}
 
 
-def aggregate(episodes: list[dict]) -> dict:
+def aggregate(episodes: list[dict], *, group_by_template: bool = False) -> dict:
     normal = [item for item in episodes if item["startType"] == "normal"]
     course = [item for item in episodes if item["startType"] == "course"]
     def landings(items):
@@ -408,7 +413,8 @@ def aggregate(episodes: list[dict]) -> dict:
     by_template: dict[str, dict] = {}
     for item in course:
         summary = item["comboCourse"]
-        row = by_template.setdefault(item["courseId"], {"episodes": 0,
+        row = by_template.setdefault(summary["template"] if group_by_template else
+                                     item["courseId"], {"episodes": 0,
             "boardResults": 0, "specifiedCombos": 0,
             "comboStatuses": Counter(), "installSelections": Counter(),
             "installations": Counter(), "preparationInstallations": Counter(),
@@ -461,7 +467,8 @@ def preparation_metadata(pool_path: Path, entries: list[dict], client,
     cache_path = cache_path or pool_path.with_name("course-telemetry-v3.json")
     identity = {"cacheSchemaVersion": PREPARATION_SCHEMA_VERSION, "poolSha256": hashlib.sha256(
         pool_path.read_bytes()).hexdigest(), "buildFingerprint": client.fingerprint}
-    expected_keys = {":".join(entry[key] for key in ("template", "variant", "layer"))
+    expected_keys = {entry.get("courseId") or ":".join(entry[key] for key in
+                     ("template", "variant", "layer"))
                      for entry in entries}
     if cache_path.exists():
         cached = json.loads(cache_path.read_text(encoding="utf-8"))
@@ -480,7 +487,8 @@ def preparation_metadata(pool_path: Path, entries: list[dict], client,
         raise ValueError("Existing preparation telemetry belongs to a different pool or schema")
     result = {}
     for entry in entries:
-        course_id = ":".join(entry[key] for key in ("template", "variant", "layer"))
+        course_id = entry.get("courseId") or ":".join(entry[key] for key in
+            ("template", "variant", "layer"))
         response = client.request(op="reset", seed=entry["seed"], mode="A",
                                   cardSet="signals", comboTelemetry=True)
         observation = response["observation"]
