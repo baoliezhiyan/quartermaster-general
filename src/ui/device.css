@@ -1,0 +1,93 @@
+/* Shared presentation only; no game state or device-specific rules. */
+.rotate-device,.compact-tools-toggle,.compact-record-close,.touch-region-detail{display:none}
+.layout-control{display:flex;align-items:center;gap:4px;white-space:nowrap;font-size:12px}
+.layout-control select{padding:4px;max-width:90px}
+@media (pointer:coarse) and (orientation:portrait){.rotate-device{position:fixed;inset:0;z-index:100000;background:#203d44;color:#fff5dc;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:24px}}
+@media (any-pointer:coarse){.touch-region-detail{display:block;position:absolute;left:8px;top:8px;z-index:6;min-height:40px}.card-shell,.prelude-card{touch-action:pan-x pan-y}.hand-card{touch-action:pan-x pan-y}}
+html[data-layout=compact] main{padding:4px;max-width:none}
+html[data-layout=compact] .topbar{padding:4px 8px;min-height:0}
+html[data-layout=compact] .topbar .brand{display:none}
+html[data-layout=compact] .network-bar{padding:3px 8px;gap:6px;font-size:12px}
+html[data-layout=compact] .game-map{margin:0}
+html[data-layout=compact] .map-toolbar{position:relative;flex-wrap:nowrap;padding:3px 8px;min-height:40px;gap:8px}
+html[data-layout=compact] .map-subtitle{display:none}
+html[data-layout=compact] .map-toolbar h3{font-size:14px}
+html[data-layout=compact] .map-scoreboard{position:static;transform:none;white-space:nowrap;font-size:12px;margin-left:auto}
+html[data-layout=compact] .map-scoreboard strong{font-size:20px}
+html[data-layout=compact] .compact-tools-toggle{display:block;white-space:nowrap;min-height:36px}
+html[data-layout=compact] .map-tools{display:none;position:absolute;right:0;top:100%;z-index:90;max-width:90vw;background:#203d44;padding:8px;flex-wrap:wrap;max-height:50vh;overflow:auto}
+html[data-layout=compact] .map-tools.tools-open{display:flex}
+html[data-layout=compact] .map-viewport{min-height:80px;max-height:none}
+html[data-layout=compact] .map-phase-panel{padding:3px 6px;gap:4px;flex-wrap:nowrap;overflow-x:auto;min-height:44px}
+html[data-layout=compact] .map-phase-panel h3{font-size:12px;flex-shrink:0}
+html[data-layout=compact] .phase-strip{display:none}
+html[data-layout=compact] .map-panel-buttons,html[data-layout=compact] .phase-right-actions,html[data-layout=compact] .phase-undo{flex-wrap:nowrap;flex-shrink:0;gap:4px}
+html[data-layout=compact] .map-panel-buttons button,html[data-layout=compact] .phase-undo button{min-height:40px;padding:4px 8px}
+html[data-layout=compact] .map-hand-dock.record-dock{z-index:30;width:min(440px,85%);padding:8px;box-shadow:-5px 0 15px #0005}
+html[data-layout=compact] .compact-record-close{display:block;position:absolute;top:4px;left:4px;z-index:2;font-size:22px;width:40px;height:36px;padding:0}
+html[data-layout=compact] .record-heading{padding-left:34px}
+html[data-layout=compact] .map-hand-dock.table-hand-dock{left:0;right:0;bottom:0;padding:0 4px;max-height:calc(100% - 70px);overflow:auto;pointer-events:auto}
+html[data-layout=compact] .table-hand-dock .card-grid{display:flex;width:max-content;margin:4px 0;gap:8px}
+html[data-layout=compact] .table-hand-dock .card-shell{flex:none;width:154px;height:232px}
+html[data-layout=compact] .table-hand-dock .hand-card{width:154px;height:232px}
+html[data-layout=compact] .table-hand-dock .card-face{height:100%}
+html[data-layout=compact] .map-hand-dock.prelude-hand-dock{width:calc(100% - 8px);max-height:calc(100% - 75px)}
+html[data-layout=compact] .guided-prompt{top:4px;padding:5px 10px;max-height:calc(100% - 8px);overflow:auto;max-width:calc(100% - 16px)}
+html[data-layout=compact] .guided-prompt p{font-size:14px;margin-bottom:3px}
+html[data-layout=compact] .guided-prompt button{min-height:36px;padding:4px 12px}
+html[data-layout=compact] .guided-sort-window{max-height:calc(100% - 105px);top:auto;bottom:0;transform:translateX(-50%);width:calc(100% - 12px);padding:5px;box-sizing:border-box}
+html[data-layout=compact] .guided-sort-window .card-grid{display:flex;width:max-content;gap:8px}
+html[data-layout=compact] .guided-sort-window .hand-card{flex:none}
+html[data-layout=compact] .window-drag-handle{position:sticky;top:0;margin:0;z-index:3;padding:2px;touch-action:auto}
+html[data-layout=compact] .response-notice,html[data-layout=compact] .neutrality-notice,html[data-layout=compact] .victory-notice{top:4px;max-height:calc(100% - 8px);box-sizing:border-box;padding:8px 14px;transform:translateX(-50%);overflow:auto}
+html[data-layout=compact] .bound-country-switch{top:48px;max-height:calc(100% - 56px);overflow:auto;gap:3px}
+html[data-layout=compact] .bound-country-notice{max-height:calc(100% - 12px);overflow:auto;box-sizing:border-box}
+html[data-layout=compact] .public-country-window,html[data-layout=compact] .map-stage:has(>.record-dock:not([hidden]))>.public-country-window{right:4px;max-width:calc(100% - 8px);z-index:35;padding:8px}
+html[data-layout=compact] .region-info-dialog{left:50%!important;max-height:calc(100% - 12px);max-width:calc(100% - 12px)}
+html[data-layout=compact] .card-index-window{max-height:calc(100% - 12px);box-sizing:border-box}
+html[data-layout=compact] .card-encyclopedia nav{flex-wrap:nowrap;overflow:auto;padding:4px;gap:4px;flex-shrink:0}
+html[data-layout=compact] .encyclopedia-grid{grid-template-columns:repeat(auto-fill,minmax(154px,1fr));gap:8px;padding:8px}
+html[data-layout=compact] .encyclopedia-grid .card-face{height:280px}
+html[data-layout=compact] .identity-entry{margin:0 auto;padding:12px}
+html[data-layout=compact] .setup-form{max-height:calc(var(--visible-height,100dvh) - 40px);overflow:auto}
+html[data-layout=compact] .chat-composer input{font-size:16px}
+
+.touch-sort-toggle,.touch-card-detail{display:none}
+.touch-card-dialog{position:fixed;inset:8px;z-index:1100;background:#f5f1e5;overflow:auto;padding:8px;box-shadow:0 0 0 100vmax #0005;display:flex;gap:12px;align-items:flex-start;justify-content:center}
+.touch-card-dialog>.hand-card{width:min(500px,75vw);height:auto;min-height:0;max-height:none}
+.touch-card-dialog .card-face{height:auto}.touch-card-dialog .card-art{max-height:100px;object-fit:contain}.touch-card-dialog .card-body{overflow:visible}
+.touch-card-dialog>button{position:sticky;top:0;min-height:40px}
+html[data-layout=compact] .touch-sort-toggle{display:block;position:sticky;left:4px;pointer-events:auto;min-height:34px}
+html[data-layout=compact] .touch-card-detail{display:block;position:absolute;right:4px;bottom:4px;padding:4px 8px;min-height:32px;background:#f5f1e5;z-index:3}
+html[data-layout=compact] .prelude-card{position:relative;flex:none}
+html[data-layout=compact] .table-hand-dock .hand-card{min-width:154px;min-height:232px}
+html[data-layout=compact] .table-hand-dock .card-body{padding:6px 6px 32px}
+html[data-layout=compact] .table-hand-dock .card-name{font-size:16px}
+html[data-layout=compact] .touch-sort-actions{position:absolute;top:25px;left:4px;z-index:4;display:flex;gap:6px}
+html[data-layout=compact] .touch-sort-actions button{min-width:44px;min-height:40px}
+html[data-layout=compact] .map-stage:has(>.record-dock:not([hidden]))>.table-hand-dock{padding-right:4px}
+html[data-layout=compact] .gm-response-switch{top:48px;gap:4px;max-height:calc(100% - 48px);overflow:auto;max-width:45%}
+html[data-layout=compact] .replay-record-dock{top:8px;max-height:calc(100% - 16px);box-sizing:border-box}
+html[data-layout=compact] .local-tools input,html[data-layout=compact] .local-tools select{max-width:100%;min-width:0;box-sizing:border-box}
+html[data-layout=compact] .local-tools fieldset{min-width:0;overflow:auto}
+html[data-layout=compact] .phase-right-actions{position:sticky;right:0;background:#f8f6ec;z-index:2}
+
+html[data-layout=compact] .map-stage:has(.map-hand-dock) .map-viewport,html[data-layout=compact] .map-stage:has(.map-interaction) .map-viewport{min-height:80px;max-height:none}
+html[data-layout=compact] .map-toolbar:has(.map-scoreboard){display:flex;flex-direction:row;align-items:center;flex-wrap:nowrap}
+html[data-layout=compact] .map-toolbar>div:first-child{white-space:nowrap}
+html[data-layout=compact] .map-scoreboard{gap:8px}
+html[data-layout=compact] .topbar{display:flex;justify-content:space-between;align-items:center;padding:2px 8px}
+html[data-layout=compact] .topbar-new-game{padding:4px 8px;min-height:32px}
+html[data-layout=compact] .response-notice{z-index:65}
+html[data-layout=compact] .table-hand-dock .card-art{max-height:70px;object-fit:cover}
+html[data-layout=compact] .table-hand-dock .card-shell,html[data-layout=compact] .table-hand-dock .hand-card{height:180px;min-height:180px}
+html[data-layout=compact] .table-hand-dock .card-grid{padding-bottom:4px}
+html[data-layout=compact] .map-hand-dock.table-hand-dock{max-height:calc(100% - 50px)}
+html[data-layout=compact] .map-hand-dock.prelude-hand-dock{max-height:calc(100% - 65px)}
+html[data-layout=compact] .map-phase-panel>.primary{min-width:max-content;padding:4px 8px;min-height:40px}
+
+.touch-unit-picker{position:absolute;right:6px;top:6px;z-index:8;background:#f8f5e8;padding:6px;max-height:calc(100% - 12px);max-width:40%;overflow:auto;box-sizing:border-box}
+.touch-unit-picker button{display:block;min-height:40px;margin-top:4px;width:100%}.touch-unit-picker button[aria-pressed=true]{background:#e1ca76}
+@supports(padding:env(safe-area-inset-left)){html[data-layout=compact] main{padding-left:max(4px,env(safe-area-inset-left));padding-right:max(4px,env(safe-area-inset-right))}}
+
+.record-toggle{position:relative}.record-toggle .chat-unread{right:0;top:0}

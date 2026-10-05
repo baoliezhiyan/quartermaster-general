@@ -1,3 +1,5 @@
+import {useCompactLayout} from './deviceLayout';
+import {CardInspect} from './CardInspect';
 import {neutralityDiscardPenalty} from '../core/neutrality';
 import {airActionOptions} from '../core/phaseAvailability';
 import {useHandOrder} from './useHandOrder';
@@ -13,6 +15,9 @@ import {playableCard} from './playAvailability';
 import type {MapAction} from './map/targetChoices';
 
 export function TableHand({state,busy,dispatch,choiceCards,chosenCards,onChoiceCard,onPlayCard,playCardId,onMapAction,revealHand,readOnly=false}:{state:ReadState;busy:boolean;readOnly?:boolean;dispatch:(c:Command)=>Promise<void>;choiceCards:Record<string,string[]>;chosenCards:string[];onChoiceCard:(id:string)=>void;onPlayCard:(id:string)=>void;playCardId:string|null;onMapAction:(a:MapAction|null)=>void;revealHand:()=>void}) {
+ const [sorting,setSorting]=useState(false);
+ const compact=useCompactLayout();
+ useEffect(()=>{if(!compact)setSorting(false);},[compact]);
  const ref=useRef<HTMLElement>(null),[portal,setPortal]=useState<Element|null>(null);
  useEffect(()=>{setPortal(ref.current?.closest('.map-stage')??null);},[]);
  const [selected,setSelected]=useState<string[]>([]),[step,setStep]=useState<'ask'|'normal'|'source'|'destination'|'fee'>('ask');
@@ -60,12 +65,13 @@ export function TableHand({state,busy,dispatch,choiceCards,chosenCards,onChoiceC
  const training=(state as ReadState&{trainingReplay?:{available:string[]}}).trainingReplay;
  if(training&&!training.available.includes(seat+':hand'))return <section ref={ref} className="table-hand" aria-label="回合与手牌"><p>手牌未提供或在当前视角下不可见。</p></section>;
  return <section ref={ref} className="table-hand" aria-label="回合与手牌">
+  {!training&&<button className="touch-sort-toggle" onClick={()=>setSorting(v=>!v)}>{sorting?'完成整理':'整理手牌'}</button>}
   <div className="card-grid" style={{'--hand-columns':Math.min(7,Math.max(1,deck.hand.length))} as CSSProperties}>{(training?deck.hand:handOrder.ordered).map((card,index)=>{
    const offered=!!choiceCards[card.id],selecting=setup||discard||air&&step==='fee';
    const usable=playable.has(card.id)&&(!air||state.airAction==='deploy'||state.airAction==='supremacy');
    const available=!readOnly&&(offered||free&&(selecting||usable));
    const picked=offered?chosenCards.includes(card.id):selecting?selected.includes(card.id):playCardId===card.id;
-   return <div className="card-shell" {...(training?{}:handOrder.props(card.id))} key={card.id} style={(setup||state.prelude?.active)&&deck.hand.length===12?{gridRow:index<5?1:2,gridColumn:index<5?index+2:index-4}:undefined}><button className={`hand-card${available?' available-card':''}${picked?' selected':''}`} aria-label={`${cardName(card)}，${card.id}`} aria-pressed={picked} disabled={!available||busy} onClick={()=>offered?onChoiceCard(card.id):selecting?toggle(card.id,setup?7:air?1:deck.hand.length):onPlayCard(card.id)}><CardFace card={card} hint={picked?'✓ 已选择':undefined}/></button>{!readOnly&&<CardResponseToggle state={state} card={card} dispatch={dispatch} busy={busy}/>}</div>;
+   return <div className="card-shell" {...(training?{}:handOrder.props(card.id))} key={card.id} style={(setup||state.prelude?.active)&&deck.hand.length===12?{gridRow:index<5?1:2,gridColumn:index<5?index+2:index-4}:undefined}><button className={`hand-card${available?' available-card':''}${picked?' selected':''}`} aria-label={`${cardName(card)}，${card.id}`} aria-pressed={picked} disabled={!available||busy||sorting} onClick={()=>offered?onChoiceCard(card.id):selecting?toggle(card.id,setup?7:air?1:deck.hand.length):onPlayCard(card.id)}><CardFace card={card} hint={picked?'✓ 已选择':undefined}/></button><CardInspect card={card}/>{sorting&&!training&&<div className="touch-sort-actions"><button aria-label="向前移动" onClick={()=>handOrder.move(card.id,-1)}>←</button><button aria-label="向后移动" onClick={()=>handOrder.move(card.id,1)}>→</button></div>}{!readOnly&&<CardResponseToggle state={state} card={card} dispatch={dispatch} busy={busy}/>}</div>;
   })}</div>
   {portal&&prompt&&createPortal(<fieldset disabled={busy} style={{border:0,margin:0}} className="guided-prompt hand-phase-prompt" aria-label="手牌阶段操作">{prompt}</fieldset>,portal)}
  </section>;

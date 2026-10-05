@@ -1,3 +1,4 @@
+import {LayoutControl,useCompactLayout} from '../deviceLayout';
 import {CardEncyclopedia} from '../CardEncyclopedia';
 import {UnitArt} from '../UnitArt';
 import { useEffect, useMemo, useRef, useState } from 'react';
@@ -20,6 +21,10 @@ const COUNTRY_NAMES: Record<CountryId, string> = {
 const ALL_SHAPES = MAP_SHAPES;
 
 export function GameMap({ alliance, game, legalRegions = [], onChooseRegion, selectedRegion, selectedRegions=[], targeting=false, children, footer, scoreboard, legalUnitIds=[],selectedUnitIds=[],onChooseUnit,onStandardView }: { alliance: Alliance; game?: ReadState | null; legalRegions?: readonly string[]; onChooseRegion?: (regionId: string | null) => void; selectedRegion?:string|null; selectedRegions?:readonly string[]; targeting?:boolean; children?:ReactNode; footer?:ReactNode; scoreboard?:ReactNode;legalUnitIds?:string[];selectedUnitIds?:string[];onChooseUnit?:(id:string)=>void;onStandardView?:()=>void }) {
+  const compact=useCompactLayout();
+  const [toolsOpen,setToolsOpen]=useState(false);
+  const touches=useRef(new Map<number,{x:number;y:number}>());
+  const pinch=useRef<{distance:number;zoom:number;world:{x:number;y:number}}|null>(null);
   const [encyclopedia,setEncyclopedia]=useState(false);
   const [localSelected, setSelected] = useState<string | null>(null);
   const selected = selectedRegion === undefined ? localSelected : selectedRegion;
@@ -96,16 +101,16 @@ export function GameMap({ alliance, game, legalRegions = [], onChooseRegion, sel
       const currentStage=stage.current;
       if(!currentStage||!view.isConnected)return;
       const top=currentStage.getBoundingClientRect().top+(fullscreen?0:window.scrollY);
-      view.style.height=`${Math.max(fullscreen?0:320,window.innerHeight-top-(phaseFooter.current?.getBoundingClientRect().height??0)-(fullscreen?0:8))}px`;
+      view.style.height=`${Math.max(fullscreen||compact?80:320,(window.visualViewport?.height??window.innerHeight)-top-(phaseFooter.current?.getBoundingClientRect().height??0)-(fullscreen?0:8))}px`;
       setSize({width:view.clientWidth,height:view.clientHeight});
     };
     const observer=new ResizeObserver(measure);
     observer.observe(toolbar.current!);
     observer.observe(document.querySelector('.topbar')??view);
     if(phaseFooter.current)observer.observe(phaseFooter.current);
-    window.addEventListener('resize',measure);measure();
-    return ()=>{observer.disconnect();window.removeEventListener('resize',measure);};
-  },[fullscreen]);
+    window.addEventListener('resize',measure);window.visualViewport?.addEventListener('resize',measure);measure();
+    return ()=>{observer.disconnect();window.removeEventListener('resize',measure);window.visualViewport?.removeEventListener('resize',measure);};
+  },[fullscreen,compact]);
   useEffect(()=>{setPan(p=>clampPan(p,size,zoom));},[size,zoom]);
   const context: AdjacencyContext = useMemo(() => ({alliance,landControllers:game?occupiedLand(game):{}}), [alliance,game]);
   const supplied = useMemo(() => game ? suppliedUnits(game) : new Set<string>(), [game]);
@@ -133,12 +138,20 @@ export function GameMap({ alliance, game, legalRegions = [], onChooseRegion, sel
   };
   const beginPan = (event: PointerEvent<HTMLDivElement>) => {
     if(event.button!==0 && event.button!==2)return;
+    if(event.pointerType==='touch'){
+      touches.current.set(event.pointerId,{x:event.clientX,y:event.clientY});
+      if(touches.current.size>=2){const [a,b]=[...touches.current.values()],box=event.currentTarget.getBoundingClientRect();pinch.current={distance:Math.max(1,Math.hypot(a.x-b.x,a.y-b.y)),zoom,world:{x:((a.x+b.x)/2-box.left-size.width/2)/scale-boundedPan.x,y:((a.y+b.y)/2-box.top-size.height/2)/scale-boundedPan.y}};drag.current=null;suppressClick.current=true;return;}
+    }
     suppressClick.current=false;
     const target=event.target as Element;
     drag.current={x:event.clientX,y:event.clientY,pan:boundedPan,moved:false,button:event.button,regionId:target.closest('[data-region-id]')?.getAttribute('data-region-id')??null};
     if(event.button===2){event.preventDefault();event.currentTarget.setPointerCapture(event.pointerId);}
   };
   const movePan = (event: PointerEvent<HTMLDivElement>) => {
+    if(event.pointerType==='touch'&&touches.current.has(event.pointerId)){
+      touches.current.set(event.pointerId,{x:event.clientX,y:event.clientY});
+      if(pinch.current&&touches.current.size>=2){suppressClick.current=true;if(viewLocked)return;const [a,b]=[...touches.current.values()],p=pinch.current,box=event.currentTarget.getBoundingClientRect(),next=Math.max(.5,Math.min(2,p.zoom*Math.hypot(a.x-b.x,a.y-b.y)/p.distance)),nextScale=size.width/MAP_WIDTH*next;setLeftAligned(false);setZoom(next);setPan(clampPan({x:((a.x+b.x)/2-box.left-size.width/2)/nextScale-p.world.x,y:((a.y+b.y)/2-box.top-size.height/2)/nextScale-p.world.y},size,next));return;}
+    }
     const start=drag.current;
     if(!start || !event.buttons || !scale)return;
     if(viewLocked){if(isPanGesture(event.clientX-start.x,event.clientY-start.y))suppressClick.current=true;return;}
@@ -152,6 +165,8 @@ export function GameMap({ alliance, game, legalRegions = [], onChooseRegion, sel
   const endPan = (event: PointerEvent<HTMLDivElement>) => {
     const start=drag.current;
     if(start?.button===2 && !start.moved && !isPanGesture(event.clientX-start.x,event.clientY-start.y) && start.regionId)showInfo(start.regionId,event.clientX);
+    touches.current.delete(event.pointerId);
+    if(pinch.current){suppressClick.current=true;if(touches.current.size<2)pinch.current=null;}
     drag.current=null;
     if(event.currentTarget.hasPointerCapture(event.pointerId))event.currentTarget.releasePointerCapture(event.pointerId);
   };
@@ -188,7 +203,8 @@ export function GameMap({ alliance, game, legalRegions = [], onChooseRegion, sel
       <div className="map-toolbar" ref={toolbar}>
         <div><h3>战略地图</h3><button className="map-tool encyclopedia-toggle" aria-expanded={encyclopedia} onClick={()=>setEncyclopedia(v=>!v)}>全卡图鉴</button><span className="map-subtitle">左键选择 · 右键选择并查看详情／按住拖动</span></div>
         {scoreboard}
-        <div className="map-tools">
+        <button className="compact-tools-toggle" aria-expanded={toolsOpen} onClick={()=>setToolsOpen(v=>!v)}>地图工具</button>
+        <div className={`map-tools${toolsOpen?' tools-open':''}`}><LayoutControl/>
           <div className="map-search">
             <input aria-label="查找地图地区" placeholder="查找地区…" value={query} onChange={event => setQuery(event.target.value)}
               onKeyDown={event => {
@@ -212,9 +228,11 @@ export function GameMap({ alliance, game, legalRegions = [], onChooseRegion, sel
         {fullscreenError&&<p role="alert">{fullscreenError}</p>}
       </div>
       <div className="map-stage" ref={stage}>
+        {selected&&<button className="touch-region-detail" onClick={()=>setInfo({id:selected,left:'50%'})}>查看{REGION_BY_ID[selected]?.name}详情</button>}
+        {compact&&legalUnitIds.length>0&&<details className="touch-unit-picker"><summary>选择部队（{selectedUnitIds.length} 已选）</summary>{game?.units.filter(u=>legalUnitIds.includes(u.id)).map(u=><button key={u.id} aria-pressed={selectedUnitIds.includes(u.id)} onClick={()=>onChooseUnit?.(u.id)}>{COUNTRY_NAMES[u.country]} · {UNIT_NAMES[u.type]} · {REGION_BY_ID[u.regionId]?.name}</button>)}</details>}
         {encyclopedia&&<CardEncyclopedia balance={game?.rules?.balanceEnabled??true}/> }
       <div className="map-viewport" ref={viewport} data-zoom={Math.round(zoom*100)} onPointerDown={beginPan} onPointerMove={movePan}
-        onPointerUp={endPan} onPointerCancel={()=>{drag.current=null;}} onLostPointerCapture={()=>{drag.current=null;}}
+        onPointerUp={endPan} onPointerCancel={endPan} onLostPointerCapture={endPan}
         onContextMenu={event=>event.preventDefault()}
         onClickCapture={event => {
           if(suppressClick.current){event.preventDefault();event.stopPropagation();suppressClick.current=false;}

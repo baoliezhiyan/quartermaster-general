@@ -41,7 +41,7 @@ try{
  await page.getByRole('button',{name:'进入回放模式',exact:true}).click();await page.getByRole('heading',{name:'回放记录',exact:true}).waitFor({timeout:60000});
  await page.locator('.replay-entry').first().focus();await page.locator('.replay-entry').first().press('Enter');await page.getByRole('button',{name:'结算后',exact:true}).click();
  await page.getByRole('button',{name:'退出回放模式',exact:true}).click();await page.getByRole('button',{name:'进入回放模式',exact:true}).waitFor();
- assert(mutations===0,'Replay sent a live mutation');assert((await page.title()).includes('1.7.7'),'Wrong tab version');assert(errors.length===0,errors.join('\n'));
+ assert(mutations===0,'Replay sent a live mutation');assert((await page.title()).includes('1.8.0'),'Wrong tab version');assert(errors.length===0,errors.join('\n'));
  const unauthorized=await fetch(`http://127.0.0.1:${port}/api/request`,{method:'POST',headers:{Origin:`http://127.0.0.1:${port}`,'Content-Type':'application/json','X-QM-History-Import':'1'},body:'{}'});assert(unauthorized.status===400,'Unauthenticated large import accepted');
  await page.screenshot({path:'outputs/history-browser.png',fullPage:true});console.log('PASS: encyclopedia toggle, six nations, new US and Chinese cards, layout; unified GM tools, full/partial downloads, import slots, read-only replay toggle, version and upload auth');
 }finally{await browser?.close();server.kill();}
