@@ -1,3 +1,4 @@
+import {useCardArtHidden,toggleCardArt} from '../cardDisplay';
 import {LayoutControl,useCompactLayout,layoutSize,localPointer} from '../deviceLayout';
 import {CardEncyclopedia} from '../CardEncyclopedia';
 import {UnitArt} from '../UnitArt';
@@ -22,6 +23,7 @@ const ALL_SHAPES = MAP_SHAPES;
 
 export function GameMap({ alliance, game, legalRegions = [], onChooseRegion, selectedRegion, selectedRegions=[], targeting=false, children, footer, scoreboard, legalUnitIds=[],selectedUnitIds=[],onChooseUnit,onStandardView }: { alliance: Alliance; game?: ReadState | null; legalRegions?: readonly string[]; onChooseRegion?: (regionId: string | null) => void; selectedRegion?:string|null; selectedRegions?:readonly string[]; targeting?:boolean; children?:ReactNode; footer?:ReactNode; scoreboard?:ReactNode;legalUnitIds?:string[];selectedUnitIds?:string[];onChooseUnit?:(id:string)=>void;onStandardView?:()=>void }) {
   const compact=useCompactLayout();
+  const hideCardArt=useCardArtHidden();
   const [toolsOpen,setToolsOpen]=useState(false);
   const touches=useRef(new Map<number,{x:number;y:number}>());
   const pinch=useRef<{distance:number;zoom:number;world:{x:number;y:number}}|null>(null);
@@ -216,8 +218,8 @@ export function GameMap({ alliance, game, legalRegions = [], onChooseRegion, sel
       <div className="map-toolbar" ref={toolbar}>
         <div><h3>战略地图</h3><button className="map-tool encyclopedia-toggle" aria-expanded={encyclopedia} onClick={()=>setEncyclopedia(v=>!v)}>全卡图鉴</button><span className="map-subtitle">左键选择 · 右键选择并查看详情／按住拖动</span></div>
         {scoreboard}
-        <button className="compact-tools-toggle" aria-expanded={toolsOpen} onClick={()=>setToolsOpen(v=>!v)}>地图工具</button>
-        <div className={`map-tools${toolsOpen?' tools-open':''}`}><LayoutControl/>
+        <button className="compact-tools-toggle" aria-expanded={toolsOpen} onClick={()=>setToolsOpen(v=>!v)}>设置</button>
+        <div className={`map-tools${toolsOpen?' tools-open':''}`}><LayoutControl/><button className="map-tool" aria-pressed={hideCardArt} onClick={toggleCardArt}>{hideCardArt?'开启卡图显示':'关闭卡图显示'}</button>
           <div className="map-search">
             <input aria-label="查找地图地区" placeholder="查找地区…" value={query} onChange={event => setQuery(event.target.value)}
               onKeyDown={event => {

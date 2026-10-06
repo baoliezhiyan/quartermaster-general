@@ -50,10 +50,19 @@ try{
  for(const country of ['germany','united_kingdom','japan','soviet_union','italy','united_states']){
   await phone.locator(`.country-record-summary button[data-country="${country}"]`).click();
   const cards=phone.locator('.public-country-window .hand-card');
-  if(await cards.count()){const b=await cards.first().boundingBox();assert(Math.abs(b.width-123.2)<.1&&b.height===180,'Public card size differs');checkedPublic=true;}
+  if(await cards.count()){await phone.locator('.public-country-window').evaluate(el=>el.scrollTop=el.scrollHeight);const closeBox=await phone.getByLabel('关闭公开信息').boundingBox(),panelBox=await phone.locator('.public-country-window').boundingBox();assert(closeBox.y>=panelBox.y&&closeBox.y+closeBox.height<=panelBox.y+panelBox.height,'Close scrolled away');const b=await cards.first().boundingBox();assert(Math.abs(b.width-123.2)<.1&&b.height===180,'Public card size differs');checkedPublic=true;}
   await phone.getByLabel('关闭公开信息').click();if(checkedPublic)break;
  }
  assert(checkedPublic,'Sample lacks public cards');await phone.getByLabel('关闭记录侧栏').click();
+ await phone.getByRole('button',{name:'设置',exact:true}).click();await phone.getByRole('button',{name:'关闭卡图显示',exact:true}).click();
+ assert(await phone.locator('.card-art').count()===0,'Card art remains after toggle');
+ await phone.getByRole('button',{name:'全卡图鉴',exact:true}).click();
+ const textFace=phone.locator('.encyclopedia-grid .card-face').first();
+ assert(await textFace.evaluate(el=>getComputedStyle(el).paddingTop)==='5px','Top colored edge missing');
+ await phone.getByRole('button',{name:'全卡图鉴',exact:true}).click();
+ await phone.getByRole('button',{name:'开启卡图显示',exact:true}).click();
+ assert(await phone.locator('.card-art').count()>0,'Art did not return');await phone.getByRole('button',{name:'设置',exact:true}).click();
+ const center=await phone.evaluate(()=>{const a=document.querySelector('.map-toolbar').getBoundingClientRect(),b=document.querySelector('.map-scoreboard').getBoundingClientRect();return (a.left+a.right-b.left-b.right)/2;});assert(Math.abs(center)<1,'Score not centered');
  // Collapse the hand so the touch test addresses only the map.
  const handToggle=phone.locator('.map-panel-buttons button[aria-pressed="true"]').filter({hasText:/手牌/});if(await handToggle.count())await handToggle.first().click();
  const point=await phone.evaluate(()=>{const r=document.querySelector('.map-viewport').getBoundingClientRect();for(let y=r.top+30;y<r.bottom-20;y+=30)for(let x=r.left+50;x<r.right-40;x+=40){const el=document.elementFromPoint(x,y)?.closest('[data-region-id]');if(el)return {x,y,id:el.getAttribute('data-region-id')};}return null;});
@@ -88,7 +97,7 @@ try{
  await phone.setViewportSize({width:844,height:390});
  for(const behavior of ['missing','reject']){
   await phone.evaluate(mode=>{Element.prototype.requestFullscreen=mode==='missing'?undefined:()=>Promise.reject(new Error('Not allowed'));},behavior);
-  await phone.getByRole('button',{name:'地图工具',exact:true}).click();
+  await phone.getByRole('button',{name:'设置',exact:true}).click();
   await phone.getByRole('button',{name:'全屏',exact:true}).click();
   await phone.locator('.map-page-expanded').waitFor();
   assert(await phone.getByText('已在页面内展开，浏览器工具栏由系统控制',{exact:true}).count()===0,'Unwanted expansion notice');
@@ -98,7 +107,7 @@ try{
   const expanded=await phone.locator('.map-page-expanded').boundingBox();assert(expanded.x===0&&expanded.y===0&&Math.abs(expanded.width-915)<2&&Math.abs(expanded.height-412)<2,'Expanded viewport wrong');
   await phone.getByRole('button',{name:'退出展开',exact:true}).click();
   assert(await phone.locator('.map-page-expanded').count()===0,'Cannot exit fallback');
-  await phone.getByRole('button',{name:'地图工具',exact:true}).click();
+  await phone.getByRole('button',{name:'设置',exact:true}).click();
   await phone.setViewportSize({width:844,height:390});
  }
  await phone.screenshot({path:'outputs/mobile-v181.png'});
