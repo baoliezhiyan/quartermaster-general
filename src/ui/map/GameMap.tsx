@@ -113,6 +113,7 @@ export function GameMap({ alliance, game, legalRegions = [], onChooseRegion, sel
       setSize({width:view.clientWidth,height:view.clientHeight});
     };
     const observer=new ResizeObserver(measure);
+    observer.observe(view);
     observer.observe(toolbar.current!);
     observer.observe(document.querySelector('.topbar')??view);
     if(phaseFooter.current)observer.observe(phaseFooter.current);
@@ -233,11 +234,11 @@ export function GameMap({ alliance, game, legalRegions = [], onChooseRegion, sel
             <button aria-label="放大地图" disabled={viewLocked || zoom >= 2} onClick={() => setZoom(value => stepZoom(value,1))}>＋</button>
           </div>
           <button className="map-tool" aria-pressed={viewLocked} onClick={()=>{drag.current=null;setViewLocked(v=>!v);}}>视角锁定{viewLocked?' · 已开启':''}</button>
-          <button className="map-tool" onClick={()=>{setLeftAligned(true);onStandardView?.();}}>标准视图</button>
+          <button className="map-tool" onClick={()=>{if(compact){setLeftAligned(false);setPan({x:0,y:0});}else{setLeftAligned(true);onStandardView?.();}}}>{compact?'居中视图':'标准视图'}</button>
           <button className={boundaries ? 'map-tool active' : 'map-tool'} aria-pressed={boundaries} onClick={() => setBoundaries(value => !value)}>边界显示</button>
           <button className="map-tool" disabled={fullscreenBusy} aria-pressed={fullscreen} title="优先使用浏览器全屏；不支持时在页面内展开游戏" onClick={()=>void toggleFullscreen()}>{pageExpanded?'退出展开':nativeFullscreen?'退出全屏':'全屏'}</button>
         </div>
-        {pageExpanded&&<span className="fullscreen-note" role="status">已在页面内展开，浏览器工具栏由系统控制</span>}
+
       </div>
       <div className="map-stage" ref={stage}>
         {selected&&<button className="touch-region-detail" onClick={()=>setInfo({id:selected,left:'50%'})}>查看{REGION_BY_ID[selected]?.name}详情</button>}

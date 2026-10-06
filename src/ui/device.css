@@ -27,8 +27,8 @@ html[data-layout=compact] .compact-record-close{display:block;position:absolute;
 html[data-layout=compact] .record-heading{padding-left:34px}
 html[data-layout=compact] .map-hand-dock.table-hand-dock{left:0;right:0;bottom:0;padding:0 4px;max-height:calc(100% - 70px);overflow:auto;pointer-events:auto}
 html[data-layout=compact] .table-hand-dock .card-grid{display:flex;width:max-content;margin:4px 0;gap:8px}
-html[data-layout=compact] .table-hand-dock .card-shell{flex:none;width:154px;height:232px}
-html[data-layout=compact] .table-hand-dock .hand-card{width:154px;height:232px}
+html[data-layout=compact] .table-hand-dock .card-shell{flex:none;width:var(--mobile-card-width);height:232px}
+html[data-layout=compact] .table-hand-dock .hand-card{width:var(--mobile-card-width);height:232px}
 html[data-layout=compact] .table-hand-dock .card-face{height:100%}
 html[data-layout=compact] .map-hand-dock.prelude-hand-dock{width:calc(100% - 8px);max-height:calc(100% - 75px)}
 html[data-layout=compact] .guided-prompt{top:4px;padding:5px 10px;max-height:calc(100% - 8px);overflow:auto;max-width:calc(100% - 16px)}
@@ -45,8 +45,8 @@ html[data-layout=compact] .public-country-window,html[data-layout=compact] .map-
 html[data-layout=compact] .region-info-dialog{left:50%!important;max-height:calc(100% - 12px);max-width:calc(100% - 12px)}
 html[data-layout=compact] .card-index-window{max-height:calc(100% - 12px);box-sizing:border-box}
 html[data-layout=compact] .card-encyclopedia nav{flex-wrap:nowrap;overflow:auto;padding:4px;gap:4px;flex-shrink:0}
-html[data-layout=compact] .encyclopedia-grid{grid-template-columns:repeat(auto-fill,minmax(154px,1fr));gap:8px;padding:8px}
-html[data-layout=compact] .encyclopedia-grid .card-face{height:280px}
+html[data-layout=compact] .encyclopedia-grid{grid-template-columns:repeat(auto-fill,var(--mobile-card-width));gap:8px;padding:8px}
+html[data-layout=compact] .encyclopedia-grid .card-face{height:var(--mobile-card-height)}
 html[data-layout=compact] .identity-entry{margin:0 auto;padding:12px}
 html[data-layout=compact] .setup-form{max-height:calc(var(--visible-height,100dvh) - 40px);overflow:auto}
 html[data-layout=compact] .chat-composer input{font-size:16px}
@@ -54,7 +54,7 @@ html[data-layout=compact] .chat-composer input{font-size:16px}
 .touch-sort-toggle{display:none}
 html[data-layout=compact] .touch-sort-toggle{display:block;position:sticky;left:4px;pointer-events:auto;min-height:34px}
 html[data-layout=compact] .prelude-card{position:relative;flex:none}
-html[data-layout=compact] .table-hand-dock .hand-card{min-width:154px;min-height:232px}
+html[data-layout=compact] .table-hand-dock .hand-card{min-width:var(--mobile-card-width);min-height:232px}
 html[data-layout=compact] .table-hand-dock .card-body{padding:6px 6px 32px}
 html[data-layout=compact] .table-hand-dock .card-name{font-size:16px}
 html[data-layout=compact] .touch-sort-actions{position:absolute;top:25px;left:4px;z-index:4;display:flex;gap:6px}
@@ -102,7 +102,7 @@ html[data-layout=compact] .map-panel-buttons,html[data-layout=compact] .phase-ri
 html[data-layout=compact] .guided-prompt p,html[data-layout=compact] .response-notice p{font-size:12px;line-height:1.45}
 html[data-layout=compact] .guided-prompt button{font-size:11px;min-height:30px;padding:3px 9px}
 /* All live/replay card zones use the same dimensions; art is never cropped. */
-html[data-layout=compact] .map-stage{--mobile-card-width:154px;--mobile-card-height:180px}
+html[data-layout=compact]{--mobile-card-width:123.2px;--mobile-card-height:180px}
 html[data-layout=compact] .map-hand-dock .card-shell,html[data-layout=compact] .map-hand-dock .hand-card,html[data-layout=compact] .guided-sort-window .hand-card{width:var(--mobile-card-width);min-width:var(--mobile-card-width);height:var(--mobile-card-height);min-height:var(--mobile-card-height);flex:none}
 html[data-layout=compact] .map-hand-dock .card-face,html[data-layout=compact] .guided-sort-window .card-face{height:100%}
 html[data-layout=compact] .map-hand-dock .card-art,html[data-layout=compact] .guided-sort-window .card-art{width:100%;height:auto;max-height:none;object-fit:contain;object-position:top;flex-shrink:0}
@@ -110,7 +110,7 @@ html[data-layout=compact] .map-hand-dock .card-body,html[data-layout=compact] .g
 html[data-layout=compact] .map-hand-dock .card-name,html[data-layout=compact] .guided-sort-window .card-name{font-size:14px;line-height:1.25}
 html[data-layout=compact] .map-hand-dock .card-effect,html[data-layout=compact] .guided-sort-window .card-effect{font-size:12px;line-height:1.4}
 html[data-layout=compact] .card-hint,html[data-layout=compact] .prelude-card-label,html[data-layout=compact] .card-tension{font-size:11px}
-html[data-layout=compact] .map-hand-dock .card-grid{grid-template-columns:repeat(auto-fill,154px);gap:6px}
+html[data-layout=compact] .map-hand-dock .card-grid{grid-template-columns:repeat(auto-fill,var(--mobile-card-width));gap:6px}
 html[data-layout=compact] .prelude-hand-dock .card-grid{display:flex;width:max-content}
 html[data-layout=compact] .map-hand-dock.catalog-dock{width:min(100%,calc(100% - 8px));padding:5px;max-height:calc(100% - 50px)}
 html[data-layout=compact] .map-hand-dock h3{font-size:13px;margin:3px 0}
@@ -136,4 +136,21 @@ html[data-layout=compact] .map-hand-dock.table-hand-dock{max-height:calc(100% - 
 html[data-layout=compact] .touch-region-detail{top:3px;min-height:26px;padding:3px 7px;line-height:16px;font-size:11px}
 
 .game-map.map-page-expanded{height:var(--visible-height,100dvh);box-sizing:border-box;padding-bottom:env(safe-area-inset-bottom,0px)}
-.fullscreen-note{font-size:11px;color:#ddd;max-width:240px}
+
+
+/* One card geometry for piles, hands, choices, public information and log links. */
+html[data-layout=compact] .hand-card,
+html[data-layout=compact] .card-shell{width:var(--mobile-card-width);min-width:var(--mobile-card-width);height:var(--mobile-card-height);min-height:var(--mobile-card-height);flex:none}
+html[data-layout=compact] .card-face{width:100%;height:100%;min-height:0;overflow:hidden}
+html[data-layout=compact] .card-art{width:100%;height:auto;max-height:none;object-fit:contain;object-position:top;flex-shrink:0}
+html[data-layout=compact] .card-body{padding:4px 6px;gap:3px;min-height:0;overflow:auto}
+html[data-layout=compact] .card-name{font-size:14px;line-height:1.25}
+html[data-layout=compact] .card-effect{font-size:12px;line-height:1.4}
+html[data-layout=compact] .public-country-window .card-grid{grid-template-columns:repeat(auto-fill,var(--mobile-card-width));gap:6px}
+/* Paint the full landscape viewport; only controls avoid the notch. */
+html[data-layout=compact]{background:#000}
+html[data-layout=compact] body,html[data-layout=compact] #root{width:100%;min-width:0}
+html[data-layout=compact] .game-map{width:100%;min-width:0}
+html[data-layout=compact] .map-fullscreen{padding-bottom:env(safe-area-inset-bottom,0px)}
+html[data-layout=compact] .map-fullscreen .map-toolbar{padding-left:max(5px,env(safe-area-inset-left));padding-right:max(5px,env(safe-area-inset-right))}
+html[data-layout=compact] .map-fullscreen .map-footer{padding-left:env(safe-area-inset-left,0px);padding-right:env(safe-area-inset-right,0px);background:#f8f6ec}
