@@ -86,13 +86,6 @@ html[data-layout=compact] .map-phase-panel>.primary{min-width:max-content;paddin
 
 .record-toggle{position:relative}.record-toggle .chat-unread{right:0;top:0}
 
-/* User-selected rotation: logical page axes rotate with all controls and hit targets. */
-.orientation-toggle{display:none;position:fixed;right:4px;top:2px;z-index:1500;font-size:11px;padding:3px 6px;min-height:26px}
-html[data-layout=compact] .orientation-toggle,html[data-rotated=true] .orientation-toggle{display:block}
-html[data-layout=compact] .network-bar{padding-right:92px}
-html[data-rotated=true]{overflow:hidden}
-html[data-rotated=true] body{overflow:hidden;width:100vw;height:var(--physical-height,100dvh)}
-html[data-rotated=true] #root{position:fixed;left:100%;top:0;width:var(--physical-height,100dvh);height:var(--physical-width,100vw);transform-origin:0 0;transform:rotate(90deg);overflow:auto;overscroll-behavior:contain}
 html[data-layout=compact]{font-size:12px}
 html[data-layout=compact] button{font-size:11px}
 html[data-layout=compact] .map-toolbar{min-height:32px;padding:2px 5px;gap:5px}
@@ -141,3 +134,6 @@ html[data-layout=compact] .chat-clear{font-size:9px;padding:2px}
 html[data-layout=compact] .map-hand-dock.table-hand-dock{max-height:calc(100% - 34px)}
 
 html[data-layout=compact] .touch-region-detail{top:3px;min-height:26px;padding:3px 7px;line-height:16px;font-size:11px}
+
+.game-map.map-page-expanded{height:var(--visible-height,100dvh);box-sizing:border-box;padding-bottom:env(safe-area-inset-bottom,0px)}
+.fullscreen-note{font-size:11px;color:#ddd;max-width:240px}

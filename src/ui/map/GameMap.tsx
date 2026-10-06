@@ -1,4 +1,4 @@
-import {LayoutControl,useCompactLayout,useRotatedLayout,layoutSize,localPointer} from '../deviceLayout';
+import {LayoutControl,useCompactLayout,layoutSize,localPointer} from '../deviceLayout';
 import {CardEncyclopedia} from '../CardEncyclopedia';
 import {UnitArt} from '../UnitArt';
 import { useEffect, useMemo, useRef, useState } from 'react';
@@ -21,7 +21,7 @@ const COUNTRY_NAMES: Record<CountryId, string> = {
 const ALL_SHAPES = MAP_SHAPES;
 
 export function GameMap({ alliance, game, legalRegions = [], onChooseRegion, selectedRegion, selectedRegions=[], targeting=false, children, footer, scoreboard, legalUnitIds=[],selectedUnitIds=[],onChooseUnit,onStandardView }: { alliance: Alliance; game?: ReadState | null; legalRegions?: readonly string[]; onChooseRegion?: (regionId: string | null) => void; selectedRegion?:string|null; selectedRegions?:readonly string[]; targeting?:boolean; children?:ReactNode; footer?:ReactNode; scoreboard?:ReactNode;legalUnitIds?:string[];selectedUnitIds?:string[];onChooseUnit?:(id:string)=>void;onStandardView?:()=>void }) {
-  const compact=useCompactLayout(),rotated=useRotatedLayout();
+  const compact=useCompactLayout();
   const [toolsOpen,setToolsOpen]=useState(false);
   const touches=useRef(new Map<number,{x:number;y:number}>());
   const pinch=useRef<{distance:number;zoom:number;world:{x:number;y:number}}|null>(null);
@@ -37,23 +37,30 @@ export function GameMap({ alliance, game, legalRegions = [], onChooseRegion, sel
   const [zoom, setZoom] = useState(.8);
   const [viewLocked,setViewLocked]=useState(false);
   const [boundaries, setBoundaries] = useState(false);
-  const [fullscreen, setFullscreen] = useState(false);
+  const [pageExpanded,setPageExpanded]=useState(false);
+  const [nativeFullscreen,setNativeFullscreen]=useState(false);
+  const fullscreen=pageExpanded||nativeFullscreen;
   const fullscreenRoot = useRef<HTMLElement>(null);
-  const [fullscreenError, setFullscreenError] = useState('');
+  
   const [fullscreenBusy, setFullscreenBusy] = useState(false);
   useEffect(()=>{
-    const sync=()=>setFullscreen(document.fullscreenElement===fullscreenRoot.current);
+    const sync=()=>setNativeFullscreen(document.fullscreenElement===fullscreenRoot.current);
     document.addEventListener('fullscreenchange',sync);
     return ()=>document.removeEventListener('fullscreenchange',sync);
   },[]);
   const toggleFullscreen=async()=>{
-    setFullscreenError('');setFullscreenBusy(true);
+    setFullscreenBusy(true);
     try{
-      if(document.fullscreenElement===fullscreenRoot.current)await document.exitFullscreen();
-      else if(fullscreenRoot.current?.requestFullscreen)await fullscreenRoot.current.requestFullscreen({navigationUI:'hide'});
-      else throw new Error('unsupported');
+      if(pageExpanded){setPageExpanded(false);return;}
+      if(document.fullscreenElement===fullscreenRoot.current){await document.exitFullscreen();return;}
+      try{
+        const root=fullscreenRoot.current;
+        if(!root?.requestFullscreen||document.fullscreenEnabled===false)throw new Error('unsupported');
+        await root.requestFullscreen();
+      }catch{setPageExpanded(true);}
     }catch{
-      setFullscreenError('未能进入或退出全屏。请在 Chrome 或 Edge 中直接打开游戏页面后重试。');
+      // If a native exit is rejected, leave the active mode and its exit control intact.
+      setNativeFullscreen(document.fullscreenElement===fullscreenRoot.current);
     }finally{setFullscreenBusy(false);}
   };
   const phaseFooter = useRef<HTMLDivElement>(null);
@@ -62,7 +69,7 @@ export function GameMap({ alliance, game, legalRegions = [], onChooseRegion, sel
     const previous=document.body.style.overflow;
     document.body.style.overflow='hidden';
     const escape=(event:KeyboardEvent)=>{
-      if(event.key==='Escape'&&document.fullscreenElement===fullscreenRoot.current)void document.exitFullscreen().catch(()=>{});
+      if(event.key==='Escape'){setPageExpanded(false);if(document.fullscreenElement===fullscreenRoot.current)void document.exitFullscreen().catch(()=>{});}
     };
     window.addEventListener('keydown',escape);
     return ()=>{document.body.style.overflow=previous;window.removeEventListener('keydown',escape);};
@@ -100,8 +107,8 @@ export function GameMap({ alliance, game, legalRegions = [], onChooseRegion, sel
     const measure=()=>{
       const currentStage=stage.current;
       if(!currentStage||!view.isConnected)return;
-      const root=document.getElementById('root')!,box=currentStage.getBoundingClientRect();
-      const top=rotated?root.getBoundingClientRect().right-box.right+root.scrollTop:box.top+(fullscreen?0:window.scrollY);
+      const box=currentStage.getBoundingClientRect();
+      const top=box.top+(fullscreen?0:window.scrollY);
       view.style.height=`${Math.max(fullscreen||compact?80:320,layoutSize().height-top-(phaseFooter.current?.offsetHeight??0)-(fullscreen?0:8))}px`;
       setSize({width:view.clientWidth,height:view.clientHeight});
     };
@@ -111,7 +118,7 @@ export function GameMap({ alliance, game, legalRegions = [], onChooseRegion, sel
     if(phaseFooter.current)observer.observe(phaseFooter.current);
     window.addEventListener('resize',measure);window.visualViewport?.addEventListener('resize',measure);measure();
     return ()=>{observer.disconnect();window.removeEventListener('resize',measure);window.visualViewport?.removeEventListener('resize',measure);};
-  },[fullscreen,compact,rotated]);
+  },[fullscreen,compact]);
   useEffect(()=>{setPan(p=>clampPan(p,size,zoom));},[size,zoom]);
   const context: AdjacencyContext = useMemo(() => ({alliance,landControllers:game?occupiedLand(game):{}}), [alliance,game]);
   const supplied = useMemo(() => game ? suppliedUnits(game) : new Set<string>(), [game]);
@@ -204,7 +211,7 @@ export function GameMap({ alliance, game, legalRegions = [], onChooseRegion, sel
   };
 
   return (
-    <section ref={fullscreenRoot} className={`game-map${fullscreen?' map-fullscreen':''}`} aria-label="战略地图模块">
+    <section ref={fullscreenRoot} className={`game-map${fullscreen?' map-fullscreen':''}${pageExpanded?' map-page-expanded':''}`} aria-label="战略地图模块">
       <div className="map-toolbar" ref={toolbar}>
         <div><h3>战略地图</h3><button className="map-tool encyclopedia-toggle" aria-expanded={encyclopedia} onClick={()=>setEncyclopedia(v=>!v)}>全卡图鉴</button><span className="map-subtitle">左键选择 · 右键选择并查看详情／按住拖动</span></div>
         {scoreboard}
@@ -228,9 +235,9 @@ export function GameMap({ alliance, game, legalRegions = [], onChooseRegion, sel
           <button className="map-tool" aria-pressed={viewLocked} onClick={()=>{drag.current=null;setViewLocked(v=>!v);}}>视角锁定{viewLocked?' · 已开启':''}</button>
           <button className="map-tool" onClick={()=>{setLeftAligned(true);onStandardView?.();}}>标准视图</button>
           <button className={boundaries ? 'map-tool active' : 'map-tool'} aria-pressed={boundaries} onClick={() => setBoundaries(value => !value)}>边界显示</button>
-          <button className="map-tool" disabled={fullscreenBusy||rotated} aria-pressed={fullscreen} title={rotated?"切回默认方向后可使用浏览器全屏":"屏幕全屏，按 Esc 退出"} onClick={()=>void toggleFullscreen()}>{fullscreen?'退出全屏':'全屏'}</button>
+          <button className="map-tool" disabled={fullscreenBusy} aria-pressed={fullscreen} title="优先使用浏览器全屏；不支持时在页面内展开游戏" onClick={()=>void toggleFullscreen()}>{pageExpanded?'退出展开':nativeFullscreen?'退出全屏':'全屏'}</button>
         </div>
-        {fullscreenError&&<p role="alert">{fullscreenError}</p>}
+        {pageExpanded&&<span className="fullscreen-note" role="status">已在页面内展开，浏览器工具栏由系统控制</span>}
       </div>
       <div className="map-stage" ref={stage}>
         {selected&&<button className="touch-region-detail" onClick={()=>setInfo({id:selected,left:'50%'})}>查看{REGION_BY_ID[selected]?.name}详情</button>}

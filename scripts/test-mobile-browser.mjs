@@ -73,20 +73,23 @@ try{
  for(const label of [/^牌库\(/,/^弃牌堆\(/]){await phone.locator('.map-panel-buttons button').filter({hasText:label}).click();const card=phone.locator('.catalog-dock .hand-card:visible').first();const dim=await card.boundingBox();assert(dim.width===154&&dim.height===180,'Pile size differs from hand');await phone.locator('.map-panel-buttons button').filter({hasText:label}).click();}
  assert(await phone.locator('.world-map').evaluate(el=>getComputedStyle(el).webkitTapHighlightColor)==='rgba(0, 0, 0, 0)','Tap highlight still enabled');
  await phone.setViewportSize({width:390,height:844});assert(await phone.locator('.rotate-device').count()===0,'Orientation must not block the UI');await phone.locator('.record-toggle').click();await phone.getByLabel('关闭记录侧栏').click();
- await phone.getByRole('button',{name:'切换横竖屏',exact:true}).click();await phone.waitForTimeout(200);
- assert(await phone.evaluate(()=>document.documentElement.dataset.rotated)==='true','Manual rotation not applied');
- const rotatedSize=await phone.locator('#root').evaluate(el=>({w:el.clientWidth,h:el.clientHeight}));assert(rotatedSize.w===844&&rotatedSize.h===390,'Rotated logical dimensions wrong');
- const rpoint=await phone.evaluate(()=>{const r=document.querySelector('.map-viewport').getBoundingClientRect();for(let y=r.top+30;y<r.bottom-20;y+=30)for(let x=r.left+15;x<r.right-15;x+=25){const e=document.elementFromPoint(x,y)?.closest('[data-region-id]');if(e&&e.getAttribute('aria-pressed')!=='true')return {x,y,id:e.getAttribute('data-region-id')};}return null;});
- assert(rpoint,'No rotated map target');await phone.touchscreen.tap(rpoint.x,rpoint.y);assert(await phone.locator(`[data-region-id="${rpoint.id}"]`).first().getAttribute('aria-pressed')==='true','Rotated map tap missed target');
- await phone.getByRole('button',{name:'地图工具',exact:true}).click();await phone.locator('.zoom-tools button').first().click();await phone.locator('.zoom-tools button').first().click();
- await phone.getByRole('button',{name:'地图工具',exact:true}).click();
- const rb=await phone.locator('.map-viewport').boundingBox(),rx=rb.x+rb.width/2,ry=rb.y+rb.height/2,rz=Number(await phone.locator('.map-viewport').getAttribute('data-zoom'));
- await cdp.send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[{x:rx-20,y:ry,id:1},{x:rx+20,y:ry,id:2}]});await cdp.send('Input.dispatchTouchEvent',{type:'touchMove',touchPoints:[{x:rx-45,y:ry,id:1},{x:rx+45,y:ry,id:2}]});await cdp.send('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});await phone.waitForTimeout(100);assert(Number(await phone.locator('.map-viewport').getAttribute('data-zoom'))>rz,'Rotated pinch failed');
- await phone.screenshot({path:'outputs/mobile-rotated-v180.png'});
- await phone.getByRole('button',{name:'切换横竖屏',exact:true}).click();assert(await phone.evaluate(()=>document.documentElement.dataset.rotated)==='false','Rotation could not be restored');
- await phone.setViewportSize({width:844,height:390});await phone.locator('.map-viewport').waitFor();
+ assert(await phone.getByRole('button',{name:'切换横竖屏',exact:true}).count()===0,'Manual rotation remains');
+ await phone.setViewportSize({width:844,height:390});
+ for(const behavior of ['missing','reject']){
+  await phone.evaluate(mode=>{Element.prototype.requestFullscreen=mode==='missing'?undefined:()=>Promise.reject(new Error('Not allowed'));},behavior);
+  await phone.getByRole('button',{name:'地图工具',exact:true}).click();
+  await phone.getByRole('button',{name:'全屏',exact:true}).click();
+  await phone.locator('.map-page-expanded').waitFor();
+  assert(await phone.getByRole('status').filter({hasText:'已在页面内展开'}).isVisible(),'Fallback not explained');
+  await phone.setViewportSize({width:915,height:412});await phone.waitForTimeout(100);
+  const expanded=await phone.locator('.map-page-expanded').boundingBox();assert(expanded.y===0&&Math.abs(expanded.height-412)<2,'Expanded viewport wrong');
+  await phone.getByRole('button',{name:'退出展开',exact:true}).click();
+  assert(await phone.locator('.map-page-expanded').count()===0,'Cannot exit fallback');
+  await phone.getByRole('button',{name:'地图工具',exact:true}).click();
+  await phone.setViewportSize({width:844,height:390});
+ }
  await phone.screenshot({path:'outputs/mobile-v180.png'});
- console.log('PASS: phone default sidebar, four viewport layouts, visible footer, record drawer, atlas, region tap/details, actual two-touch pinch without selecting, hand swipe, uncropped art and reorder without game mutations; chat unread/draft, portrait viewport remains interactive; manual rotation dimensions and region picking');
+ console.log('PASS: phone default sidebar, four viewport layouts, visible footer, record drawer, atlas, region tap/details, actual two-touch pinch without selecting, hand swipe, uncropped art and reorder without game mutations; chat unread/draft, portrait viewport remains interactive; fullscreen unavailable/rejected fallback, viewport resize and exit; no manual rotation');
  await mobile.close();
  assert((await page.title()).includes('1.8.0'),'Wrong version');
  assert(errors.length===0,errors.join('\n'));
