@@ -148,10 +148,10 @@ html[data-layout=compact] .card-name{font-size:14px;line-height:1.25}
 html[data-layout=compact] .card-effect{font-size:12px;line-height:1.4}
 html[data-layout=compact] .public-country-window .card-grid{grid-template-columns:repeat(auto-fill,var(--mobile-card-width));gap:6px}
 /* Paint the full landscape viewport; only controls avoid the notch. */
-html[data-layout=compact]{background:#000}
+html[data-layout=compact]{background:#eeece5}
 html[data-layout=compact] body,html[data-layout=compact] #root{width:100%;min-width:0}
 html[data-layout=compact] .game-map{width:100%;min-width:0}
-html[data-layout=compact] .map-fullscreen{padding-bottom:env(safe-area-inset-bottom,0px)}
+html[data-layout=compact] .map-fullscreen{padding-bottom:0}
 html[data-layout=compact] .map-fullscreen .map-toolbar{padding-left:max(5px,env(safe-area-inset-left));padding-right:max(5px,env(safe-area-inset-right))}
 html[data-layout=compact] .map-fullscreen .map-footer{padding-left:env(safe-area-inset-left,0px);padding-right:env(safe-area-inset-right,0px);background:#f8f6ec}
 
@@ -166,3 +166,6 @@ html[data-layout=compact] .map-toolbar:has(.map-scoreboard){display:grid;grid-te
 html[data-layout=compact] .map-scoreboard{margin-left:0;grid-column:2;grid-row:1}
 html[data-layout=compact] .compact-tools-toggle{grid-column:3;grid-row:1;justify-self:end}
 html[data-layout=compact] .map-toolbar:has(.map-scoreboard) .map-tools{grid-column:auto}
+
+/* Keep a half-button gap below controls, including the system gesture safe area. */
+html[data-layout=compact] .map-footer{padding-bottom:max(15px,env(safe-area-inset-bottom,0px));background:#f8f6ec}
