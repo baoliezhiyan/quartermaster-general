@@ -7,6 +7,7 @@
 - [根目录AI规则](../AGENTS.md)：独立目录/分支、共享规则边界、训练同步与提交要求。
 - [贡献说明](../CONTRIBUTING.md)：Issue、平衡讨论和PR流程。
 - [训练同步记录](training/SYNC-LOG.md)：课程与正式规则差异登记。
+- [客户端 1.8.2 训练同步核查](training/client-v1.8.2-training-sync-20261007.md)：最新共享规则来源、课程冻结差异及指纹兼容边界。
 
 ## 牌表及游戏规则
 
