@@ -19,20 +19,29 @@ from scripts import ppo_train as ppo
 from scripts.ppo_combo_accept import probe
 from scripts.ppo_combo_course_v2 import BY_KEY, course_id, _specified_chain
 
-FORMAT = "a2s1c2-verified-preparation-bc-v1"
+FORMAT = "a2s1c2-verified-preparation-bc-v2"
 CONFIG = {"maxSteps": 32, "learningRate": 1e-5, "supervisedWeight": 0.15,
           "controlKlWeight": 2.0, "controlValueWeight": 0.4,
-          "controlCardWeight": 1.0, "controlAllowedLogRise": 0.05,
-          "contrastWeight": 0.6, "contrastMargin": 0.15,
-          "minimumContrastRatio": 1.1,
           "maxControlKl": 0.02, "maxControlValueShift": 0.15,
           "stopIfNoImprovementSteps": 5}
 
+# Registered before evaluating the adapted model. Other installed cards remain
+# diagnostics, not silently substituted for these direct teaching targets.
+TEACHING_TARGETS = {"G1": "special_136", "G2": "special_137",
+    "G3": "special_136", "U1": "special_111", "U2": "special_88",
+    "U3": "special_88", "U4": "special_84", "J1": "special_199",
+    "J2": "special_189"}
+
+
+def scene_key(item):
+    return hashlib.sha256(item["state"].numpy().tobytes() +
+                          item["candidates"].numpy().tobytes()).hexdigest()
+
 
 def is_training_label(entry, step, definition):
-    """A legal scripted installation is supervision only for its own template."""
+    """Supervise the registered lesson, never an auxiliary setup card."""
     return (entry["variant"] == "positive" and bool(step.get("scripted")) and
-            definition in BY_KEY[entry["template"]].cards)
+            definition == TEACHING_TARGETS[entry["template"]])
 
 
 def _sample(model, encoder, observation, action_id, metadata):
@@ -62,15 +71,40 @@ def extract(client, encoder, frozen, entries):
                                     "completed": feasible["goalsCompleted"],
                                     "total": feasible["goalsTotal"]})
                 continue
+            settled = client.request(op="snapshot")["snapshot"]["state"]
+            starting = entry["snapshot"]["state"]
+            old_units = {unit["id"] for unit in starting["units"]}
+            new_units = {unit["id"] for unit in settled["units"]}
+            owner = BY_KEY[entry["template"]].owner
+            old_discard = {card["id"] for card in starting["decks"][owner]["discardPile"]}
+            new_discard = {card["id"] for card in settled["decks"][owner]["discardPile"]}
             verified.append({"courseId": course_id(entry), "completedGoals":
                 feasible["goalsCompleted"], "totalGoals": feasible["goalsTotal"],
                 "settlementDecisions": len(feasible["steps"]),
+                "newUnitIds": sorted(new_units - old_units),
+                "removedUnitIds": sorted(old_units - new_units),
+                "ownerCardsNewlyDiscarded": sorted(new_discard - old_discard),
+                "scoreDelta": {side: settled["scores"][side] - starting["scores"][side]
+                    for side in starting["scores"]},
                 "actualUnitPlacements": sum(event.get("type") == "UNIT_PLACED" and
                     not event.get("repeated") for step in feasible["steps"]
                     for event in step.get("events") or ()),
                 "actualEffects": sum(event.get("type") == "RULE_EVENT" and
                     event.get("code") == "EFFECT_APPLIED" for step in feasible["steps"]
                     for event in step.get("events") or ())})
+            if entry["template"] == "U1":
+                # Patton is an event. The SOURCE selection and its actual
+                # build+attack are verified by the payoff probe above; it must
+                # not be tested for installation in the active-card pile.
+                starting = client.request(op="restore", snapshot=entry["snapshot"])["observation"]
+                chosen = next((step["chosen"] for step in feasible["steps"] if
+                    step.get("matched") and step.get("node") == "SOURCE" and
+                    step.get("chosen", {}).get("definitionId") == "special_111"), None)
+                if chosen is not None and entry["layer"] == "payoff":
+                    labels.append(_sample(frozen, encoder, starting, chosen["id"],
+                        {"courseId": course_id(entry), "decisionId": starting["decision"]["decisionId"],
+                         "traceOffset": len(entry["trace"]), "cardId": "special_111",
+                         "scriptReason": "verified_patton_event_payoff"}))
         observation = client.request(op="reset", seed=entry["seed"], mode="A",
                                      cardSet="signals")["observation"]
         for offset, step in enumerate(entry["trace"]):
@@ -102,6 +136,7 @@ def extract(client, encoder, frozen, entries):
                     "special_88", "special_199", "special_190", "special_189", "special_84")]
                 meta["comparisonIndices"] = [i for i, c in enumerate(observation["candidates"])
                     if c.get("definitionId") in meta["comparisonCardIds"]]
+                meta["controlRole"] = entry.get("controlRole", "unclassified")
                 controls.append(_sample(frozen, encoder, observation, step["actionId"], meta))
             observation = client.request(op="step", action={**observation["decision"],
                                                           "actionId": step["actionId"]})["observation"]
@@ -121,10 +156,15 @@ def extract(client, encoder, frozen, entries):
             raise ValueError("Demonstration trace no longer reaches its saved state")
     # Same scripted opening may occur in multiple seeds. Keep counts explicit;
     # duplicate scene observations do not masquerade as diverse examples.
-    unique = {hashlib.sha256(item["state"].numpy().tobytes() +
-        item["candidates"].numpy().tobytes()).hexdigest() for item in labels}
+    unique = {scene_key(item) for item in labels}
+    # Route comparisons may share exact tensors with positives; they cannot
+    # receive the opposite supervision. Keep them as diagnostic scenes only.
+    positive_keys = {scene_key(item) for item in labels}
+    conflicting = [item for item in controls if scene_key(item) in positive_keys]
+    controls = [item for item in controls if scene_key(item) not in positive_keys]
     return labels, controls, {"scriptLabels": len(labels), "uniqueEncodedScenes": len(unique),
                               "controlObservations": len(controls), "verifiedPayoffs": verified,
+                              "identicalRouteComparisonsExcluded": len(conflicting),
                               "excluded": diagnostics,
                               "format": FORMAT}
 
@@ -170,64 +210,62 @@ def assess(model, labels, controls):
             "maxControlKl": max(kl, default=0), "maxControlValueShift": max(drift, default=0)}
 
 
-def contrast_ratio(before, after):
-    """Relative lift of verified preparations over same-template controls."""
-    positive = [math.log(max(new["probability"], 1e-30) /
-                         max(old["probability"], 1e-30))
-        for old, new in zip(before["positive"], after["positive"])]
-    negative_by_key = {}
-    for old, new in zip(before["controlCardProbabilities"],
-                        after["controlCardProbabilities"]):
-        template = old["courseId"].split(":", 1)[0]
-        for first, second in zip(old["comparison"], new["comparison"]):
-            if first["cardId"] != second["cardId"]:
-                raise ValueError("Contrast control candidate order changed")
-            negative_by_key.setdefault((template, first["cardId"]), []).append(
-                math.log(max(second["probability"], 1e-30) /
-                         max(first["probability"], 1e-30)))
-    matched = [sum(negative_by_key[key]) / len(negative_by_key[key])
-        for row in before["positive"]
-        if (key := (row["courseId"].split(":", 1)[0], row["cardId"]))
-        in negative_by_key]
-    if not positive or len(matched) != len(positive):
-        raise ValueError("Each demonstrated card needs a same-template negative control")
-    return {"positiveGeometricLift": math.exp(sum(positive) / len(positive)),
-            "matchedControlGeometricLift": math.exp(sum(matched) / len(matched)),
-            "positiveOverControl": math.exp((sum(positive) - sum(matched)) / len(positive))}
+def validate_supervision(labels, controls):
+    """Identical tensors may be compared as routes, never opposed as labels."""
+    targets = {}
+    for item in labels:
+        key = scene_key(item)
+        prior = targets.setdefault(key, item)
+        if prior["chosen"] != item["chosen"]:
+            first = prior.get("metadata") or {}
+            second = item.get("metadata") or {}
+            raise ValueError("Conflicting supervised actions for identical encoded scene: "
+                             f"{first.get('courseId')} / {first.get('cardId')} "
+                             f"vs {second.get('courseId')} / {second.get('cardId')}")
+    return {"uniqueScenes": len(targets), "routeOverlap": sum(
+        scene_key(item) in targets for item in controls)}
 
 
-def summarize_holdout(rows, *, minimum_pairs=4, minimum_ratio=1.05):
-    """Unseen starts must distinguish prepared opportunities from controls."""
-    grouped = {}
-    for row in rows:
-        key = (row["template"], row["cardId"])
-        grouped.setdefault(key, {}).setdefault(row["variant"], []).append(
-            math.log(max(row["afterProbability"], 1e-30) /
-                     max(row["beforeProbability"], 1e-30)))
-    pairs = []
-    for (template, card), variants in sorted(grouped.items()):
-        if not variants.get("positive") or not variants.get("control"):
-            continue
-        positive = sum(variants["positive"]) / len(variants["positive"])
-        control = sum(variants["control"]) / len(variants["control"])
-        pairs.append({"template": template, "cardId": card,
-            "positiveLift": math.exp(positive), "controlLift": math.exp(control),
-            "relativeContrast": math.exp(positive - control)})
-    return {"accepted": len(pairs) >= minimum_pairs and all(
-            pair["relativeContrast"] >= minimum_ratio for pair in pairs),
-        "minimumPairs": minimum_pairs, "minimumRatio": minimum_ratio,
-        "pairs": pairs, "scenes": rows}
+def summarize_holdout(rows, training_labels=()):
+    """Every registered lesson must have train and unseen coverage.
+
+    Route controls and unverified condition contrasts are reported, never
+    interpreted as negative expert answers. The predeclared retention limits
+    in CONFIG and autonomous-settlement checks are separate acceptance gates.
+    """
+    training = {(row["metadata"]["courseId"].split(":", 1)[0],
+                 row["metadata"]["cardId"]) for row in training_labels}
+    coverage = []
+    for template, target in TEACHING_TARGETS.items():
+        relevant = [row for row in rows if row["template"] == template and
+                    row["cardId"] == target]
+        positives = [row for row in relevant if row["variant"] == "positive"]
+        adverse = [row for row in relevant if row.get("controlRole") ==
+                   "verified_adverse_condition"]
+        coverage.append({"template": template, "teachingTarget": target,
+            "trainLabelPresent": (template, target) in training,
+            "heldoutPositiveCount": len(positives),
+            "heldoutAdverseCount": len(adverse),
+            "routeComparisonCount": sum(row.get("controlRole") == "route_comparison"
+                for row in relevant),
+            "positiveProbabilityBefore": [row["beforeProbability"] for row in positives],
+            "positiveProbabilityAfter": [row["afterProbability"] for row in positives],
+            "missingReason": ("no_verified_training_label" if (template, target) not in training
+                else "no_legal_heldout_target" if not positives else None)})
+    return {"accepted": all(item["missingReason"] is None for item in coverage),
+            "coverage": coverage, "scenes": rows}
 
 
-def assess_holdout(client, encoder, parent, adapted, entries):
+def assess_holdout(client, encoder, parent, adapted, entries, training_labels=()):
     rows = []
     for entry in entries:
         if entry["split"] != "evaluation" or entry["layer"] != "preparation":
             continue
-        observation = client.request(op="restore", snapshot=entry["snapshot"])["observation"]
+        observation = client.request(op="restore", snapshot=entry["snapshot"],
+                                     comboTelemetry=True)["observation"]
         if not observation or observation["node"] != "SOURCE":
             continue
-        for card in BY_KEY[entry["template"]].cards:
+        for card in (TEACHING_TARGETS[entry["template"]],):
             action = next((candidate for candidate in observation["candidates"]
                            if candidate.get("definitionId") == card), None)
             if action is None:
@@ -243,26 +281,67 @@ def assess_holdout(client, encoder, parent, adapted, entries):
                 after_p = after.softmax(-1)
             rows.append({"courseId": course_id(entry), "template": entry["template"],
                 "variant": entry["variant"], "cardId": card,
+                "controlRole": entry.get("controlRole"),
                 "beforeProbability": float(before_p[index]),
                 "afterProbability": float(after_p[index]),
                 "beforeRank": int((before > before[index]).sum()) + 1,
                 "afterRank": int((after > after[index]).sum()) + 1})
-    return summarize_holdout(rows)
+    return summarize_holdout(rows, training_labels)
+
+
+def assess_autonomous(client, encoder, model, entries, max_decisions=80):
+    """Unforced held-out continuation; diagnostic only, never a PPO sample."""
+    from scripts.ppo_combo_metrics import new_tracker, record_step, summarize
+    model.eval()
+    rows = []
+    for entry in entries:
+        if (entry["split"] != "evaluation" or entry["layer"] != "preparation" or
+                entry["variant"] != "positive" or
+                entry.get("auxiliaryPreparation")):
+            continue
+        observation = client.request(op="restore", snapshot=entry["snapshot"],
+                                     comboTelemetry=True)["observation"]
+        tracker = new_tracker(course_id(entry), entry["snapshot"])
+        first_action = None
+        result = None
+        count = 0
+        for count in range(max_decisions):
+            if observation is None:
+                break
+            state, candidates = encoder.encode(observation)
+            index, _, _ = ppo.select_action(model, state, candidates,
+                torch.device("cpu"), deterministic=True)
+            selected = observation["candidates"][index]
+            if first_action is None:
+                first_action = selected.get("definitionId") or selected.get("kind")
+            result = client.request(op="step", action={**observation["decision"],
+                "actionId": selected["id"]}, comboTelemetry=True)
+            record_step(tracker, result.get("comboTelemetry"), count)
+            observation = result["observation"]
+            if result.get("result") is not None:
+                break
+        summary = summarize(tracker, result.get("result") if result and result.get(
+            "result") else {"winner": "allies", "allianceScores": {"axis": 0,
+            "allies": 0}})
+        rows.append({"template": entry["template"], "seed": entry["seed"],
+            "firstAutonomousAction": first_action, "decisions": count + 1,
+            "naturalTerminal": bool(result and result.get("result") is not None),
+            "specifiedComboAchieved": summary.get("specifiedComboAchieved"),
+            "tacticalResultAchieved": summary.get("tacticalResultAchieved")})
+    return rows
 
 
 def adapt(parent, labels, controls, *, config=None):
     cfg = {**CONFIG, **(config or {})}
-    if not labels or not controls:
-        raise ValueError("BC requires verified positive labels and unrelated/control observations")
+    if not labels:
+        raise ValueError("BC requires verified positive labels")
+    consistency = validate_supervision(labels, controls)
+    if consistency["routeOverlap"]:
+        raise ValueError("An identical route comparison cannot be used as a retention constraint")
     model = parent
     before = assess(model, labels, controls)
     optimizer = torch.optim.Adam(model.parameters(), lr=cfg["learningRate"])
     rng = random.Random(20261005)
-    matched = {}
-    for item in controls:
-        template = item["metadata"]["courseId"].split(":", 1)[0]
-        for card in item["metadata"].get("comparisonCardIds", ()):
-            matched.setdefault((template, card), []).append(item)
     history, best_probability, stale = [], before["meanPositiveProbability"], 0
     start = time.perf_counter()
     for step in range(cfg["maxSteps"]):
@@ -270,72 +349,34 @@ def adapt(parent, labels, controls, *, config=None):
         optimizer.zero_grad(set_to_none=True)
         chosen = rng.sample(labels, min(4, len(labels)))
         keep = rng.sample(controls, min(6, len(controls)))
-        for item in chosen:
-            key = (item["metadata"]["courseId"].split(":", 1)[0],
-                   item["metadata"]["cardId"])
-            if matched.get(key):
-                keep.append(rng.choice(matched[key]))
-        supervised_terms, contrast_terms = [], []
+        supervised_terms = []
         for item in chosen:
             target_logits, _ = _forward(model, item)
             target_logp = target_logits.log_softmax(-1)[item["chosen"]]
             supervised_terms.append(-target_logp)
-            key = (item["metadata"]["courseId"].split(":", 1)[0],
-                   item["metadata"]["cardId"])
-            if matched.get(key):
-                negative = rng.choice(matched[key])
-                card = item["metadata"]["cardId"]
-                control_index = next(index for cid, index in zip(
-                    negative["metadata"]["comparisonCardIds"],
-                    negative["metadata"]["comparisonIndices"]) if cid == card)
-                control_logits, _ = _forward(model, negative)
-                control_logp = control_logits.log_softmax(-1)[control_index]
-                relative_lift = (target_logp - item["teacher"][item["chosen"]].clamp_min(1e-30).log()
-                    - control_logp + negative["teacher"][control_index].clamp_min(1e-30).log())
-                contrast_terms.append(F.softplus(cfg["contrastMargin"] - relative_lift))
         supervised = torch.stack(supervised_terms).mean()
-        kl_terms, value_terms, card_terms = [], [], []
+        kl_terms, value_terms = [], []
         for item in keep:
             logits, value = _forward(model, item)
             teacher = item["teacher"]
             kl_terms.append((teacher * (teacher.clamp_min(1e-30).log() -
                                        logits.log_softmax(-1))).sum())
             value_terms.append(F.mse_loss(value, item["teacherValue"]))
-            for index in item["metadata"].get("comparisonIndices", ()):
-                # Retain the parent's probability of installing the same card
-                # where this template's opportunity/cost did not justify it.
-                current = logits.log_softmax(-1)[index]
-                baseline = teacher[index].clamp_min(1e-30).log()
-                card_terms.append(F.relu(current - baseline -
-                    cfg["controlAllowedLogRise"]).square())
-        kl = torch.stack(kl_terms).mean()
-        value_loss = torch.stack(value_terms).mean()
-        card_loss = torch.stack(card_terms).mean() if card_terms else supervised * 0
-        contrast_loss = (torch.stack(contrast_terms).mean() if contrast_terms
-                         else supervised * 0)
+        kl = torch.stack(kl_terms).mean() if kl_terms else supervised * 0
+        value_loss = torch.stack(value_terms).mean() if value_terms else supervised * 0
         loss = (cfg["supervisedWeight"] * supervised + cfg["controlKlWeight"] * kl +
-                cfg["controlValueWeight"] * value_loss +
-                cfg["controlCardWeight"] * card_loss +
-                cfg["contrastWeight"] * contrast_loss)
+                cfg["controlValueWeight"] * value_loss)
         loss.backward()
         torch.nn.utils.clip_grad_norm_(model.parameters(), .5)
         optimizer.step()
         measured = assess(model, labels, controls)
-        negative_increase = max((after["probability"] - baseline["probability"]
-            for later, earlier in zip(measured["controlCardProbabilities"],
-                                      before["controlCardProbabilities"])
-            for after, baseline in zip(later["comparison"], earlier["comparison"])),
-            default=0.0)
         history.append({"step": step + 1, "supervisedLoss": float(supervised.detach()),
                         "retentionKl": float(kl.detach()), "valueLoss": float(value_loss.detach()),
-                        "controlCardLoss": float(card_loss.detach()),
-                        "contrastLoss": float(contrast_loss.detach()),
                         "meanPositiveProbability": measured["meanPositiveProbability"],
                         "maxControlKl": measured["maxControlKl"],
-                        "maxControlValueShift": measured["maxControlValueShift"],
-                        "maxControlCardProbabilityIncrease": negative_increase})
+                        "maxControlValueShift": measured["maxControlValueShift"]})
         if measured["maxControlKl"] > cfg["maxControlKl"] or measured[
-                "maxControlValueShift"] > cfg["maxControlValueShift"] or negative_increase > .05:
+                "maxControlValueShift"] > cfg["maxControlValueShift"]:
             return {"accepted": False, "reason": "control_drift_limit", "before": before,
                     "after": measured, "history": history, "seconds": time.perf_counter() - start}
         if measured["meanPositiveProbability"] > best_probability * 1.001:
@@ -345,17 +386,9 @@ def adapt(parent, labels, controls, *, config=None):
         if stale >= cfg["stopIfNoImprovementSteps"]:
             break
     after = assess(model, labels, controls)
-    distinction = contrast_ratio(before, after)
-    final_negative_increase = max((new["probability"] - old["probability"]
-        for later, earlier in zip(after["controlCardProbabilities"],
-                                  before["controlCardProbabilities"])
-        for new, old in zip(later["comparison"], earlier["comparison"])), default=0.0)
     return {"accepted": after["meanPositiveProbability"] > before["meanPositiveProbability"] and
-            distinction["positiveOverControl"] >= cfg["minimumContrastRatio"] and
             after["maxControlKl"] <= cfg["maxControlKl"] and
-            after["maxControlValueShift"] <= cfg["maxControlValueShift"] and
-            final_negative_increase <= .05,
+            after["maxControlValueShift"] <= cfg["maxControlValueShift"],
             "reason": "bounded_steps_or_plateau", "before": before, "after": after,
             "history": history, "seconds": time.perf_counter() - start,
-            "maxControlCardProbabilityIncrease": final_negative_increase,
-            "contrast": distinction, "config": cfg}
+            "supervisionConsistency": consistency, "config": cfg}

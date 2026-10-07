@@ -17,6 +17,7 @@ from scripts.ppo_combo_accept import probe
 from scripts.ppo_combo_metrics import new_tracker, record_step, summarize
 from scripts.ppo_combo_v2_diagnose import compare
 from scripts.ppo_network_factory import A2S1_ADAPTER, make_network
+from scripts.ppo_combo_v2_prepare import reviewed_build_migration
 
 
 PARENT = ppo.ROOT / "PPO训练" / ".state" / "A2S1C1" / "latest.pt"
@@ -42,26 +43,23 @@ class ComboV2Tests(unittest.TestCase):
         self.assertEqual((saved["experimentId"], saved["update"],
                           saved["completedEpisodes"]), ("A2S1C1", 30, 1200))
         self.assertEqual(saved["networkArchitecture"], A2S1_ADAPTER)
-        self.assertEqual(saved["buildFingerprint"], self.client.fingerprint)
+        migration = reviewed_build_migration(PARENT, saved, self.client)
+        self.assertEqual(migration["currentBuildFingerprint"], self.client.fingerprint)
         self.assertEqual(saved["rewardConfig"], ppo.reward_config("signals"))
         self.assertEqual(self.weights, ppo.model_weights_sha256(self.model))
 
     def test_status_target_and_resource_counterfactuals_reach_actual_tensor(self):
-        pool = ppo.ROOT / "PPO训练" / ".state" / "A2S1C1" / "course-pool-v1.json.gz"
-        report = compare(PARENT, pool)
-        scenes = {row["scene"]: row for row in report["comparisons"]}
-        self.assertEqual(scenes["B_installed_target_payable"]
-                         ["changedStateCoordinatesVsInstalled"], 0)
-        for name in ("A_not_installed", "C_installed_no_target",
-                     "D_installed_fee_scarce"):
-            self.assertGreater(scenes[name]["changedStateCoordinatesVsInstalled"], 0)
-            self.assertTrue(scenes[name]["sameCandidateEncodingVsInstalled"])
-        for mechanism in ("build_then_attack", "attack_then_build", "build_then_build"):
-            conditions = {row["scene"]: row for row in report["mechanisms"][mechanism]}
-            self.assertEqual(set(conditions), {"A_not_installed", "B_installed_target_payable",
-                                               "C_installed_no_target", "D_installed_fee_scarce"})
-            self.assertTrue(all(conditions[key]["changedStateCoordinatesVsInstalled"] > 0
-                for key in conditions if key != "B_installed_target_payable"))
+        pool = (ppo.ROOT / "PPO训练" / ".state" / "A2S1C2" /
+            "course-pool-v2-failed-audit.json.gz")
+        if not pool.exists():
+            self.skipTest("Historical failed C2 pool is stored outside Git")
+        # 1.8.2 changed the build identity. Historical C1 snapshots must not
+        # be restored into the current arena, even though the reviewed model
+        # weights and vector dimensions remain migratable.
+        with gzip.open(pool, "rt", encoding="utf-8") as stream:
+            old = json.load(stream)["entries"][0]
+        with self.assertRaisesRegex(RuntimeError, "Incompatible PPO snapshot"):
+            self.client.request(op="restore", snapshot=old["snapshot"])
 
     def test_nine_template_schedule_and_training_only_starts(self):
         entries = {}
@@ -104,6 +102,10 @@ class ComboV2Tests(unittest.TestCase):
             torch.device("cpu"), second.BY_KEY["U4"], 2026100500, "positive")
         self.assertNotIn("failure", result)
         self.assertEqual(result["preparation"]["round"], 1)
+        observation = self.client.request(op="restore", snapshot=result[
+            "preparation"]["snapshot"])["observation"]
+        self.assertEqual(second.teaching_target(second.BY_KEY["U4"], observation,
+            result["preparation"]["snapshot"]["state"])[0], "special_84")
         reasons = [item["scriptReason"] for item in result["trace"]]
         self.assertIn("u4_install_or_direct", reasons)
         entry = {**result, "layer": "payoff", "courseId": "U4:positive:payoff:2026100500"}
@@ -119,6 +121,28 @@ class ComboV2Tests(unittest.TestCase):
             "allianceScores": {"axis": 0, "allies": 0}})
         self.assertTrue(summary["specifiedComboAchieved"])
 
+    def test_u4_heldout_route_uses_legal_visible_prelude(self):
+        generator_path = ppo.ROOT / "PPO训练" / ".state" / "A2S1C1" / "initial.pt"
+        generator, _ = first.load_parent(generator_path, self.encoder, torch.device("cpu"))
+        training = second.generate_one(self.client, self.encoder, generator,
+            torch.device("cpu"), second.BY_KEY["U4"], 2026108400, "positive")
+        heldout = second.generate_one(self.client, self.encoder, generator,
+            torch.device("cpu"), second.BY_KEY["U4"], 2026108440, "positive",
+            heldout=True)
+        self.assertNotIn("failure", training)
+        self.assertNotIn("failure", heldout)
+        self.assertIn("heldout_u4_legal_axis_deployment",
+            [step["scriptReason"] for step in heldout["trace"]])
+        starts = []
+        for result in (training, heldout):
+            observation = self.client.request(op="restore", snapshot=result[
+                "preparation"]["snapshot"])["observation"]
+            starts.append(second.encoded_scene_key(self.encoder, observation))
+        self.assertNotEqual(starts[0], starts[1])
+        first.replay(self.client, {**heldout, "layer": "payoff"})
+        resolved = probe(self.client, {**heldout, "layer": "payoff"}, combo_telemetry=True)
+        self.assertEqual(resolved["goalsCompleted"], resolved["goalsTotal"])
+
     def test_german_forced_generator_opening_is_legal_and_outside_ppo(self):
         result = second.generate_one(self.client, self.encoder, self.model,
             torch.device("cpu"), second.BY_KEY["G1"], 2026100504, "positive")
@@ -129,7 +153,7 @@ class ComboV2Tests(unittest.TestCase):
         self.assertGreaterEqual(result["preparation"]["round"], 2)
         first.replay(self.client, {**result, "layer": "payoff"})
 
-    def test_g3_and_patton_reachable_with_frozen_preparation_policy(self):
+    def test_g3_near_preparation_and_patton_event_reachable(self):
         generator_path = ppo.ROOT / "PPO训练" / ".state" / "A2S1C1" / "initial.pt"
         generator, _ = first.load_parent(generator_path, self.encoder, torch.device("cpu"))
         for key, seed in (("G3", 2026102406), ("U1", 2026103400)):
@@ -146,16 +170,19 @@ class ComboV2Tests(unittest.TestCase):
                 if key == "G3":
                     self.assertIn("white_plan", [item["scriptReason"] for item in result["trace"]])
                     self.assertGreaterEqual(result["preparation"]["round"], 2)
+                    self.assertLessEqual(result["snapshot"]["state"]["round"] -
+                        result["preparation"]["round"], 2)
 
-    def test_pacific_response_route_keeps_seed_randomness_and_real_costs(self):
+    def test_pacific_response_route_uses_paid_legal_near_preparation(self):
         generator_path = ppo.ROOT / "PPO训练" / ".state" / "A2S1C1" / "initial.pt"
         generator, _ = first.load_parent(generator_path, self.encoder, torch.device("cpu"))
         result = second.generate_one(self.client, self.encoder, generator,
-            torch.device("cpu"), second.BY_KEY["U2"], 2026104406, "positive",
+            torch.device("cpu"), second.BY_KEY["U2"], 2026104430, "positive",
             rng_salt=0xC0B0)
         self.assertNotIn("failure", result)
+        self.assertIn(result["preparation"]["target"], result["preparation"]["missing"])
         entry = {**result, "layer": "payoff",
-            "courseId": "U2:positive:payoff:2026104406"}
+            "courseId": "U2:positive:payoff:2026104430"}
         first.replay(self.client, entry)
         check = probe(self.client, entry, combo_telemetry=True)
         self.assertEqual(check["goalsCompleted"], check["goalsTotal"])
@@ -164,6 +191,12 @@ class ComboV2Tests(unittest.TestCase):
     def test_bc_uses_only_script_labels_and_does_not_edit_parent(self):
         self.assertFalse(bc.is_training_label({"template": "G3", "variant": "positive"},
             {"scripted": True}, "special_84"))
+        self.assertFalse(bc.is_training_label({"template": "U2", "variant": "positive"},
+            {"scripted": True}, "special_78"))
+        self.assertFalse(bc.is_training_label({"template": "G2", "variant": "positive"},
+            {"scripted": True}, "special_136"))
+        self.assertTrue(bc.is_training_label({"template": "U2", "variant": "positive"},
+            {"scripted": True}, "special_88"))
         self.assertTrue(bc.is_training_label({"template": "U4", "variant": "positive"},
             {"scripted": True}, "special_84"))
         self.assertFalse(bc.is_training_label({"template": "U4", "variant": "control"},
@@ -183,7 +216,8 @@ class ComboV2Tests(unittest.TestCase):
         labels, controls, evidence = bc.extract(self.client, self.encoder, self.model, entries)
         self.assertGreaterEqual(len(labels), 1)
         self.assertTrue(all(item["metadata"]["cardId"] == "special_84" for item in labels))
-        self.assertGreaterEqual(len(controls), 1)
+        self.assertGreaterEqual(evidence["identicalRouteComparisonsExcluded"], 1)
+        self.assertEqual(bc.validate_supervision(labels, controls)["routeOverlap"], 0)
         with torch.no_grad():
             for item, logits, value in bc._forward_many(self.model, labels + controls,
                                                          batch_size=3):
@@ -196,17 +230,59 @@ class ComboV2Tests(unittest.TestCase):
         self.assertEqual(len(outcome["history"]), 2)
         self.assertEqual(ppo.model_weights_sha256(self.model), before)
 
-    def test_heldout_gate_rejects_blind_installation_lift(self):
+    def test_heldout_gate_requires_each_registered_lesson(self):
         rows = []
-        for template, positive, control in (("G1", 1.2, 1.0),
-                ("J1", 1.2, 1.0), ("U3", 1.2, 1.0), ("U4", 1.2, 1.2)):
-            for variant, factor in (("positive", positive), ("control", control)):
-                rows.append({"template": template, "cardId": "special_84",
-                    "variant": variant, "beforeProbability": .01,
-                    "afterProbability": .01 * factor})
+        for template, card in bc.TEACHING_TARGETS.items():
+            rows.append({"template": template, "cardId": card,
+                "variant": "positive", "beforeProbability": .01,
+                "afterProbability": .011})
         self.assertFalse(bc.summarize_holdout(rows)["accepted"])
-        rows[-1]["afterProbability"] = .01
-        self.assertTrue(bc.summarize_holdout(rows)["accepted"])
+        labels = [{"metadata": {"courseId": f"{template}:positive:payoff:1",
+            "cardId": card}} for template, card in bc.TEACHING_TARGETS.items()]
+        self.assertTrue(bc.summarize_holdout(rows, labels)["accepted"])
+        self.assertFalse(bc.summarize_holdout(rows[:-1], labels)["accepted"])
+
+    def test_identical_encoded_scenes_cannot_have_opposite_labels(self):
+        zero = torch.zeros(3)
+        candidate = torch.zeros((2, 4))
+        a = {"state": zero, "candidates": candidate, "chosen": 0}
+        b = {"state": zero.clone(), "candidates": candidate.clone(), "chosen": 1}
+        with self.assertRaisesRegex(ValueError, "Conflicting supervised"):
+            bc.validate_supervision([a, b], [])
+        self.assertEqual(bc.validate_supervision([a], [b])["routeOverlap"], 1)
+
+    def test_preparation_stops_before_target_installation(self):
+        generator_path = ppo.ROOT / "PPO训练" / ".state" / "A2S1C1" / "initial.pt"
+        generator, _ = first.load_parent(generator_path, self.encoder, torch.device("cpu"))
+        for key, seed in (("G1", 2026100400), ("G3", 2026102404),
+                          ("U2", 2026104430), ("U3", 2026105401)):
+            with self.subTest(key=key):
+                result = second.generate_one(self.client, self.encoder, generator,
+                    torch.device("cpu"), second.BY_KEY[key], seed, "positive",
+                    rng_salt=0xC0B0 if key == "U2" else 0xC2C2)
+                self.assertNotIn("failure", result)
+                prep = result["preparation"]
+                self.assertTrue(prep["target"])
+                self.assertIn(prep["target"], prep["missing"])
+                entry = {**result, "snapshot": prep["snapshot"], "layer": "preparation",
+                    "preparationTarget": prep["target"],
+                    "preparationCandidateId": prep["candidateId"],
+                    "preparationMissing": prep["missing"]}
+                second.validate_preparation(self.client, entry)
+
+    def test_patton_event_yields_verified_direct_label(self):
+        generator_path = ppo.ROOT / "PPO训练" / ".state" / "A2S1C1" / "initial.pt"
+        generator, _ = first.load_parent(generator_path, self.encoder, torch.device("cpu"))
+        result = second.generate_one(self.client, self.encoder, generator,
+            torch.device("cpu"), second.BY_KEY["U1"], 2026103400, "positive")
+        self.assertNotIn("failure", result)
+        entry = {**result, "template": "U1", "variant": "positive",
+            "split": "train", "layer": "payoff",
+            "courseId": "U1:positive:payoff:2026103400"}
+        labels, _, evidence = bc.extract(self.client, self.encoder, self.model, [entry])
+        self.assertTrue(any(item["metadata"]["cardId"] == "special_111" for item in labels))
+        self.assertEqual(evidence["verifiedPayoffs"][0]["completedGoals"],
+                         evidence["verifiedPayoffs"][0]["totalGoals"])
 
 
 if __name__ == "__main__":

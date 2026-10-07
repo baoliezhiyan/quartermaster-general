@@ -23,7 +23,24 @@ from scripts.ppo_network_factory import A2S1_ADAPTER, make_network
 ROOT = ppo.ROOT / "PPO训练" / ".state" / "A2S1C2"
 PARENT = ppo.ROOT / "PPO训练" / ".state" / "A2S1C1" / "latest.pt"
 GENERATOR = ppo.ROOT / "PPO训练" / ".state" / "A2S1C1" / "initial.pt"
-POOL = ROOT / "course-pool-v2.json.gz"
+POOL = ROOT / "course-pool-v8.json.gz"
+REVIEWED_PARENT_SHA256 = "fc759177a2a0bdb3ad02196831c6662f3c9da7704b277d63067d64ca392c0b38"
+REVIEWED_PARENT_BUILD = "3a1ad8fd30fc54ceeace54302232d13d2e83a9a64bcedcb83a11a663db4654cd"
+REVIEWED_CURRENT_BUILD = "2bbac3d781b65eb6e29584fc037b20e476ef7167f23b7f07cd35c7da37c3c23b"
+
+
+def reviewed_build_migration(parent_path, saved, client):
+    """One exact C1->1.8.2 migration, backed by fixed-seed arena differential."""
+    if (sha(parent_path) != REVIEWED_PARENT_SHA256 or
+            saved.get("buildFingerprint") != REVIEWED_PARENT_BUILD or
+            client.fingerprint != REVIEWED_CURRENT_BUILD):
+        raise ValueError("Unreviewed C1-to-current build migration")
+    return {"parentCheckpointSha256": REVIEWED_PARENT_SHA256,
+        "parentBuildFingerprint": REVIEWED_PARENT_BUILD,
+        "currentBuildFingerprint": REVIEWED_CURRENT_BUILD,
+        "differentialSeeds": [2026100500, 2026100504, 2026102406, 2026103400,
+                              2026104406],
+        "differentialDecisionCounts": [138, 58, 101, 148, 197]}
 
 
 def sha(path: Path) -> str:
@@ -32,6 +49,7 @@ def sha(path: Path) -> str:
 
 def verify_parent(path: Path, client, encoder):
     saved = torch.load(path, map_location="cpu", weights_only=False)
+    migration = reviewed_build_migration(path, saved, client)
     report = ppo.ROOT / "PPO训练" / ".state" / "A2S1C1" / "training-report.json"
     if (saved.get("experimentId") != "A2S1C1" or saved.get("update") != 30 or
             saved.get("completedEpisodes") != 1200 or
@@ -40,7 +58,6 @@ def verify_parent(path: Path, client, encoder):
             saved.get("optimizerConfig", {}).get("entropy") != .01 or
             saved.get("policyVersion") != 30 or
             saved.get("rewardConfig") != ppo.reward_config("signals") or
-            saved.get("buildFingerprint") != client.fingerprint or
             saved.get("network") != {"stateDim": encoder.state_dim,
                                      "candidateDim": encoder.candidate_dim}):
         raise ValueError("A2S1C1 parent is not the completed update-30 compatible model")
@@ -52,7 +69,7 @@ def verify_parent(path: Path, client, encoder):
     exported = torch.load(exported_path, map_location="cpu", weights_only=False)
     if (exported.get("experimentId") != "A2S1C1" or exported.get("round") != 3 or
         exported.get("policyVersion") != 30 or
-        exported.get("buildFingerprint") != client.fingerprint or
+        exported.get("buildFingerprint") != saved["buildFingerprint"] or
         any(name not in exported["modelState"] or
             not torch.equal(tensor, exported["modelState"][name])
             for name, tensor in saved["modelState"].items())):
@@ -82,10 +99,11 @@ def prepare(parent: Path = PARENT, pool: Path = POOL, state: Path = ROOT,
     try:
         encoder = ppo.Encoder(client.schema)
         source, model = verify_parent(parent, client, encoder)
+        migration = reviewed_build_migration(parent, source, client)
         parent_hash, parent_weight = sha(parent), ppo.model_weights_sha256(model)
         frozen = torch.load(GENERATOR, map_location="cpu", weights_only=False)
         if (frozen.get("experimentId") != "A2S1C1" or frozen.get("sourceExperimentId") != "A2S1" or
-                frozen.get("sourceUpdate") != 20 or frozen.get("buildFingerprint") != client.fingerprint or
+                frozen.get("sourceUpdate") != 20 or frozen.get("buildFingerprint") != source["buildFingerprint"] or
                 frozen.get("network") != source["network"] or
                 frozen.get("networkArchitecture") != A2S1_ADAPTER):
             raise ValueError("Frozen preparation policy is not the reviewed A2S1 update-20 model")
@@ -102,26 +120,66 @@ def prepare(parent: Path = PARENT, pool: Path = POOL, state: Path = ROOT,
                   for e in data["entries"]}
         if not required <= actual:
             raise ValueError(f"C2 pool incomplete: {sorted(required - actual)}")
+        preparation_coverage = []
+        scene_splits = {}
+        positive_scene_splits = {}
+        for entry in data["entries"]:
+            if entry["layer"] != "preparation":
+                continue
+            observation = course.validate_preparation(client, entry)
+            key = course.encoded_scene_key(encoder, observation)
+            scene_splits.setdefault(key, set()).add(entry["split"])
+            if entry["variant"] == "positive":
+                positive_scene_splits.setdefault(key, set()).add(entry["split"])
+            preparation_coverage.append({"courseId": course.course_id(entry),
+                "target": entry["preparationTarget"], "missing": entry["preparationMissing"],
+                "decisionsToPayoff": entry["distanceDecisionsToPayoff"],
+                "roundsToPayoff": entry["distanceRoundsToPayoff"],
+                "controlRole": entry.get("controlRole"), "encodedSceneSha256": key})
+        cross_split = sum(len(splits) > 1 for splits in scene_splits.values())
+        positive_cross_split = sum(len(splits) > 1 for splits in
+                                   positive_scene_splits.values())
         labels, controls, evidence = bc.extract(client, encoder, model, data["entries"])
+        label_targets = {(item["metadata"]["courseId"].split(":", 1)[0],
+                          item["metadata"]["cardId"]) for item in labels}
+        missing_lessons = {key: card for key, card in bc.TEACHING_TARGETS.items()
+                           if (key, card) not in label_targets}
         if dry_run:
             return {"parentFileSha256": parent_hash, "parentWeightsSha256": parent_weight,
                     "poolFileSha256": sha(pool), "demonstrations": evidence,
-                    "configuration": bc.CONFIG}
-        if not labels or not controls:
-            raise ValueError("Insufficient verified positive and contrasting observations")
+                "configuration": bc.CONFIG, "explicitBuildMigration": migration,
+                "preparationCoverage": preparation_coverage,
+                "crossSplitIdenticalEncodedScenes": cross_split,
+                "positiveCrossSplitIdenticalEncodedScenes": positive_cross_split,
+                "missingDirectTeachingTargets": missing_lessons}
+        if missing_lessons or not labels or not controls:
+            raise ValueError(f"Missing verified lessons or independent retention scenes: "
+                             f"targets={missing_lessons}, controls={len(controls)}")
         baseline = copy.deepcopy(model.state_dict())
         result = bc.adapt(model, labels, controls)
         original = make_network(A2S1_ADAPTER, encoder)
         original.load_state_dict(baseline, strict=True)
-        holdout = bc.assess_holdout(client, encoder, original, model, data["entries"])
+        holdout = bc.assess_holdout(client, encoder, original, model, data["entries"], labels)
+        autonomous = bc.assess_autonomous(client, encoder, model, data["entries"])
         if not holdout["accepted"]:
             result["accepted"] = False
-            result["reason"] = "heldout_preparation_does_not_discriminate"
+            result["reason"] = "nine_teaching_targets_not_covered"
+        if positive_cross_split:
+            result["accepted"] = False
+            result["reason"] = "heldout_duplicates_training_encoding"
+        if {item["template"] for item in autonomous} != set(bc.TEACHING_TARGETS):
+            result["accepted"] = False
+            result["reason"] = "autonomous_evaluation_missing_template"
         audit = {"format": bc.FORMAT, "experimentId": "A2S1C2",
+                 "explicitBuildMigration": migration,
                  "parentCheckpointSha256": parent_hash,
                  "parentWeightsSha256": parent_weight,
                  "poolFileSha256": sha(pool), "demonstrations": evidence,
-                 "adaptation": result, "heldout": holdout}
+                 "adaptation": result, "heldout": holdout,
+                 "autonomousHoldout": autonomous,
+                 "preparationCoverage": preparation_coverage,
+                 "crossSplitIdenticalEncodedScenes": cross_split}
+        audit["positiveCrossSplitIdenticalEncodedScenes"] = positive_cross_split
         if not result["accepted"]:
             failures = state / "failed-demonstrations"
             failures.mkdir(parents=True, exist_ok=True)
@@ -149,6 +207,7 @@ def prepare(parent: Path = PARENT, pool: Path = POOL, state: Path = ROOT,
             "experimentId": "A2S1C2", "networkArchitecture": A2S1_ADAPTER,
             "network": source["network"], "encoderVersion": ppo.A2S1_ENCODER_VERSION,
             "buildFingerprint": client.fingerprint,
+            "explicitBuildMigration": migration,
             "sourceCheckpointSha256": parent_hash,
             "sourceExperimentId": "A2S1C1", "sourceUpdate": 30,
             "sourceCompletedEpisodes": 1200,

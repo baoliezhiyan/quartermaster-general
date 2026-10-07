@@ -20,7 +20,7 @@ import torch
 from scripts import ppo_train as ppo
 from scripts import ppo_combo_course as first
 
-VERSION = "a2s1-reachable-combos-v2-near-opportunity"
+VERSION = "a2s1-reachable-combos-v8-heldout-scene-and-control"
 MIX = {"normal": 28, "course": 12, "payoff": 8, "preparation": 4,
        "rotation": "nine-templates-deterministic-v2"}
 TEMPLATES = (
@@ -76,6 +76,24 @@ def course_id(entry: dict) -> str:
         ("template", "variant", "layer"))
 
 
+def teaching_target(template, observation, state):
+    """Return a legal lesson which has not already been installed or concealed."""
+    missing = tuple(card for card in template.cards if template.key == "U1" or
+                    not first._installed(state, template.owner, card))
+    available = tuple(card for card in missing if first._source(observation, card))
+    target = available[0] if len(missing) == 1 and available else (
+        available[-1] if available else None)
+    return target, missing
+
+
+def classify_control(template, variant):
+    if variant == "positive":
+        return "verified_positive"
+    # A scripted alternative route never proves that installing a permanent
+    # state would be harmful. It is a route comparison, not a negative label.
+    return "route_comparison" if template.key == "U4" else "condition_contrast_unverified"
+
+
 def _state_signature(state: dict) -> str:
     """Strategic diversity, independent of card order and unit IDs."""
     payload = (state["round"], state["activeSeat"],
@@ -104,23 +122,20 @@ def _near(template, observation, state, variant):
             key == "G2" or has(state, "soviet_union", "army", "ukraine")
             or variant == "control")
     if key == "G3":
-        # The first-round White Plan + Arden opening can leave a German army
-        # in Western Europe. Allied armies are deliberately prepared only
-        # after both German statuses install, so waiting for an allied army
-        # here would make the preparation script cyclic. The real British and
-        # American sea approach is the preceding opportunity instead.
-        return has(state, "united_kingdom", "navy", "sea_north_sea") and (
-            variant == "control" or has(state, "united_states", "navy", "sea_north_atlantic"))
+        if not first._installed(state, "germany", "special_134"):
+            return has(state, "united_kingdom", "navy", "sea_north_sea") and (
+                variant == "control" or has(state, "united_states", "navy", "sea_north_atlantic"))
+        return (has(state, "united_kingdom", "army", "western_europe") and
+            (variant == "control" or has(state, "united_states", "army", "western_europe")))
     if key in ("U1", "U3"):
         return has(state, "united_states", "navy", "sea_north_atlantic") and (
             has(state, "germany", "army", "western_europe") or
             has(state, "united_states", "navy", "sea_north_sea"))
     if key == "U2":
-        # Covering the Pacific route starts once Japan has a real sea foothold.
-        # Waiting until its army reaches Hawaii can be too late: American
-        # response/status preparation itself changes the intervening game.
-        return (has(state, "japan", "navy", "sea_east_china") or
-                has(state, "japan", "navy", "sea_north_pacific"))
+        return (has(state, "japan", "navy", "sea_east_china") if not first._installed(
+            state, "united_states", "special_78") else
+            (has(state, "japan", "navy", "sea_north_pacific") if variant == "control"
+             else has(state, "japan", "army", "hawaii")))
     if key == "J1":
         return (has(state, "china", "army", "eastern_china") and
                 (has(state, "japan", "navy", "sea_east_china") or
@@ -162,9 +177,27 @@ def _ready(template, observation, state, variant):
     return first.ready(template, observation, state, variant)
 
 
-def _choose_model(model, encoder, device, rng, observation):
+def _choose_model(model, encoder, device, rng, observation, excluded=()):
     state, candidates = encoder.encode(observation)
-    index, _, _ = ppo.select_action(model, state, candidates, device, rng=rng)
+    if excluded:
+        with torch.inference_mode():
+            logits, _ = model(*ppo.batch_tensors([{"state": state,
+                "candidates": candidates}], device))
+            probabilities = torch.softmax(logits[0, :len(candidates)], -1).cpu().tolist()
+        allowed = [i for i, action in enumerate(observation["candidates"])
+                   if action.get("definitionId") not in excluded]
+        if not allowed:
+            raise ValueError("No legal non-target preparation action remains")
+        total = sum(probabilities[i] for i in allowed)
+        draw = rng.random() * total
+        index = allowed[-1]
+        for i in allowed:
+            draw -= probabilities[i]
+            if draw < 0:
+                index = i
+                break
+    else:
+        index, _, _ = ppo.select_action(model, state, candidates, device, rng=rng)
     return observation["candidates"][index]
 
 
@@ -181,7 +214,7 @@ def _specified_chain(entry, feasible):
 
 
 def generate_one(client, encoder, model, device, template, seed, variant="positive",
-                 rng_salt=0xC2C2):
+                 rng_salt=0xC2C2, heldout=False):
     started = time.perf_counter()
     observation = client.request(op="reset", seed=seed, mode="A", cardSet="signals")["observation"]
     rng = random.Random((seed << 32) ^ rng_salt)
@@ -197,12 +230,16 @@ def generate_one(client, encoder, model, device, template, seed, variant="positi
         if snapshot:
             ready = _ready(template, observation, state, variant)
             if ready and (template.owner != "germany" or observation["round"] >= 2):
-                nearby = [item for item in near_snapshots if
-                          len(trace) - item["traceLength"] <= (100 if template.key == "U4" else 35)
+                nearby = [item for item in near_snapshots if item["target"] and
+                          (template.key == "U1" or item["missing"]) and
+                          len(trace) - item["traceLength"] <= 100
                           and (template.key == "U4" or observation["round"] - item["round"] <= 2)]
                 if not nearby:
                     return {"template": template.key, "variant": variant, "seed": seed,
                             "failure": "no_near_preparation", "decisions": len(trace),
+                            "nearDiagnostics": [{"traceLength": item["traceLength"],
+                                "round": item["round"], "target": item["target"],
+                                "missing": item["missing"]} for item in near_snapshots],
                             "trace": trace}
                 preparation = nearby[-1]
                 return {"template": template.key, "variant": variant,
@@ -210,6 +247,15 @@ def generate_one(client, encoder, model, device, template, seed, variant="positi
                     "preparation": preparation,
                     "generatedSeconds": time.perf_counter() - started}
         planned, candidate = None, None
+        if (heldout and template.key == "U4" and observation["round"] == 1 and
+                observation["activeSeat"] == "germany" and
+                observation["node"] == "SOURCE"):
+            # A real German first-turn placement changes the held-out board
+            # encoding. It is a legal scripted prelude, not a synthetic state
+            # mutation or a negative label for the shipyard.
+            candidate = first._source(observation, "build_army", "eastern_europe")
+            if candidate:
+                planned = "heldout_u4_legal_axis_deployment"
         if (template.owner == "germany" and observation["round"] == 1 and
                 observation["activeSeat"] == "germany"):
             if observation["node"] == "SOURCE" and not white_selected:
@@ -235,9 +281,11 @@ def generate_one(client, encoder, model, device, template, seed, variant="positi
             return {"template": template.key, "variant": variant, "seed": seed,
                     "failure": "white_arden_not_completed", "decisions": len(trace)}
         if candidate is None and snapshot and _near(template, observation, state, variant):
+            target, missing = teaching_target(template, observation, state)
             near_snapshots.append({"snapshot": snapshot, "traceLength": len(trace),
-                "round": observation["round"], "missing": [card for card in template.cards
-                    if not first._installed(state, template.owner, card)]})
+                "round": observation["round"], "missing": list(missing),
+                "target": target, "candidateId": first._source(observation, target)["id"]
+                if target else None})
         if candidate is None and template.key == "U4" and observation["activeSeat"] == "united_states":
             if observation["round"] == 1 and observation["node"] == "SOURCE":
                 candidate = (first._source(observation, "special_84") if variant == "positive"
@@ -255,6 +303,24 @@ def generate_one(client, encoder, model, device, template, seed, variant="positi
                     choice.get("action") == "build_navy" and choice.get("regionId") == "sea_north_sea"
                     for choice in item.get("choices") or ())), None)
                 planned = "paid_shipyard_north_sea" if candidate else None
+        if (candidate is None and template.key == "G3" and
+                observation["activeSeat"] == "united_kingdom" and
+                observation["node"] == "SOURCE" and
+                not first._has(state, "united_kingdom", "army", "western_europe")):
+            candidate = first._source(observation, "build_army", "western_europe")
+            if candidate:
+                planned = next(i for i, step in enumerate(template.steps) if
+                    step.seat == "united_kingdom" and step.card == "build_army" and
+                    step.region == "western_europe")
+        if (candidate is None and template.key == "G3" and
+                observation["activeSeat"] == "germany" and
+                observation["node"] == "SOURCE" and observation["round"] >= 2 and
+                not first._installed(state, "germany", "special_134") and
+                first._has(state, "united_kingdom", "navy", "sea_north_sea")):
+            candidate = first._source(observation, "special_134")
+            if candidate:
+                planned = next(i for i, step in enumerate(template.steps) if
+                    step.seat == "germany" and step.card == "special_134")
         if candidate is None and snapshot and template.key != "U4" and (
                 observation["node"] == "SOURCE" or template.key == "J2" and
                 observation.get("choiceKind") == "TRIGGER"):
@@ -264,11 +330,12 @@ def generate_one(client, encoder, model, device, template, seed, variant="positi
                 if (candidate is not None and isinstance(number, int) and number >= 0 and
                         candidate.get("definitionId") in template.cards and
                         not _near(template, observation, state, variant)):
-                    # Keep the installation decision near a real opportunity.
-                    # A legal pass advances the real engine and pays its normal cost.
-                    candidate = next((item for item in observation["candidates"] if
-                                      item["kind"] == "pass"), None)
-                    planned = "wait_for_opportunity" if candidate else None
+                    # Defer this status without repeatedly passing away the
+                    # whole country's turn. Let the frozen policy choose a
+                    # different real action while preparation remains distant.
+                    candidate = _choose_model(model, encoder, device, rng,
+                        observation, excluded=template.cards)
+                    planned = "frozen_non_target_while_waiting"
         if candidate is None:
             candidate = _choose_model(model, encoder, device, rng, observation)
         response = client.request(op="step", action={**observation["decision"],
@@ -299,7 +366,7 @@ def pool_identity(client, parent_checkpoint_sha, model_sha):
         "parentCheckpointSha256": parent_checkpoint_sha,
         "generatorWeightsSha256": model_sha, "resourceMode": "A",
         "rngConfig": {"defaultSalt": 0xC2C2, "U2Salt": 0xC0B0},
-        "preparationPolicy": "near-opportunity-legal-trace-v2"}
+        "preparationPolicy": "legal-uncommitted-target-heldout-prelude-v8"}
     payload["identitySha256"] = hashlib.sha256(json.dumps(payload, sort_keys=True).encode()).hexdigest()
     return payload
 
@@ -311,7 +378,35 @@ def read_pool(path, expected_identity):
         raise ValueError("A2S1C2 pool identity differs")
     if not payload.get("complete"):
         raise ValueError("A2S1C2 pool is still partial; all starts are required")
+    for entry in payload["entries"]:
+        if entry.get("layer") == "preparation":
+            if not entry.get("preparationTarget") or not entry.get("preparationCandidateId"):
+                raise ValueError(f"Preparation lacks a legal lesson: {course_id(entry)}")
+            if entry["template"] != "U1" and entry["preparationTarget"] not in entry[
+                    "preparationMissing"]:
+                raise ValueError(f"Preparation target already installed: {course_id(entry)}")
     return payload
+
+
+def encoded_scene_key(encoder, observation):
+    state, candidates = encoder.encode(observation)
+    return hashlib.sha256(state.numpy().tobytes() + candidates.numpy().tobytes()).hexdigest()
+
+
+def validate_preparation(client, entry):
+    """Validate the actual takeover decision, not a stored metadata claim."""
+    observation = client.request(op="restore", snapshot=entry["snapshot"])["observation"]
+    if observation is None or observation["node"] != "SOURCE":
+        raise ValueError(f"Preparation is not a source decision: {course_id(entry)}")
+    template = BY_KEY[entry["template"]]
+    target, missing = teaching_target(template, observation, entry["snapshot"]["state"])
+    if (target != entry["preparationTarget"] or
+            set(missing) != set(entry["preparationMissing"]) or
+            not first._source(observation, target) or
+            first._source(observation, target)["id"] != entry["preparationCandidateId"] or
+            (template.key != "U1" and not missing)):
+        raise ValueError(f"Preparation lesson is unavailable or already installed: {course_id(entry)}")
+    return observation
 
 
 def generation_summary(pool):
@@ -392,12 +487,19 @@ def add_two_missing_preparations(client, entries):
         extra = {**payoff, "layer": "preparation", "courseId": suffix,
             "snapshot": snapshot, "trace": payoff["trace"][:offset],
             "preparationMissing": list(template.cards),
+            "preparationTarget": teaching_target(template,
+                client.request(op="restore", snapshot=snapshot)["observation"],
+                snapshot["state"])[0],
+            "controlRole": "verified_positive",
             "auxiliaryPreparation": "two_states_uninstalled",
             "strategicSceneSha256": _state_signature(snapshot["state"]),
             "distanceDecisionsToPayoff": len(payoff["trace"]) - offset,
             "distanceRoundsToPayoff": payoff["snapshot"]["state"]["round"] -
                 snapshot["state"]["round"]}
         first.replay(client, extra)
+        obs = client.request(op="restore", snapshot=snapshot)["observation"]
+        extra["preparationCandidateId"] = first._source(obs, extra["preparationTarget"])["id"]
+        validate_preparation(client, extra)
         added.append(extra)
     entries.extend(added)
     return len(added)
@@ -441,7 +543,8 @@ def create_pool(client, encoder, model, device, parent_path: Path, output: Path,
                         continue
                     salt = 0xC0B0 if template.key == "U2" else 0xC2C2
                     result = generate_one(client, encoder, model, device, template, seed,
-                                          variant, rng_salt=salt)
+                                          variant, rng_salt=salt,
+                                          heldout=split == "evaluation")
                     if "failure" in result:
                         failures.append({"template": template.key, "variant": variant,
                             "split": split, "seed": seed, "reason": result["failure"],
@@ -489,12 +592,18 @@ def create_pool(client, encoder, model, device, parent_path: Path, output: Path,
                         "trace": trace, "generationSeconds": found["generatedSeconds"],
                         "strategicSceneSha256": _state_signature(snapshot["state"]),
                         "preparationMissing": found["preparation"]["missing"],
+                        "preparationTarget": found["preparation"]["target"],
+                        "preparationCandidateId": found["preparation"]["candidateId"],
+                        "controlRole": classify_control(template, variant),
                         "distanceDecisionsToPayoff": len(found["trace"]) -
                             found["preparation"]["traceLength"],
                         "distanceRoundsToPayoff": found["snapshot"]["state"]["round"] -
                             found["preparation"]["round"]}
                     entry["courseId"] = ":".join((template.key, variant, layer, str(found["seed"])))
                     first.replay(client, entry)
+                    if layer == "preparation":
+                        obs = validate_preparation(client, entry)
+                        entry["encodedSceneSha256"] = encoded_scene_key(encoder, obs)
                     entries.append(entry)
                 write_pool(output, identity, entries, failures, complete=False)
                 print(json.dumps({"template": template.key, "variant": variant,
@@ -533,7 +642,7 @@ def main():
     parser.add_argument("--generator", type=Path, default=ppo.ROOT / "PPO训练" /
                         ".state" / "A2S1C1" / "initial.pt")
     parser.add_argument("--output", type=Path, default=ppo.ROOT / "PPO训练" /
-                        ".state" / "A2S1C2" / "course-pool-v2.json.gz")
+                        ".state" / "A2S1C2" / "course-pool-v8.json.gz")
     parser.add_argument("--train-per-variant", type=int, default=2)
     parser.add_argument("--eval-per-variant", type=int, default=1)
     parser.add_argument("--attempts", type=int, default=12)

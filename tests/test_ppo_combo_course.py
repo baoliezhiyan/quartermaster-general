@@ -25,6 +25,28 @@ PARENT = ppo.ROOT / "PPO训练" / ".state" / "A2S1" / "latest.pt"
 
 
 class ComboCourseTests(unittest.TestCase):
+    LEGACY_SNAPSHOT_TESTS = {
+        "test_all_real_g1_starts_are_checked_without_splicing_partial_chains",
+        "test_first_landing_is_not_overwritten_and_pre_takeover_is_separate",
+        "test_j1_goal_ends_at_linked_build_not_optional_followup_attack",
+        "test_ordinary_attack_then_next_round_build_is_board_result_not_blitz_chain",
+        "test_real_chinese_card_types_and_preparation_install_completion",
+        "test_real_pre_takeover_landing_source_is_replayed_from_preparation",
+    }
+
+    def setUp(self):
+        if self._testMethodName in self.LEGACY_SNAPSHOT_TESTS:
+            if not POOL.exists():
+                self.skipTest("Historical C1 pool is an ignored local artifact")
+            with gzip.open(POOL, "rt", encoding="utf-8") as stream:
+                previous = json.load(stream)["identity"]["buildFingerprint"]
+            client = ppo.ArenaClient(card_set="signals")
+            try:
+                if previous != client.fingerprint:
+                    self.skipTest("Historical C1 snapshots require their frozen arena build")
+            finally:
+                client.close()
+
     def test_deterministic_28_plus_12_schedule_and_rotating_templates(self):
         entries = {f"{template.key}:{variant}:{layer}": {} for template in TEMPLATES
                    for variant in ("positive", "control") for layer in ("payoff", "preparation")}

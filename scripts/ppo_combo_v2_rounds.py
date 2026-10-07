@@ -22,7 +22,7 @@ ROOT = ppo.ROOT / "PPO训练"
 STATE = ROOT / ".state" / "A2S1C2"
 OUTPUT = ROOT / "A2S1C2"
 INITIAL = STATE / "initial.pt"
-POOL = STATE / "course-pool-v2.json.gz"
+POOL = STATE / "course-pool-v8.json.gz"
 CHECKPOINT = STATE / "latest.pt"
 REPORT = STATE / "training-report.json"
 PLAN = STATE / "plan.json"
@@ -35,6 +35,8 @@ def sha(path):
 
 
 def identity():
+    if not INITIAL.exists():
+        raise SystemExit("A2S1C2 尚未通过九模板课程和示范验收；缺少正式 initial.pt，训练未启动。")
     initial = torch.load(INITIAL, map_location="cpu", weights_only=False)
     if (initial.get("experimentId") != "A2S1C2" or
         initial.get("sourceExperimentId") != "A2S1C1" or initial.get("sourceUpdate") != 30 or

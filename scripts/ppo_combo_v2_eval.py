@@ -150,7 +150,7 @@ def main():
     parser.add_argument("--adapted", type=Path, default=ppo.ROOT / "PPO训练" /
                         ".state" / "A2S1C2" / "post-demonstration.pt")
     parser.add_argument("--pool", type=Path, default=ppo.ROOT / "PPO训练" /
-                        ".state" / "A2S1C2" / "course-pool-v2.json.gz")
+                        ".state" / "A2S1C2" / "course-pool-v8.json.gz")
     parser.add_argument("--output", type=Path)
     args = parser.parse_args()
     result = evaluate(args.parent, args.adapted, args.pool)

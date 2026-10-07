@@ -83,7 +83,7 @@ def main():
     parser.add_argument("--initial", type=Path, default=ppo.ROOT / "PPO训练" /
                         ".state" / "A2S1C2" / "initial.pt")
     parser.add_argument("--pool", type=Path, default=ppo.ROOT / "PPO训练" /
-                        ".state" / "A2S1C2" / "course-pool-v2.json.gz")
+                        ".state" / "A2S1C2" / "course-pool-v8.json.gz")
     parser.add_argument("--parent-direct-test", action="store_true",
                         help="Use frozen C1 parent and generate one U4 start; not a C2 migration test")
     args = parser.parse_args()
