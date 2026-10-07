@@ -125,6 +125,12 @@ def independent_acceptance(adaptation, holdout, autonomous, positive_overlap,
             "normalOpeningProbabilityIsDiagnosticOnly": True}
 
 
+def _save_accepted_initial(state: Path, payload, acceptance):
+    if not acceptance["accepted"]:
+        raise ValueError("Rejected independent acceptance cannot publish initial.pt")
+    _save_new(state / "initial.pt", payload)
+
+
 def prepare(parent: Path = PARENT, pool: Path = POOL, state: Path = ROOT,
             dry_run=False):
     for name in ("initial.pt", "pre-demonstration.pt", "post-demonstration.pt"):
@@ -280,7 +286,7 @@ def prepare(parent: Path = PARENT, pool: Path = POOL, state: Path = ROOT,
             "demonstrationAuditSha256": sha(state / "demonstration-audit.json"),
             "postDemonstrationFileSha256": sha(state / "post-demonstration.pt"),
             "weightsSha256": post_weight, "modelState": model.state_dict()}
-        _save_new(state / "initial.pt", initial)
+        _save_accepted_initial(state, initial, acceptance)
         restored = torch.load(state / "initial.pt", map_location="cpu", weights_only=False)
         check = make_network(A2S1_ADAPTER, encoder)
         check.load_state_dict(restored["modelState"], strict=True)

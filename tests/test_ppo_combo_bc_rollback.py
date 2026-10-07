@@ -92,6 +92,19 @@ class RollbackTests(unittest.TestCase):
         self.assertEqual(result["selectedStep"], 1)
         self.assertEqual(float(model.weight.detach()), 1)
 
+    def test_nonfinite_metric_restores_previous_step(self):
+        model, result = self._adapt([10, 2, float("inf")], steps=3)
+        self.assertEqual(result["stopReason"], "nonfinite_metric")
+        self.assertEqual(result["selectedStep"], 1)
+        self.assertEqual(float(model.weight.detach()), 1)
+
+    def test_weight_snapshot_is_not_a_live_state_dict_reference(self):
+        model = Toy()
+        snapshot = bc._weights(model)
+        with torch.no_grad():
+            model.weight.fill_(4)
+        self.assertEqual(float(snapshot["weight"]), 0)
+
     def test_holdout_does_not_choose_training_step(self):
         model, result = self._adapt([10, 3, 2, 4], steps=3)
         self.assertEqual(result["selectedStep"], 2)
@@ -111,6 +124,12 @@ class RollbackTests(unittest.TestCase):
             self.assertEqual(prepare.sha(parent), digest)
             with self.assertRaises(FileExistsError):
                 prepare._save_new(path, {})
+            audit_only = Path(root) / "demonstration-audit.json"
+            prepare._write_json_new(audit_only, {"independentAcceptance":
+                                                   {"accepted": True}})
+            self.assertTrue(audit_only.exists())
+            with self.assertRaises(FileExistsError):
+                prepare._write_json_new(audit_only, {})
             with patch.object(rounds, "INITIAL", Path(root) / "initial.pt"):
                 with self.assertRaises(SystemExit):
                     rounds.identity()
@@ -121,6 +140,10 @@ class RollbackTests(unittest.TestCase):
             {"accepted": False}, [], 0, True, {"allSixSeatsCovered": True})
         self.assertFalse(rejected["accepted"])
         self.assertIn("nine_teaching_targets_not_covered", rejected["reasons"])
+        with tempfile.TemporaryDirectory() as root:
+            with self.assertRaisesRegex(ValueError, "cannot publish"):
+                prepare._save_accepted_initial(Path(root), {}, rejected)
+            self.assertFalse((Path(root) / "initial.pt").exists())
 
 
 if __name__ == "__main__":
