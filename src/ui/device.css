@@ -169,3 +169,14 @@ html[data-layout=compact] .map-toolbar:has(.map-scoreboard) .map-tools{grid-colu
 
 /* Keep a half-button gap below controls, including the system gesture safe area. */
 html[data-layout=compact] .map-footer{padding-bottom:max(15px,env(safe-area-inset-bottom,0px));background:#f8f6ec}
+
+/* Text-only cards retain their real catalog type on the country-colored band. */
+.card-face.card-face-text-only{padding-top:0}
+.card-type-header{display:block;flex:none;text-align:center;color:var(--card-heading);font-size:14px;font-weight:700;line-height:22px;padding:1px 5px}
+html[data-layout=compact] .card-type-header{font-size:11px;line-height:18px;padding:1px 5px}
+/* Fit each card window to its column count, including padding and scrollbar gutter. */
+.map-hand-dock.prelude-hand-dock,.map-hand-dock.catalog-dock{--panel-card-width:174px;--panel-columns:5;padding:10px;scrollbar-gutter:stable;width:calc(var(--panel-columns) * var(--panel-card-width) + (var(--panel-columns) - 1) * 6px + 42px);max-width:calc(100% - 24px);right:auto}
+.map-hand-dock.prelude-hand-dock{--panel-columns:3}
+.map-hand-dock.prelude-hand-dock .card-grid,.map-hand-dock.catalog-dock .card-grid{display:grid;grid-template-columns:repeat(var(--panel-columns),var(--panel-card-width));gap:6px;width:max-content}
+html[data-layout=compact] .map-hand-dock.prelude-hand-dock,html[data-layout=compact] .map-hand-dock.catalog-dock{--panel-card-width:var(--mobile-card-width);width:calc(var(--panel-columns) * var(--panel-card-width) + (var(--panel-columns) - 1) * 6px + 42px);max-width:calc(100% - 8px);left:4px;padding:10px}
+html[data-layout=compact] .map-hand-dock.prelude-hand-dock .card-grid,html[data-layout=compact] .map-hand-dock.catalog-dock .card-grid{display:grid;grid-template-columns:repeat(var(--panel-columns),var(--panel-card-width));gap:6px;width:max-content}

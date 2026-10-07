@@ -58,7 +58,7 @@ try{
  assert(await phone.locator('.card-art').count()===0,'Card art remains after toggle');
  await phone.getByRole('button',{name:'全卡图鉴',exact:true}).click();
  const textFace=phone.locator('.encyclopedia-grid .card-face').first();
- assert(await textFace.evaluate(el=>getComputedStyle(el).paddingTop)==='5px','Top colored edge missing');
+ assert((await textFace.locator('.card-type-header').innerText()).trim().length>0,'Card type missing');assert(await textFace.locator('.card-type-header').evaluate(el=>getComputedStyle(el).color)!=='rgba(0, 0, 0, 0)','Type invisible');
  await phone.getByRole('button',{name:'全卡图鉴',exact:true}).click();
  await phone.getByRole('button',{name:'开启卡图显示',exact:true}).click();
  assert(await phone.locator('.card-art').count()>0,'Art did not return');await phone.getByRole('button',{name:'设置',exact:true}).click();
@@ -88,9 +88,9 @@ try{
  const art=await first.locator('.card-art').evaluate(el=>({fit:getComputedStyle(el).objectFit,max:getComputedStyle(el).maxHeight}));assert(art.fit==='contain'&&art.max==='none','Card art is cropped');
  await phone.getByRole('button',{name:'整理手牌',exact:true}).click();await first.getByRole('button',{name:'向后移动',exact:true}).click();assert(await phone.locator('.table-hand .card-shell').first().locator('.hand-card').getAttribute('aria-label')!==original,'Touch reorder did not move card');await phone.getByRole('button',{name:'完成整理',exact:true}).click();
  assert(mutations===0,'Display gestures sent a game mutation');
- await phone.screenshot({path:'outputs/mobile-hand-v181.png'});
+ await phone.screenshot({path:'outputs/mobile-hand-v182.png'});
  await phone.getByRole('button',{name:'手牌',exact:true}).click();
- for(const label of [/^牌库\(/,/^弃牌堆\(/]){await phone.locator('.map-panel-buttons button').filter({hasText:label}).click();const card=phone.locator('.catalog-dock .hand-card:visible').first();const dim=await card.boundingBox();assert(Math.abs(dim.width-123.2)<.1&&dim.height===180,'Pile size differs from hand');await phone.locator('.map-panel-buttons button').filter({hasText:label}).click();}
+ for(const label of [/^牌库\(/,/^弃牌堆\(/]){await phone.locator('.map-panel-buttons button').filter({hasText:label}).click();const pane=phone.locator('.catalog-dock:visible');const paneWidth=(await pane.boundingBox()).width;assert(Math.abs(paneWidth-(123.2*5+24+42))<1,'Pile panel width not five cards');const columns=await pane.locator('.card-grid:visible').first().evaluate(el=>getComputedStyle(el).gridTemplateColumns.split(' ').length);assert(columns===5,'Pile column count wrong');const card=phone.locator('.catalog-dock .hand-card:visible').first();const dim=await card.boundingBox();assert(Math.abs(dim.width-123.2)<.1&&dim.height===180,'Pile size differs from hand');await phone.locator('.map-panel-buttons button').filter({hasText:label}).click();}
  assert(await phone.locator('.world-map').evaluate(el=>getComputedStyle(el).webkitTapHighlightColor)==='rgba(0, 0, 0, 0)','Tap highlight still enabled');
  await phone.setViewportSize({width:390,height:844});assert(await phone.locator('.rotate-device').count()===0,'Orientation must not block the UI');await phone.locator('.record-toggle').click();await phone.getByLabel('关闭记录侧栏').click();
  assert(await phone.getByRole('button',{name:'切换横竖屏',exact:true}).count()===0,'Manual rotation remains');
@@ -110,9 +110,9 @@ try{
   await phone.getByRole('button',{name:'设置',exact:true}).click();
   await phone.setViewportSize({width:844,height:390});
  }
- await phone.screenshot({path:'outputs/mobile-v181.png'});
+ await phone.screenshot({path:'outputs/mobile-v182.png'});
  console.log('PASS: phone default sidebar, four viewport layouts, visible footer, record drawer, atlas, region tap/details, actual two-touch pinch without selecting, hand swipe, uncropped art and reorder without game mutations; chat unread/draft, portrait viewport remains interactive; fullscreen unavailable/rejected fallback, viewport resize and exit; no manual rotation');
  await mobile.close();
- assert((await page.title()).includes('1.8.1'),'Wrong version');
+ assert((await page.title()).includes('1.8.2'),'Wrong version');
  assert(errors.length===0,errors.join('\n'));
 }finally{await browser?.close();server.kill();}

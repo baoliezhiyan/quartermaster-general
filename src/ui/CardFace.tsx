@@ -19,6 +19,7 @@ function CardFaceContent({ card, hint, nameSuffix }: { card: Pick<CardInstance, 
   const definition = specialCard(card.definitionId,card.balance);
   const art=cardArt(card),prelude=card.definitionId.startsWith('prelude_')?specialCard(card.definitionId,card.balance):undefined;
   return <span className={`card-face${hideArt?' card-face-text-only':''}`} data-country={specialCard(card.definitionId,card.balance)?.country??card.country}>
+    {hideArt&&<span className="card-type-header">{recorded?.type||definition?.type||(Object.hasOwn(BASIC_NAMES,card.definitionId)?'基本牌':'卡牌')}</span>}
     {!hideArt&&!recorded&&art.src&&<CardArtImage src={art.src} basic={art.basic}/>}
     <span className="card-body">
       <strong className="card-name">{recorded?.name??cardName(card)}{nameSuffix}</strong>
