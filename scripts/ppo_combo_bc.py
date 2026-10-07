@@ -6,6 +6,7 @@ script-tagged decisions from training starts can become supervised labels.
 from __future__ import annotations
 
 import hashlib
+import copy
 import json
 import math
 import random
@@ -19,7 +20,7 @@ from scripts import ppo_train as ppo
 from scripts.ppo_combo_accept import probe
 from scripts.ppo_combo_course_v2 import BY_KEY, course_id, _specified_chain
 
-FORMAT = "a2s1c2-verified-preparation-bc-v2"
+FORMAT = "a2s1c2-verified-preparation-bc-v3-best-compliant"
 CONFIG = {"maxSteps": 32, "learningRate": 1e-5, "supervisedWeight": 0.15,
           "controlKlWeight": 2.0, "controlValueWeight": 0.4,
           "maxControlKl": 0.02, "maxControlValueShift": 0.15,
@@ -185,9 +186,10 @@ def _forward_many(model, items, batch_size=8):
 def assess(model, labels, controls):
     model.eval()
     with torch.inference_mode():
-        positive = []
+        positive, nll = [], []
         for item, logits, value in _forward_many(model, labels):
             probs = torch.softmax(logits, -1)
+            nll.append(float(-logits.log_softmax(-1)[item["chosen"]]))
             positive.append({**item["metadata"], "probability": float(probs[item["chosen"]]),
                              "rank": int((logits > logits[item["chosen"]]).sum()) + 1,
                              "value": float(value)})
@@ -204,7 +206,8 @@ def assess(model, labels, controls):
                     "rank": int((logits > logits[index]).sum()) + 1}
                     for card, index in zip(item["metadata"].get("comparisonCardIds", ()),
                                            item["metadata"].get("comparisonIndices", ()))]})
-    return {"positive": positive, "meanPositiveProbability":
+    return {"positive": positive, "meanTrainingNll":
+            sum(nll) / len(nll) if nll else None, "meanPositiveProbability":
             sum(row["probability"] for row in positive) / len(positive) if positive else None,
             "controlCardProbabilities": negative,
             "maxControlKl": max(kl, default=0), "maxControlValueShift": max(drift, default=0)}
@@ -331,6 +334,29 @@ def assess_autonomous(client, encoder, model, entries, max_decisions=80):
     return rows
 
 
+def _finite(value):
+    if isinstance(value, dict):
+        return all(_finite(item) for item in value.values())
+    if isinstance(value, (list, tuple)):
+        return all(_finite(item) for item in value)
+    if isinstance(value, (float, int)) and not isinstance(value, bool):
+        return math.isfinite(value)
+    return True
+
+
+def _finite_parameters(model):
+    return all(bool(torch.isfinite(tensor).all()) for tensor in model.state_dict().values())
+
+
+def _weights(model):
+    return {key: value.detach().cpu().clone() for key, value in model.state_dict().items()}
+
+
+def _candidate_order(measured, step):
+    """Predeclared: train NLL, then policy drift, then earlier step."""
+    return (measured["meanTrainingNll"], measured["maxControlKl"], step)
+
+
 def adapt(parent, labels, controls, *, config=None):
     cfg = {**CONFIG, **(config or {})}
     if not labels:
@@ -340,9 +366,14 @@ def adapt(parent, labels, controls, *, config=None):
         raise ValueError("An identical route comparison cannot be used as a retention constraint")
     model = parent
     before = assess(model, labels, controls)
+    if not _finite(before) or not _finite_parameters(model):
+        raise ValueError("Non-finite parent assessment or weights")
+    parent_weights = _weights(model)
     optimizer = torch.optim.Adam(model.parameters(), lr=cfg["learningRate"])
     rng = random.Random(20261005)
     history, best_probability, stale = [], before["meanPositiveProbability"], 0
+    best_weights, best_metrics, best_step, best_order = None, None, None, None
+    stop_reason, stop_step = "step_budget", cfg["maxSteps"]
     start = time.perf_counter()
     for step in range(cfg["maxSteps"]):
         model.train()
@@ -366,29 +397,76 @@ def adapt(parent, labels, controls, *, config=None):
         value_loss = torch.stack(value_terms).mean() if value_terms else supervised * 0
         loss = (cfg["supervisedWeight"] * supervised + cfg["controlKlWeight"] * kl +
                 cfg["controlValueWeight"] * value_loss)
+        if not bool(torch.isfinite(loss)) or not all(bool(torch.isfinite(term)) for term in
+                (supervised, kl, value_loss)):
+            history.append({"step": step + 1, "eligible": False,
+                            "rejection": "nonfinite_loss"})
+            stop_reason, stop_step = "nonfinite_loss", step + 1
+            break
         loss.backward()
+        if any(parameter.grad is not None and not bool(torch.isfinite(parameter.grad).all())
+               for parameter in model.parameters()):
+            history.append({"step": step + 1, "eligible": False,
+                            "rejection": "nonfinite_gradient"})
+            stop_reason, stop_step = "nonfinite_gradient", step + 1
+            break
         torch.nn.utils.clip_grad_norm_(model.parameters(), .5)
         optimizer.step()
+        if not _finite_parameters(model):
+            history.append({"step": step + 1, "eligible": False,
+                            "rejection": "nonfinite_parameter"})
+            stop_reason, stop_step = "nonfinite_parameter", step + 1
+            break
         measured = assess(model, labels, controls)
-        history.append({"step": step + 1, "supervisedLoss": float(supervised.detach()),
+        if not _finite(measured):
+            history.append({"step": step + 1, "eligible": False,
+                            "rejection": "nonfinite_metric"})
+            stop_reason, stop_step = "nonfinite_metric", step + 1
+            break
+        within = (measured["maxControlKl"] <= cfg["maxControlKl"] and
+                  measured["maxControlValueShift"] <= cfg["maxControlValueShift"])
+        history.append({"step": step + 1, "eligible": within,
+                        "rejection": None if within else "control_drift_limit",
+                        "supervisedLoss": float(supervised.detach()),
                         "retentionKl": float(kl.detach()), "valueLoss": float(value_loss.detach()),
+                        "trainingNll": measured["meanTrainingNll"],
                         "meanPositiveProbability": measured["meanPositiveProbability"],
                         "maxControlKl": measured["maxControlKl"],
                         "maxControlValueShift": measured["maxControlValueShift"]})
-        if measured["maxControlKl"] > cfg["maxControlKl"] or measured[
-                "maxControlValueShift"] > cfg["maxControlValueShift"]:
-            return {"accepted": False, "reason": "control_drift_limit", "before": before,
-                    "after": measured, "history": history, "seconds": time.perf_counter() - start}
+        if not within:
+            stop_reason, stop_step = "control_drift_limit", step + 1
+            break
+        order = _candidate_order(measured, step + 1)
+        if best_order is None or order < best_order:
+            best_weights, best_metrics = _weights(model), copy.deepcopy(measured)
+            best_step, best_order = step + 1, order
         if measured["meanPositiveProbability"] > best_probability * 1.001:
             best_probability, stale = measured["meanPositiveProbability"], 0
         else:
             stale += 1
         if stale >= cfg["stopIfNoImprovementSteps"]:
+            stop_reason, stop_step = "plateau", step + 1
             break
+    # Optimizer state is deliberately discarded. PPO starts with fresh Adam.
+    del optimizer
+    model.load_state_dict(best_weights if best_weights is not None else parent_weights,
+                          strict=True)
     after = assess(model, labels, controls)
-    return {"accepted": after["meanPositiveProbability"] > before["meanPositiveProbability"] and
-            after["maxControlKl"] <= cfg["maxControlKl"] and
-            after["maxControlValueShift"] <= cfg["maxControlValueShift"],
-            "reason": "bounded_steps_or_plateau", "before": before, "after": after,
+    if not _finite(after) or not _finite_parameters(model):
+        raise ValueError("Restored candidate failed finite-value assessment")
+    if best_metrics is not None and (abs(after["meanTrainingNll"] -
+            best_metrics["meanTrainingNll"]) > 1e-7 or
+            abs(after["maxControlKl"] - best_metrics["maxControlKl"]) > 1e-7):
+        raise ValueError("Restored candidate differs from saved best snapshot")
+    accepted = (best_step is not None and
+                after["meanPositiveProbability"] > before["meanPositiveProbability"] and
+                after["maxControlKl"] <= cfg["maxControlKl"] and
+                after["maxControlValueShift"] <= cfg["maxControlValueShift"])
+    return {"accepted": accepted, "reason": ("no_compliant_candidate" if best_step is None
+            else "training_probability_not_improved" if not accepted else "candidate_selected"),
+            "stopReason": stop_reason, "stopStep": stop_step,
+            "selectedStep": best_step, "selectionRule": "minimum_training_nll_then_kl_then_earlier_step",
+            "rolledBack": best_step != stop_step, "stoppedMetrics": history[-1] if history else None,
+            "selectedMetrics": after, "before": before, "after": after,
             "history": history, "seconds": time.perf_counter() - start,
             "supervisionConsistency": consistency, "config": cfg}

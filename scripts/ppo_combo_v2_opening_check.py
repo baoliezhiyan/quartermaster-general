@@ -1,4 +1,4 @@
-"""Read-only fixed-seed normal-opening comparison for a rejected C2 candidate."""
+"""Read-only fixed-seed normal-opening comparison for C2 candidates."""
 from __future__ import annotations
 
 import argparse
@@ -7,7 +7,6 @@ from pathlib import Path
 
 import torch
 
-from scripts import ppo_combo_v2_prepare as prepare
 from scripts import ppo_train as ppo
 from scripts.ppo_network_factory import A2S1_ADAPTER, make_network
 
@@ -25,12 +24,37 @@ def _prediction(model, encoder, observation):
                    "probability": probability, "value": float(value[0])}
 
 
+def compare_models(client, encoder, parent, candidate, seeds=(20261001, 20261002)):
+    parent.eval(), candidate.eval()
+    rows = []
+    for seed in seeds:
+        observation = client.request(op="reset", seed=seed, mode="A",
+                                     cardSet="signals")["observation"]
+        seen = set()
+        for _ in range(180):
+            if observation is None or len(seen) == 6:
+                break
+            old_index, old = _prediction(parent, encoder, observation)
+            _, new = _prediction(candidate, encoder, observation)
+            if observation["node"] == "SOURCE" and observation["activeSeat"] not in seen:
+                seen.add(observation["activeSeat"])
+                rows.append({"seed": seed, "seat": observation["activeSeat"],
+                             "round": observation["round"], "parent": old,
+                             "candidate": new})
+            observation = client.request(op="step", action={**observation["decision"],
+                "actionId": observation["candidates"][old_index]["id"]})["observation"]
+    return {"seeds": list(seeds), "normalOpeningFirstSources": rows,
+            "allSixSeatsCovered": all(sum(row["seed"] == seed for row in rows) == 6
+                                  for seed in seeds)}
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--candidate", type=Path, required=True)
     parser.add_argument("--seeds", type=int, nargs="+", default=[20261001, 20261002])
     args = parser.parse_args()
     torch.set_num_threads(2)
+    from scripts import ppo_combo_v2_prepare as prepare
     client = ppo.ArenaClient(card_set="signals")
     try:
         encoder = ppo.Encoder(client.schema)
@@ -41,25 +65,7 @@ def main():
             raise ValueError("Candidate does not belong to reviewed rejected C2 attempt")
         candidate = make_network(A2S1_ADAPTER, encoder)
         candidate.load_state_dict(saved["modelState"], strict=True)
-        parent.eval(), candidate.eval()
-        rows = []
-        for seed in args.seeds:
-            observation = client.request(op="reset", seed=seed, mode="A",
-                                         cardSet="signals")["observation"]
-            seen = set()
-            for _ in range(180):
-                if observation is None or len(seen) == 6:
-                    break
-                old_index, old = _prediction(parent, encoder, observation)
-                _, new = _prediction(candidate, encoder, observation)
-                if observation["node"] == "SOURCE" and observation["activeSeat"] not in seen:
-                    seen.add(observation["activeSeat"])
-                    rows.append({"seed": seed, "seat": observation["activeSeat"],
-                                 "round": observation["round"], "parent": old,
-                                 "candidate": new})
-                observation = client.request(op="step", action={**observation["decision"],
-                    "actionId": observation["candidates"][old_index]["id"]})["observation"]
-        print(json.dumps({"seeds": args.seeds, "normalOpeningFirstSources": rows},
+        print(json.dumps(compare_models(client, encoder, parent, candidate, args.seeds),
                          ensure_ascii=False, indent=2))
     finally:
         client.close()

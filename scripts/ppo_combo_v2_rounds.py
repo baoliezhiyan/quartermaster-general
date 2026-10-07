@@ -47,6 +47,16 @@ def identity():
         raise ValueError("A2S1C2 initializer is not the reviewed update-30 BC migration")
     if sha(STATE / "demonstration-audit.json") != initial.get("demonstrationAuditSha256"):
         raise ValueError("A2S1C2 imitation audit differs from the initializer")
+    audit = json.loads((STATE / "demonstration-audit.json").read_text(encoding="utf-8"))
+    if (not audit.get("independentAcceptance", {}).get("accepted") or
+            audit.get("selectedWeightsSha256") != initial.get("weightsSha256") or
+            audit.get("adaptation", {}).get("selectedStep") is None or
+            not initial.get("postDemonstrationFileSha256") or
+            sha(STATE / "post-demonstration.pt") !=
+            initial["postDemonstrationFileSha256"] or
+            sha(ROOT / ".state" / "A2S1C1" / "latest.pt") !=
+            initial.get("sourceCheckpointSha256")):
+        raise ValueError("A2S1C2 independent acceptance or saved model binding differs")
     client = ppo.ArenaClient(card_set="signals")
     try:
         encoder = ppo.Encoder(client.schema)
