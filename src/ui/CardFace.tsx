@@ -1,3 +1,4 @@
+import {useCardArtHidden} from './cardDisplay';
 import {memo} from 'react';
 import {CardArtImage} from './CardArtImage';
 import type { CardInstance, ReadState } from '../core';
@@ -13,11 +14,13 @@ export function choiceCard(state: ReadState, option: { id: string; label: string
 }
 
 function CardFaceContent({ card, hint, nameSuffix }: { card: Pick<CardInstance, 'definitionId' | 'country' | 'balance'>; hint?: string; nameSuffix?:string }) {
+  const hideArt=useCardArtHidden();
   const recorded=(card as typeof card & {__replayCard?:{name:string;text:string;type:string}}).__replayCard;
   const definition = specialCard(card.definitionId,card.balance);
   const art=cardArt(card),prelude=card.definitionId.startsWith('prelude_')?specialCard(card.definitionId,card.balance):undefined;
-  return <span className="card-face" data-country={specialCard(card.definitionId,card.balance)?.country??card.country}>
-    {!recorded&&art.src&&<CardArtImage src={art.src} basic={art.basic}/>}
+  return <span className={`card-face${hideArt?' card-face-text-only':''}`} data-country={specialCard(card.definitionId,card.balance)?.country??card.country}>
+    {hideArt&&<span className="card-type-header">{recorded?.type||definition?.type||(Object.hasOwn(BASIC_NAMES,card.definitionId)?'基本牌':'卡牌')}</span>}
+    {!hideArt&&!recorded&&art.src&&<CardArtImage src={art.src} basic={art.basic}/>}
     <span className="card-body">
       <strong className="card-name">{recorded?.name??cardName(card)}{nameSuffix}</strong>
       {prelude?.type==='历史'&&<span className="card-tension">紧张度 {(prelude.tension??0)>=0?'+':''}{prelude.tension}</span>}

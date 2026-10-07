@@ -252,7 +252,7 @@ main { padding-top:12px; }
 
 
 .map-hand-dock.table-hand-dock { z-index:5; left:12px; right:12px; bottom:10px; width:auto; max-width:none; max-height:calc(100% - 150px); min-height:0; padding:6px 8px; border:0; border-radius:0; background:transparent; box-shadow:none; pointer-events:none; }
-.map-stage:has(> .record-dock) > .table-hand-dock { padding-right:calc(8px + max(300px,20%)); }
+.map-stage:has(> .record-dock:not([hidden])) > .table-hand-dock { padding-right:calc(8px + max(300px,20%)); }
 .table-hand-dock .card-grid { grid-template-columns:repeat(var(--hand-columns,7),174px); width:max-content; margin:8px auto; padding:4px; gap:12px; }
 .table-hand-dock .hand-card { pointer-events:auto; box-shadow:0 3px 9px #0006; }
 .hand-caption { width:max-content; margin:auto; padding:3px 12px; color:#fff6d8; background:#193b3c66; border-radius:4px; text-shadow:0 1px 3px #000; font-size:14px; }
@@ -321,12 +321,12 @@ main { padding-top:12px; }
 .bound-country-notice { position:absolute; z-index:40; top:8px; left:50%; transform:translateX(-50%); padding:12px 18px; background:#fff9df; border:2px solid #a2ad8c; border-radius:8px; }
 .bound-country-notice p { margin:3px 0; }
 
-.map-stage:has(> .record-dock) > .public-country-window { right:max(300px,20%); max-width:calc(100% - max(300px,20%) - 12px); }
+.map-stage:has(> .record-dock:not([hidden])) > .public-country-window { right:max(300px,20%); max-width:calc(100% - max(300px,20%) - 12px); }
 .public-country-window > h3 { margin:0 32px 6px 0; }
 .public-country-window > h4 { margin:10px 0 4px; }
 .public-country-window > p { margin:3px 0; line-height:1.5; }
 .public-country-window > .card-grid { margin:5px 0; }
-@media(max-width:640px) { .map-stage:has(> .record-dock) > .public-country-window { right:12px; max-width:calc(100% - 24px); } }
+@media(max-width:640px) { .map-stage:has(> .record-dock:not([hidden])) > .public-country-window { right:12px; max-width:calc(100% - 24px); } }
 
 .table-hand-dock .card-shell { pointer-events:auto; }
 

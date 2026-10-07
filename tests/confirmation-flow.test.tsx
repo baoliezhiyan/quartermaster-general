@@ -14,7 +14,7 @@ function markup(s:GameState,selected:string[]=[]){const view=projectState(s,{kin
 const disabled=(html:string)=>/<button[^>]*disabled=""[^>]*>确认<\/button>/.test(html);
 it('optional extra state play has disabled confirm until a card is selected, then installs without a second confirmation',()=>{
  const s=game(),card=add(s,'special_47');s.neutralityStatusPending=true;startResolution(s,'参战','germany',[{kind:'trace',label:'结束'}],[]);
- expect(s.resolution!.choice!.kind).toBe('EXTRA_CARD');expect(disabled(markup(s))).toBe(true);expect(disabled(markup(s,[card.id]))).toBe(false);
+ reply(s,['hand']);expect(s.resolution!.choice!.kind).toBe('EXTRA_CARD');expect(disabled(markup(s))).toBe(true);expect(disabled(markup(s,[card.id]))).toBe(false);
  reply(s,[card.id]);expect(s.resolution!.running).toBe(false);expect(s.decks.soviet_union.active.some(c=>c.id===card.id)).toBe(true);
 });
 it.each([false,true])('wash-back pays the selected build card in one confirmation, or skips without payment (%s)',pay=>{

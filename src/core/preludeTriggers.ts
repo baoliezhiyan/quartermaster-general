@@ -83,7 +83,7 @@ export function preludeTriggers(s:GameState,frame:ResolutionFrame,e:Effect,timin
   }
   if(timing==='After'&&action&&placed){
    const axis=allianceOf(action.country)==='axis',build=action.action==='build_army',navy=action.action==='build_navy';
-   const hit=id==='UK-01'&&axis&&(b?navy:['build_navy','recruit_navy'].includes(action.action))&&(b?['sea_south_china','sea_arabian','sea_south_pacific']:['sea_south_china','sea_arabian']).includes(region!)
+   const hit=id==='UK-01'&&axis&&(b?navy:['build_navy','recruit_navy'].includes(action.action))&&(b?['sea_south_china','sea_arabian']:['sea_south_china','sea_arabian']).includes(region!)
     ||id==='UK-02'&&axis&&['build_army','recruit_army'].includes(action.action)&&region==='western_europe'&&(b||(s.events.slice(s.prelude.installedEvent?.[card.id]??0).find(v=>v.type==='UNIT_PLACED'&&v.regionId===region&&allianceOf(v.country)==='axis')===[...s.events].reverse().find(v=>v.type==='UNIT_PLACED'&&v.unitId===placed.id)))
     ||id==='UK-08'&&axis&&navy&&region==='sea_north_sea'||id==='UK-09'&&axis&&build&&region==='southeast_asia'
     ||id==='JP-07'&&!axis&&['build_army','recruit_army'].includes(action.action)&&region==='eastern_china'
@@ -115,7 +115,7 @@ export function preludeTriggers(s:GameState,frame:ResolutionFrame,e:Effect,timin
    if(id==='IT-15'&&!s.prelude.active&&s.round===1&&phase('TURN_START_WINDOW'))effects=[balanceEffect(seat,'italian-ambition')];
    if(id==='US-01')effects=effects.map(effect=>effect.kind==='choose'?{...effect,options:effect.options.map(o=>({...o,effects:o.effects.map(v=>v.kind==='deckTop'?{...v,count:5}:v)}))}:effect);
    if(id==='SU-16'&&effects.length)effects=[choose([install,...effects])];
-   if(id==='DE-01'&&effects.length){const attacker=action!.decisionSeat??frame.owner;effects=[{kind:'choose',seat:attacker,min:1,max:1,label:'88毫米防空炮：弃三张手牌继续攻击，或本次无法移除守军',options:[{id:'protect',label:'不支付，本次守军不被移除',effects:[protect(true)]},{id:'pay',label:'支付三张手牌',effects:[{kind:'cards',seat:attacker,from:'hand',to:'discardPile',min:3,max:3,fee:true,label:'支付三张手牌'},{kind:'trace',label:'继续攻击'}]}]}];}
+   if(id==='DE-01'&&effects.length)effects=[{kind:'forceHand',seat:action!.decisionSeat??frame.owner,count:3,deckShortfall:true,label:'88毫米防空炮：攻击方弃3张手牌，不足数量改弃牌库顶'}];
   }
   if(!effects.length)continue;
   const fee:Effect={kind:'cards',seat,from:'hand',to:'discardPile',min:id==='UK-06'&&!b?2:1,max:id==='UK-06'&&!b?2:1,strictFee:true,publicDiscard:!!copyFees,remember:b&&['SU-01','SU-03'].includes(id)?'armament-cost':undefined,allowedIds:b&&['SU-01','SU-03'].includes(id)&&!s.units.some(u=>u.country===seat&&u.type==='army'&&u.regionId!==(region??(e.kind==='remove'?e.unit.regionId:undefined)))?s.decks[seat].hand.filter(c=>c.definitionId==='build_army').map(c=>c.id):copyFees,requirements:b&&id==='UK-02'?['land_battle']:id==='UK-06'?(b?['build_army']:['*','build_army']):undefined,fee:true,label:b&&id==='UK-02'?'军备费用：弃一张发起陆战':b&&id==='UK-06'?'军备费用：弃一张建设陆军':id==='UK-06'?'军备费用：弃两张手牌，其中至少一张建设陆军':'军备通用费用：弃一张常规手牌'};

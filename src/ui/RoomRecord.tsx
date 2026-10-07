@@ -8,13 +8,14 @@ import {persistentHistory} from '../core/prelude';
 import type {RoomInfo} from '../network/protocol';
 import {PublicGameLog} from './PublicGameLog';
 import type {ReactNode} from 'react';
-export function RoomRecord({state,room,request,infoSeat,onInfoSeat,replay}:{state:ReadState;room?:RoomInfo;request?:(method:string,...args:unknown[])=>Promise<unknown>;infoSeat?:SeatId|null;onInfoSeat?:(seat:SeatId)=>void;replay?:ReactNode}){
+export function RoomRecord({state,room,request,infoSeat,onInfoSeat,replay,visible=true,onUnread}:{visible?:boolean;onUnread?:(count:number)=>void;state:ReadState;room?:RoomInfo;request?:(method:string,...args:unknown[])=>Promise<unknown>;infoSeat?:SeatId|null;onInfoSeat?:(seat:SeatId)=>void;replay?:ReactNode}){
  const [chat,setChat]=useState(false),[text,setText]=useState(''),[sending,setSending]=useState(false),[error,setError]=useState('');
  const list=useRef<HTMLDivElement>(null),atBottom=useRef(true),messages=room?.chat??[];
  const [readMessages,setReadMessages]=useState(()=>new Set((room?.chat??[]).map(m=>m.id)));
- const unread=chat?0:messages.filter(m=>!readMessages.has(m.id)).length;
- useEffect(()=>{if(chat)setReadMessages(new Set(messages.map(m=>m.id)));},[chat,room?.chat]);
+ const unread=chat&&visible?0:messages.filter(m=>!readMessages.has(m.id)).length;
+ useEffect(()=>{if(chat&&visible)setReadMessages(new Set(messages.map(m=>m.id)));},[chat,visible,room?.chat]);
  useEffect(()=>{if(chat&&atBottom.current&&list.current)list.current.scrollTop=list.current.scrollHeight;},[chat,messages]);
+ useEffect(()=>{onUnread?.(unread);},[unread,onUnread]);
  async function act(method:string,...args:unknown[]){if(!request||sending)return false;setSending(true);setError('');try{await request(method,...args);return true;}catch(e){setError(String(e));return false;}finally{setSending(false);}}
  return <section aria-label={replay?'回放记录':chat?'房间聊天':'对局记录'}>
   <div className="record-heading"><h3>{replay?'回放记录':chat?'房间聊天':'对局记录'}</h3>{chat&&room?.access.kind==='gm'&&<button className="chat-clear" disabled={sending||!messages.length} onClick={()=>void act('chatClear')}>清空聊天</button>}</div>

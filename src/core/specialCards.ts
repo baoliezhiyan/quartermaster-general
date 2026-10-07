@@ -26,6 +26,9 @@ export function cardEffects(s:ReadState,card:CardInstance|ReadState['decks']['ge
   if(full!==undefined){
     // Training-only event overrides. The production card effects above remain intact.
     if(s.trainingCourse){
+      // Existing named courses are frozen at the all-armies redeployment rule.
+      // A future course must explicitly opt into v2.2's withdrawal decisions.
+      if(card.definitionId==='special_110'&&['ppo-events-v1','ppo-signals-a2s1-v2'].includes(s.trainingCourse.version))return [{kind:'rebuild',country:card.country,label:'收回全部陆军，然后依次重新建设全部被收回的陆军'}];
       if(['special_113','special_255'].includes(card.definitionId))return full.slice(0,-1);
       if(card.definitionId==='special_94')return full.map(effect=>effect.kind==='choose'?{
         ...effect,options:effect.options.map(option=>({

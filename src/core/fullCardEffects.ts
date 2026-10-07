@@ -49,7 +49,9 @@ export function fullCardEffects(s:ReadState,card:CardInstance,targets:string[]):
       case 166:return [{...a('destroy',['scandinavia']),destroyTypes:['army','navy']} as Effect,a('build_navy',['sea_baltic']),{kind:'extraPlay',seat,from:'hand',mention:'斯堪的纳维亚',allowSkip:true,label:'可额外打出涉及斯堪的纳维亚的手牌'}];
       case 179:return [points(seat,3)];
       case 180:return [points(seat,2*count('air',near(s,c,'western_china'))),top('united_states',2)];
-      case 260:case 258:return [{kind:'choose',seat,min:1,max:1,label:`${specialCard(card.definitionId,card.balance)?.name}：选择一张状态卡打出`,options:(['drawPile','discardPile'] as const).flatMap(from=>s.decks[seat][from].filter(v=>specialCard(v.definitionId,v.balance)?.type==='状态').map(v=>({id:v.id,label:v.definitionId,effects:[{kind:'extraPlay' as const,seat,from,selectedCardId:v.id,onlyCardIds:[v.id],label:'打出所选状态卡'}]})))}];
+      case 110:return [{kind:'rebuild',country:c,selective:true,label:'战区移动：选择收回任意数量美国陆军及最多一支海军'}];
+      case 258:return []; // Enhancement: available only through its PLAY-start trigger.
+      case 260:return [{kind:'choose',seat,min:1,max:1,label:`${specialCard(card.definitionId,card.balance)?.name}：选择一张状态卡打出`,options:(['drawPile','discardPile'] as const).flatMap(from=>s.decks[seat][from].filter(v=>specialCard(v.definitionId,v.balance)?.type==='状态').map(v=>({id:v.id,label:v.definitionId,effects:[{kind:'extraPlay' as const,seat,from,selectedCardId:v.id,onlyCardIds:[v.id],label:'打出所选状态卡'}]})))}];
       case 252:return [{kind:'cards',seat,from:'hand',to:'discardPile',min:3,max:3,fee:true,label:'弃置3张手牌'},act('germany','recruit_army',['western_europe']),act('germany','recruit_army',['italy'])];
       case 253:return [{...a('destroy',['sea_north_sea']),destroyTypes:['navy']} as Effect];
     }
