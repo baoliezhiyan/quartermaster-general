@@ -89,3 +89,61 @@ it('defers a direct destroy through the defender response window and cancels it 
  expect(applyCommit(kept,cancelled as any,cardMap,2,cancelledZones,'A',cancelledPending,'soviet_union:special_69')).toEqual([]);
  expect(kept.units).toEqual([army]);expect(cancelledPending).toHaveLength(0);
 });
+it('replays a build after its recycled unit was paid in an earlier response window',()=>{
+ const positions=['germany','western_europe','eastern_europe','italy','balkans','ukraine','moscow'];
+ const units=positions.map((regionId,index)=>({id:`g${index}`,country:'germany' as const,
+  type:'army' as const,regionId}));
+ const scores=Object.fromEntries(SEATS.map(seat=>[seat,0]));
+ const activeCards=Object.fromEntries(SEATS.map(seat=>[seat,[]]));
+ const resources=()=>Object.fromEntries(SEATS.map(seat=>[seat,
+  {hand:[],drawPile:[],discardPile:[],resourcePool:[]}])) as any;
+ const scene=()=>createTrainingScene({units,scores,round:2,phase:'PLAY',activeSeat:'germany',
+  balance:true,activeCards} as any,'prepaid-recycle',new Map());
+ const removed=units.filter(unit=>unit.id!=='g3');
+ const event={id:'remove:1',applied:true,ended:true,effect:{kind:'remove',unit:units[3],cause:'recycle'}};
+ const frame=(value:unknown[],events:unknown[],serial=0)=>({round:2,phase:'PLAY',activeSeat:'germany',
+  units:value,scores,unitSerial:serial,turnFlags:null,activeCards,resources:resources(),
+  resolutionEvents:events,resolutionScenario:'闪电战'});
+ const payment={commandType:'RESOLVE_ENGINE_CHOICE',seat:'germany',before:frame(units,[]),
+  after:frame(removed,[event]),boardEvents:[]};
+ const built={id:'new-german-army',country:'germany' as const,type:'army' as const,
+  regionId:'middle_east'};
+ const placement={commandType:'RESOLVE_ENGINE_CHOICE',seat:'germany',
+  before:frame(removed,[event]),after:frame([...removed,built],[event],1),
+  boardEvents:[{type:'TRAINING_BOARD_APPLIED',revision:2,country:'germany',
+   action:'build_army',regionId:'middle_east',recycleId:'g3',mode:'build',newUnitId:built.id}]};
+ const s=scene(),zones=resources(),pending:any[]=[],prepaid=new Set<string>();
+ const payOps=applyCommit(s,payment as any,new Map(),1,zones,'A',pending,undefined,prepaid);
+ expect(payOps).toEqual([{kind:'remove',unitId:'g3',reason:'cost'}]);
+ expect(prepaid.has('g3')).toBe(true);
+ const buildOps=applyCommit(s,placement as any,new Map(),2,zones,'A',pending,undefined,prepaid);
+ expect(buildOps).toMatchObject([{kind:'board',action:'build_army',regionId:'middle_east',
+  newUnitId:built.id}]);
+ expect((buildOps[0] as any).recycleId).toBeUndefined();
+ expect(s.units.some(unit=>unit.id===built.id)).toBe(true);
+ expect(prepaid.size).toBe(0);
+ const orphan=scene();orphan.units=removed;
+ expect(()=>applyCommit(orphan,placement as any,new Map(),2,resources(),'A',[],undefined,
+  new Set())).toThrow('尚未记录回收');
+});
+it('requires a selected remove effect when a response ends its resolution before capture',()=>{
+ const unit={id:'british-home',country:'united_kingdom' as const,type:'army' as const,
+  regionId:'british_isles'};
+ const scores=Object.fromEntries(SEATS.map(seat=>[seat,0]));
+ const activeCards=Object.fromEntries(SEATS.map(seat=>[seat,[]]));
+ const resources=()=>Object.fromEntries(SEATS.map(seat=>[seat,
+  {hand:[],drawPile:[],discardPile:[],resourcePool:[]}])) as any;
+ const scene=()=>createTrainingScene({units:[unit],scores,round:1,phase:'PLAY',
+  activeSeat:'united_kingdom',balance:true,activeCards} as any,'direct-response',new Map());
+ const frame=(units:unknown[],phase:string,scenario:string)=>({round:1,phase,
+  activeSeat:'united_kingdom',units,scores,unitSerial:0,turnFlags:null,activeCards,
+  resources:resources(),resolutionEvents:[],resolutionScenario:scenario});
+ const commit={commandType:'RESOLVE_ENGINE_CHOICE',seat:'japan',
+  before:frame([unit],'PLAY','英国建陆'),after:frame([],'DISCARD','弃牌阶段'),boardEvents:[]};
+ expect(()=>applyCommit(scene(),commit as any,new Map(),1,resources(),'A',[]))
+  .toThrow('不能冒充断补');
+ const s=scene();
+ expect(applyCommit(s,commit as any,new Map(),1,resources(),'A',[],undefined,
+  new Set(),new Set([unit.id]))).toEqual([{kind:'remove',unitId:unit.id,reason:'retreat'}]);
+ expect(s.units).toEqual([]);
+});

@@ -109,7 +109,8 @@ function resourceOps(current:Record<SeatId,Record<ResourceZone,string[]>>,c:Comm
 export function applyCommit(s:GameState,c:Commit,cards:Map<string,TrainingCard>,n:number,
   resources:Record<SeatId,Record<ResourceZone,string[]>>,mode:'A'|'B',
   pendingBattles:Array<{sourceCardId?:string;board:SceneEffect&{kind:'board';defenderId?:string}}>,
-  sourceCardId?:string):TrainingStep['operations'] {
+  sourceCardId?:string,prepaidRecycles=new Set<string>(),
+  declaredRemovals=new Set<string>()):TrainingStep['operations'] {
   const ops:TrainingStep['operations']=[];
   timing(s,c.after);
   // Attack and direct-destruction declarations may open a response window
@@ -122,6 +123,14 @@ export function applyCommit(s:GameState,c:Commit,cards:Map<string,TrainingCard>,
     ops.push(pending.board);pendingBattles.splice(index,1);
   }
   for(const recorded of c.boardEvents??[]){const {type:_,revision:__,...fields}=recorded;
+    // A build may remove its recycled unit in an earlier resolution commit so
+    // responses can run before placement. The later board event still carries
+    // the historical recycle ID; its removal was already exported separately.
+    if(fields.recycleId&&!s.units.some(unit=>unit.id===fields.recycleId)){
+      if(!prepaidRecycles.delete(fields.recycleId))
+        fail(n,`建设引用尚未记录回收的部队 ${fields.recycleId}`);
+      delete fields.recycleId;
+    }
     const board={kind:'board',...fields} as Extract<SceneEffect,{kind:'board'}>;
     if(['build_army','build_navy','recruit_army','recruit_navy'].includes(board.action)&&
       !board.newUnitId&&same(c.before.units,c.after.units))continue;
@@ -136,10 +145,12 @@ export function applyCommit(s:GameState,c:Commit,cards:Map<string,TrainingCard>,
       const id=effect.unit?.id;
       if(id&&s.units.some(u=>u.id===id)){
         const cause=String(effect.cause??'');
+        const recycled=cause.includes('recycle');
         const reason=cause.includes('补给')||cause.includes('supply')?'supply':
-          cause.includes('费用')||cause.includes('cost')?'cost':'retreat';
+          cause.includes('费用')||cause.includes('cost')||recycled?'cost':'retreat';
         const remove={kind:'remove',unitId:id,reason} as const;
         try{applyScene(s,remove,cards);}catch(error){fail(n,`直接移除 ${id}：${String(error)}`);}ops.push(remove);
+        if(recycled)prepaidRecycles.add(id);
       }
     }
   }
@@ -156,9 +167,13 @@ export function applyCommit(s:GameState,c:Commit,cards:Map<string,TrainingCard>,
       try{applyScene(s,op,cards);}catch(error){fail(n,String(error));}ops.push(op);
     }
   }
-  // Automatic supply loss is still a real removal, and is checked by the scene engine.
+  // A response may remove a unit and finish its entire resolution in the same
+  // command. The final frame then contains a new phase scenario, so the remove
+  // event is absent from both captured frame lists. Its selected, structured
+  // effect is still present on the decision; require that provenance here.
   for(const unit of [...s.units])if(!c.after.units.some(u=>u.id===unit.id)){
-    const op={kind:'remove',unitId:unit.id,reason:'supply'} as const;
+    const direct=declaredRemovals.has(unit.id);
+    const op={kind:'remove',unitId:unit.id,reason:direct?'retreat':'supply'} as const;
     try{applyScene(s,op,cards);}catch{fail(n,`未记录的部队移除 ${unit.id}；不能冒充断补`);}ops.push(op);
   }
   if(!same(s.units,c.after.units)){
@@ -236,6 +251,14 @@ export async function exportTrainingReplay(rawText:string):Promise<string>{
   let pending:Pending|null=null;
   const suspended:Pending[]=[];
   const pendingBattles:Array<{sourceCardId?:string;board:SceneEffect&{kind:'board';defenderId?:string}}>=[];
+  const prepaidRecycles=new Set<string>();
+  const declaredRemovalIds=(candidate:RawRow['action'])=>{
+    const ids=new Set<string>();
+    const visit=(effect:any)=>{if(effect?.kind==='remove')for(const id of effect.targetIds??[])ids.add(id);
+      for(const branch of effect?.children??[])for(const child of branch)visit(child);};
+    for(const effect of (candidate as any)?.effects??[])visit(effect);
+    return ids;
+  };
   const append=async(seat:SeatId,cardId:string|undefined,summary:string,
     operations:TrainingStep['operations'])=>{
     const index=steps.length+1;
@@ -248,6 +271,7 @@ export async function exportTrainingReplay(rawText:string):Promise<string>{
   for(const row of raw){if(row.type!=='ppo-decision')continue;
     const commits=row.replayCommits;
     if(!commits)throw Error('训练记录缺少逐命令场面轨迹；请开启 replay capture');
+    const declaredRemovals=declaredRemovalIds(row.action);
     for(const commit of commits){
       if(['PLAY_CARD','PLAY_BASIC'].includes(commit.commandType)&&commit.cardId){
         if(pending)fail(steps.length+1,'上一张牌尚未完成，不能开始另一张标准出牌');
@@ -268,7 +292,8 @@ export async function exportTrainingReplay(rawText:string):Promise<string>{
           response:true,operations:[],cancelled:false};
       }
       const before=sceneProjection(scene),ops=applyCommit(scene,commit,cardMap,
-        steps.length+1,resources,original.header.mode,pendingBattles,pending?.cardId);
+        steps.length+1,resources,original.header.mode,pendingBattles,pending?.cardId,
+        prepaidRecycles,declaredRemovals);
       if(pending)pending.operations.push(...ops);
       else if(ops.length||!same(before,sceneProjection(scene))){
         const actor=COUNTRY_NAMES[commit.seat];
