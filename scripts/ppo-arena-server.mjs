@@ -126,9 +126,16 @@ const attachComboTelemetry=(instance,mode='full')=>{
         {kind:effect.kind,action:effect.action??null,country:effect.country??null,
           regionId:effect.option?.regionId??null,attackerId:effect.option?.attackerId??null,
           defenderId:effect.option?.defenderId??null}:null;})()}:null;
-    if(events.length||added.length||removed.length||installs.length)buffer.push({
+    if(events.length||added.length||removed.length||installs.length){
+      const affected=new Set([...events.map(event=>event.regionId),
+        ...added.map(unit=>unit.regionId),...removed.map(unit=>unit.regionId)].filter(Boolean));
+      const afterRegionUnits=Object.fromEntries([...affected].map(region=>[
+        region,after.units.filter(unit=>unit.regionId===region).map(unit=>({
+          id:unit.id,country:unit.country,type:unit.type,regionId:unit.regionId}))]));
+      buffer.push({
       serial:++serial,epoch,round:before.round,activeSeat:before.activeSeat,phase:before.phase,
-      commandType:command.type,context,events,added,removed,installs});
+      commandType:command.type,context,events,added,removed,installs,afterRegionUnits});
+    }
     return result;
   };
   instance.takeComboTelemetry=()=>{const result=buffer;buffer=[];return result;};

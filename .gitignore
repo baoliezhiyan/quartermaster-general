@@ -27,6 +27,8 @@ dist-server/
 /PPO训练/S2MAP/
 /PPO训练/A2S1/
 /PPO训练/A2S1C1/
+/PPO训练/A2S1C2/
+/PPO训练/A2S1C3/
 /PPO训练/第二阶段示范/
 /.pnpm-store/
 /对局记录/*

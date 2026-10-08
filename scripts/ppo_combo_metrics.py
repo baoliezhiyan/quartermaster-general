@@ -20,7 +20,8 @@ CARD_IDS = {
 }
 
 
-def new_tracker(course_id: str | None, start: dict, preparation: dict | None = None) -> dict:
+def new_tracker(course_id: str | None, start: dict, preparation: dict | None = None,
+                *, detail: bool = False) -> dict:
     if course_id:
         template, variant, layer = course_id.split(":")[:3]
         state = start["state"]
@@ -32,16 +33,37 @@ def new_tracker(course_id: str | None, start: dict, preparation: dict | None = N
         if first is None and had_us_west:
             first = {"source": "unresolved", "sourceCardId": None, "unitId": None,
                      "round": None, "decisionId": None}
-        return {"template": template, "variant": variant, "layer": layer,
+        result = {"template": template, "variant": variant, "layer": layer,
                 "startRound": state["round"], "preparationSeed": start["header"]["seed"],
                 "preparationDecisions": start["decisionCount"],
                 "preparationInstalls": pre.get("installations", []),
                 "firstUSWestEuropeLanding": {**first, "stage": "pre_takeover"} if first else None,
                 "takeoverHadUSWestArmy": had_us_west} | _mutable()
-    return {"template": None, "variant": None, "layer": None,
+        if detail:
+            result["_detail"] = _detail_start(state)
+        return result
+    result = {"template": None, "variant": None, "layer": None,
             "startRound": start["round"], "preparationSeed": start.get("seed"),
             "preparationDecisions": 0, "preparationInstalls": [],
             "firstUSWestEuropeLanding": None, "takeoverHadUSWestArmy": False} | _mutable()
+    if detail:
+        result["_detail"] = _detail_start(None)
+    return result
+
+
+def _detail_start(state: dict | None) -> dict:
+    cards = {"special_136", "special_84", "special_199"}
+    installed = []
+    if state:
+        for seat, deck in state["decks"].items():
+            for zone in ("active", "faceDown"):
+                installed.extend({"seat": seat, "cardId": card["definitionId"], "zone": zone}
+                    for card in deck[zone] if card["definitionId"] in cards)
+    return {"installedAtTakeover": installed, "seenWindows": set(),
+            "legalWindows": Counter(), "activatedWindows": Counter(),
+            "declinedWindows": Counter(), "windowDecisions": [],
+            "sourceChoices": [], "paymentChoices": [], "paidCards": Counter(),
+            "unattributedFeeCards": 0, "unavailableReasons": Counter()}
 
 
 def _mutable() -> dict:
@@ -119,6 +141,7 @@ def _ops_for_commit(telemetry: dict, commit: dict) -> list[dict]:
             "addedIds": [unit["id"] for unit in added],
             "removedIds": [unit["id"] for unit in removed],
             "added": added, "removed": removed,
+            "afterRegionUnits": (commit.get("afterRegionUnits") or {}).get(region),
             "round": commit["round"], "phase": commit["phase"],
             "activeSeat": commit["activeSeat"]})
     return result
@@ -131,7 +154,7 @@ def _landing_source(source: str | None) -> str:
 
 
 def record_step(tracker: dict, telemetry: dict | None, decision_id: int,
-                *, preparation: bool = False) -> None:
+                *, preparation: bool = False, fee_cards_spent: int = 0) -> None:
     if not telemetry or telemetry.get("version") != "combo-settlement-v1":
         tracker["telemetryMissing"] = True
         return
@@ -143,12 +166,54 @@ def record_step(tracker: dict, telemetry: dict | None, decision_id: int,
         tracker["pendingInstall"][card_id] = {"cardId": card_id,
             "definitionId": selected.get("definitionId"), "type": card_type,
             "decisionId": decision_id, "round": telemetry["round"],
+            "decisionSeat": telemetry.get("decisionSeat"),
+            "actionSource": "source_play_from_hand",
             "stage": "pre_takeover" if preparation else "post_takeover"}
         if not preparation:
             tracker["modelInstallSelections"][card_type] += 1
     elif selected.get("kind") == "source" and selected.get("statusAction"):
         tracker["statusActions"][selected.get("definitionId") or "unknown"] += 1
     offered = set(telemetry.get("offeredTriggers") or [])
+    detail = tracker.get("_detail")
+    if detail is not None and not preparation:
+        from scripts.ppo_combo_c3_metrics import CARDS as detail_cards
+        eligible = offered & set(detail_cards)
+        selected_trigger = _selected_trigger(telemetry)
+        for definition_id in eligible:
+            key = (decision_id, definition_id)
+            if key in detail["seenWindows"]:
+                continue
+            detail["seenWindows"].add(key)
+            detail["legalWindows"][definition_id] += 1
+            if selected_trigger == definition_id:
+                detail["activatedWindows"][definition_id] += 1
+                outcome = "activated"
+            elif telemetry.get("choiceKind") == "TRIGGER" and not selected.get("choiceIds"):
+                detail["declinedWindows"][definition_id] += 1
+                outcome = "declined"
+            else:
+                outcome = "unresolved"
+            detail["windowDecisions"].append({"decisionId": decision_id,
+                "cardId": definition_id, "outcome": outcome,
+                "round": telemetry.get("round"), "seat": telemetry.get("decisionSeat")})
+        if selected.get("kind") == "source" and selected.get("definitionId") in detail_cards:
+            detail["sourceChoices"].append({"decisionId": decision_id,
+                "cardId": selected["definitionId"], "round": telemetry.get("round"),
+                "seat": telemetry.get("decisionSeat"),
+                "statusAction": bool(selected.get("statusAction"))})
+        if telemetry.get("choiceKind") == "PAYMENT":
+            detail["paymentChoices"].append({"decisionId": decision_id,
+                "selected": bool(selected.get("choiceIds")),
+                "round": telemetry.get("round")})
+        if fee_cards_spent:
+            sources = {source for source in (
+                selected_trigger,
+                *((commit.get("context") or {}).get("sourceDefinitionId")
+                  for commit in telemetry["commits"])) if source in detail_cards}
+            if len(sources) == 1:
+                detail["paidCards"][next(iter(sources))] += fee_cards_spent
+            else:
+                detail["unattributedFeeCards"] += fee_cards_spent
     if not preparation:
         for card in offered & set(CARD_IDS.get(tracker["template"], ())):
             tracker["triggerOpportunities"][card] += 1
@@ -185,6 +250,8 @@ def record_step(tracker: dict, telemetry: dict | None, decision_id: int,
         for unit in commit["removed"]:
             tracker["rawUnitRemovals"][f"{unit['country']}:{unit['type']}:{unit['regionId']}"] += 1
         ops = _ops_for_commit(telemetry, commit)
+        for op in ops:
+            op["decisionId"] = decision_id
         tracker["operations"].extend(ops)
         for event in commit["events"]:
             if event.get("kind") != "remove" or not event.get("removedUnit"):
@@ -375,7 +442,7 @@ def summarize(tracker: dict, outcome: dict, final_state: dict | None = None) -> 
     scores = outcome["allianceScores"]
     result = {key: value for key, value in tracker.items() if key not in
               ("pendingInstall", "operations", "rawUnitAdds", "rawUnitRemovals",
-               "cancellations", "opponentTriggers")}
+               "cancellations", "opponentTriggers", "_detail")}
     for key in ("modelInstallSelections", "statusActions", "triggerOpportunities",
                 "triggerSelections", "triggerDeclines"):
         result[key] = dict(tracker[key])
