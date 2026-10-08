@@ -113,7 +113,7 @@ class ArenaTests(unittest.TestCase):
             self.baseline, plan)
         parent_sha = study.digest(study.BASE / "initial.pt")
         config = {**plan["learning"], "maxSteps": 2, "checkEverySteps": 1,
-                  "maxKl": 1e-7, "maxValueShift": 0}
+                  "maxKl": 1e-7, "maxValueShift": 1e-5}
         selected, result = study.learn_bounded(self.baseline, prep, payoff, prep,
             payoff, controls, config)
         self.assertIsNone(result["selectedStep"])
