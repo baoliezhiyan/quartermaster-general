@@ -103,8 +103,9 @@ class ArenaTests(unittest.TestCase):
                        encoding="utf-8") as stream:
             entries = json.load(stream)["entries"]
         chosen = [next(e for e in entries if e["template"] == key and
-                  e["variant"] == "positive" and e["layer"] == "payoff" and
-                  e["split"] == "train") for key in study.TARGETS]
+                  e["variant"] == "positive" and e["layer"] == layer and
+                  e["split"] == "train") for key in study.TARGETS
+                  for layer in ("preparation", "payoff")]
         prep, payoff, _ = study._samples_for_split(self.client, self.encoder,
             self.baseline, chosen, "train")
         plan = json.loads(study.PLAN.read_text(encoding="utf-8"))
@@ -112,7 +113,7 @@ class ArenaTests(unittest.TestCase):
             self.baseline, plan)
         parent_sha = study.digest(study.BASE / "initial.pt")
         config = {**plan["learning"], "maxSteps": 2, "checkEverySteps": 1,
-                  "maxKl": 0, "maxValueShift": 0}
+                  "maxKl": 1e-7, "maxValueShift": 0}
         selected, result = study.learn_bounded(self.baseline, prep, payoff, prep,
             payoff, controls, config)
         self.assertIsNone(result["selectedStep"])
