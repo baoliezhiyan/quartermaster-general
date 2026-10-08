@@ -9,6 +9,7 @@ import torch
 from scripts import ppo_train as ppo
 from scripts import ppo_combo_bc as bc
 from scripts import ppo_combo_three_course as study
+from scripts import ppo_combo_three_course_review as review
 from scripts import ppo_combo_course_v2 as course
 
 
@@ -129,6 +130,14 @@ class ArenaTests(unittest.TestCase):
         self.assertTrue(all(note["seat"] in ("united_kingdom", "italy",
                                              "soviet_union") for note in notes))
         self.assertLess(study._retention(self.baseline, controls)["maxKl"], 1e-6)
+
+    def test_normal_opening_combo_telemetry_is_available(self):
+        row = review.opening(self.client, self.encoder, self.baseline,
+                             20261131, False, 5)
+        self.assertEqual(set(row["combo"]), set(study.TARGETS))
+        self.assertTrue(all(not value["telemetryMissing"] for value in
+                            row["combo"].values()))
+        self.assertLessEqual(row["decisions"], 5)
 
 
 if __name__ == "__main__":
