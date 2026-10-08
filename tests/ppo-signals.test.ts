@@ -2,12 +2,56 @@ import {describe,expect,it} from 'vitest';
 import {PpoTrainingArena,PPO_A2S1_STATIC_SCHEMA} from '../src/training/ppoArena';
 import {TRAINING_A2S1_IDS,TRAINING_EVENT_IDS,TRAINING_SIGNAL_IDS_BY_SEAT} from '../src/core/trainingCourse';
 import {regularCatalog} from '../src/core/cardCatalog';
-import {startResolution} from '../src/core/resolution';
+import {startResolution,resolveChoice} from '../src/core/resolution';
 
 const fingerprint='a'.repeat(64);
 const options={mode:'A' as const,cardSet:'signals' as const,buildFingerprint:fingerprint};
 
 describe('A2S1 signals course',()=>{
+  it('encodes and resolves merged Blitzkrieg targets without a frame-bound action',()=>{
+    const saved=new PpoTrainingArena(2901,'signals-merged-blitz',options).exportSnapshot();
+    const state=saved.state;
+    for(const definitionId of ['special_134','special_136']){
+      const deck=state.decks.germany;
+      const zone=deck.hand.find(card=>card.definitionId===definitionId)?'hand':'drawPile';
+      const card=deck[zone].find(card=>card.definitionId===definitionId)!;
+      expect(card).toBeDefined();
+      deck[zone]=deck[zone].filter(item=>item.id!==card.id);
+      deck.active.push(card);
+    }
+    state.units=[
+      {id:'g',country:'germany',type:'army',regionId:'germany'},
+      {id:'e',country:'germany',type:'army',regionId:'eastern_europe'},
+      {id:'u',country:'soviet_union',type:'army',regionId:'ukraine'},
+      {id:'b',country:'soviet_union',type:'army',regionId:'balkans'},
+    ];
+    expect(startResolution(state,'陆攻','germany',[
+      {kind:'action',country:'germany',action:'land_battle',regions:['balkans'],label:'攻击A'},
+    ],[])).toBe(true);
+    const choose=(label?:string)=>{
+      const choice=state.resolution!.choice!;
+      expect(choice).toBeDefined();
+      const id=label?choice.options.find(option=>option.id===label||option.label===label)?.id:
+        choice.options[0]?.id;
+      expect(id).toBeDefined();
+      expect(resolveChoice(state,choice.seat,choice.id,[id!])).toBe(true);
+    };
+    const hasActionChoice=()=>state.resolution?.choice?.kind==='ACTION';
+    while(hasActionChoice())
+      choose(state.resolution!.choice!.field==='regionId'?'balkans':undefined);
+    choose('俯冲式轰炸机');
+    while(hasActionChoice())
+      choose(state.resolution!.choice!.field==='regionId'?'ukraine':undefined);
+    choose('闪电战');
+    expect(state.resolution?.choice?.triggerTargets).toBeDefined();
+    const arena=PpoTrainingArena.fromSnapshot(saved,options);
+    const observation=arena.observe()!;
+    expect(observation.candidates.map(candidate=>candidate.choiceIds?.[0]).sort())
+      .toEqual(['balkans','ukraine']);
+    expect(observation.candidates.every(candidate=>candidate.choices?.[0]?.action==='build_army')).toBe(true);
+    const target=observation.candidates.find(candidate=>candidate.choiceIds?.[0]==='ukraine')!;
+    expect(()=>arena.step({...observation.decision,actionId:target.id})).not.toThrow();
+  });
   it('loads the exact balanced status/response whitelist beside prior events',()=>{
     const added=Object.values(TRAINING_SIGNAL_IDS_BY_SEAT).flat();
     expect(added).toHaveLength(89);

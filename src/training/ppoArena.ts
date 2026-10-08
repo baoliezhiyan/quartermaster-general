@@ -842,20 +842,29 @@ export class PpoTrainingArena {
             country:effect.country,regionId,unitType:action==='build_army'?'army':'navy'};
         }
         case 'ACTION':{
-          if(effect?.kind!=='action')throw new Error('ACTION missing action effect');
+          // A merged trigger target is selected before its source rule is activated,
+          // so it has no frameId. Resolve the action from the selected window/rule.
+          const ref=choice.triggerTargets?.[id];
+          const selectedRule=ref?resolution?.rules.find(rule=>rule.id===ref.ruleId):undefined;
+          const selectedEffect=ref?selectedRule?.effects.find(item=>item.kind==='action'):effect;
+          if(selectedEffect?.kind!=='action')throw new Error('ACTION missing action effect');
           if(choice.field==='regionId'){
             if(!MAP.regions.some(r=>r.id===id))throw new Error(`Unknown ACTION region: ${id}`);
-            return {kind:'action_region',action:effect.action,country:effect.country,regionId:id};
+            if(ref&&(!resolution?.windows.some(window=>window.id===ref.windowId)||
+              !boardOptions(this.state,selectedEffect).some(option=>option.regionId===id)))
+              throw new Error(`Stale merged ACTION target: ${id}`);
+            return {kind:'action_region',action:selectedEffect.action,country:selectedEffect.country,regionId:id,
+              ...(ref?{effects:selectedRule!.effects.map(item=>structure(item,this.unitFact))}:{})};
           }
           if(choice.field==='defenderId'||choice.field==='attackerId'){
-            if(id==='empty'&&choice.field==='defenderId')return {kind:'empty_defender',action:effect.action,country:effect.country};
-            return {kind:choice.field,action:effect.action,country:effect.country,target:requireFact(id)};
+            if(id==='empty'&&choice.field==='defenderId')return {kind:'empty_defender',action:selectedEffect.action,country:selectedEffect.country};
+            return {kind:choice.field,action:selectedEffect.action,country:selectedEffect.country,target:requireFact(id)};
           }
           if(choice.field==='option'){
-            const option=boardOptions(this.state,effect).find(o=>o.id===id);
+            const option=boardOptions(this.state,selectedEffect).find(o=>o.id===id);
             if(!option)throw new Error(`Unknown ACTION plan: ${id}`);
             const source=option.recycleId??option.attackerId??option.airId;
-            return {kind:'action_plan',action:option.replacement??effect.action,country:effect.country,
+            return {kind:'action_plan',action:option.replacement??selectedEffect.action,country:selectedEffect.country,
               regionId:option.regionId,unitType:option.unitType,source:source?requireFact(source):undefined,
               target:option.defenderId?requireFact(option.defenderId):undefined,
               repeated:!!option.existingId,intercept:!!option.intercept};
