@@ -51,6 +51,10 @@ def _sample(model, encoder, observation, action_id, metadata):
                   if item["id"] == action_id)
     item = {"state": state, "candidates": candidates, "chosen": chosen,
             "metadata": metadata}
+    definition = observation["candidates"][chosen].get("definitionId")
+    item["sameCardIndices"] = [index for index, candidate in enumerate(
+        observation["candidates"]) if definition and
+        candidate.get("definitionId") == definition]
     with torch.no_grad():
         logits, value = model(*ppo.batch_tensors([item], torch.device("cpu")))
         item["teacher"] = torch.softmax(logits[0, :len(candidates)], -1).cpu().clone()

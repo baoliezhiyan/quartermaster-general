@@ -1,0 +1,47 @@
+{
+  "format": "a2s1c2-three-course-preregistered-v1",
+  "sourceInitialFileSha256": "deb92fd9960c92ff7ba13bcbc1ef871c36da36347c76a879cb0fcc441d39e885",
+  "sourceWeightsSha256": "94135ecfb2f0b4f066163cc605120ce9716cd310b56796e8a2d9b0f7666f7693",
+  "resourceMode": "A",
+  "entropyCoefficientForLaterPpoOnly": 0.01,
+  "courses": ["G1", "U4", "J1"],
+  "generation": {
+    "seedBase": 2026111000,
+    "targetPerTemplate": {"train": 8, "validation": 3, "final_test": 2},
+    "maxAttemptsPerSlot": 18,
+    "wallSeconds": 600,
+    "u4LegalPreludeRegions": ["eastern_europe", "western_europe", "balkans"]
+  },
+  "retention": {
+    "classification": "game-facts-v1-before-KL",
+    "unrelatedNormalOpeningSeeds": [20261121, 20261122, 20261123],
+    "maxKlFromReviewedC2Initial": 0.02,
+    "maxAbsoluteValueShiftFromReviewedC2Initial": 0.15,
+    "ambiguousScenesAreDiagnosticOnly": true
+  },
+  "learning": {
+    "maxSteps": 300,
+    "checkEverySteps": 20,
+    "learningRate": 0.00001,
+    "totalSupervisedWeight": 0.15,
+    "preparationWeight": 0.12,
+    "payoffWeight": 0.03,
+    "retentionKlWeight": 2.0,
+    "retentionValueWeight": 0.4,
+    "maxKl": 0.02,
+    "maxValueShift": 0.15,
+    "validationPlateauChecks": 3,
+    "trainSeed": 20261110,
+    "balancedTemplateSampling": true,
+    "selection": "minimum-balanced-training-NLL-then-lower-retention-KL-then-earlier-step",
+    "validationUse": "early-stop-only; never select best checkpoint",
+    "finalTestUse": "once after candidate selection"
+  },
+  "evaluation": {
+    "autonomousMaxDecisions": 100,
+    "stochasticRolloutsPerScene": 3,
+    "normalOpeningSeeds": [20261131, 20261132, 20261133],
+    "normalOpeningMaxDecisions": 150,
+    "targetNaturalProbability": 0.1
+  }
+}

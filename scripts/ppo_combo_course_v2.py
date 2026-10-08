@@ -214,7 +214,7 @@ def _specified_chain(entry, feasible):
 
 
 def generate_one(client, encoder, model, device, template, seed, variant="positive",
-                 rng_salt=0xC2C2, heldout=False):
+                 rng_salt=0xC2C2, heldout=False, heldout_region="eastern_europe"):
     started = time.perf_counter()
     observation = client.request(op="reset", seed=seed, mode="A", cardSet="signals")["observation"]
     rng = random.Random((seed << 32) ^ rng_salt)
@@ -253,7 +253,7 @@ def generate_one(client, encoder, model, device, template, seed, variant="positi
             # A real German first-turn placement changes the held-out board
             # encoding. It is a legal scripted prelude, not a synthetic state
             # mutation or a negative label for the shipyard.
-            candidate = first._source(observation, "build_army", "eastern_europe")
+            candidate = first._source(observation, "build_army", heldout_region)
             if candidate:
                 planned = "heldout_u4_legal_axis_deployment"
         if (template.owner == "germany" and observation["round"] == 1 and
