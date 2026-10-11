@@ -41,6 +41,19 @@ class Policy:
 
 
 class ReviewTests(unittest.TestCase):
+    def test_review_budget_is_persistent_across_calls(self):
+        class ExhaustedArchive(Archive):
+            def routes(self, status=None):
+                if status == "reviewed":
+                    return ["one", "two", "three"]
+                return super().routes(status)
+
+        with patch("scripts.ppo_auto_explore.run_branch") as branch:
+            report = review_routes([object(), object()], Policy("new"),
+                                   Policy("old"), ExhaustedArchive(), max_routes=3)
+        self.assertEqual(report["reviewed"], [])
+        branch.assert_not_called()
+
     def test_only_eight_complete_independent_pairs_enable_demo(self):
         archive = Archive()
 

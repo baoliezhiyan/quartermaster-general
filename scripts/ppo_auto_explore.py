@@ -343,7 +343,10 @@ def review_routes(clients, policy, parent_policy, archive, *, max_routes=3,
     started, steps, reports = time.perf_counter(), 0, []
     deadline = started + wall_seconds
     policies = (policy, parent_policy)
-    for route_id in archive.routes("candidate")[:max_routes]:
+    previously_reviewed = sum(len(archive.routes(status)) for status in
+                              ("reviewed", "enabled", "revoked"))
+    remaining_routes = max(0, max_routes - previously_reviewed)
+    for route_id in archive.routes("candidate")[:remaining_routes]:
         if steps >= max_steps or time.perf_counter()-started >= wall_seconds:
             break
         route = archive.route(route_id)["evidence"]
