@@ -9,6 +9,7 @@ from collections import Counter
 
 CARDS = {"special_136": "G1", "special_84": "U4", "special_199": "J1"}
 VERSION = "a2s1c3-combo-detail-v1"
+C4_VERSION = "a2s1c4-combo-detail-v2-zone-install-offers"
 
 
 def _linked(parent: dict, child: dict) -> bool:
@@ -134,6 +135,7 @@ def summarize_detail(tracker: dict, task: dict, fee_cards_spent: int) -> dict:
             reason = "unresolved"
         cards[card] = {"template": template,
             "installedAtTakeover": installed_at_takeover,
+            "legalPreparationChoices": detail["preparationOffers"][card],
             "autonomousInstallations": len(own_installs),
             "autonomousInstallationDecisions": [item["decisionId"] for item in own_installs],
             "installationEvents": [{"decisionId": item["decisionId"],
@@ -162,6 +164,13 @@ def summarize_detail(tracker: dict, task: dict, fee_cards_spent: int) -> dict:
             "autonomousPreparationToEffectiveUse": bool(own_installs and any(
                 use["round"] >= item["completedRound"]
                 for use in uses for item in own_installs)),
+            "preparationToFirstEffectiveRounds": min((
+                use["round"] - item["completedRound"] for use in uses
+                for item in own_installs if use["round"] >= item["completedRound"]),
+                default=None),
+            "missingInstallationAnomaly": bool(
+                task.get("courseId") is None and uses and not own_installs
+                and not installed_at_takeover),
             "unrealizedReason": reason,
             "linkedEvents": uses}
     return {"version": VERSION, "startType": "normal" if not task.get("courseId")
@@ -181,7 +190,8 @@ def aggregate_detail(episodes: list[dict]) -> dict:
         row["episodes"] += 1
         for card, value in detail["cards"].items():
             target = row["cards"].setdefault(card, {"autonomousPreparations": 0,
-                "autonomousPreparationEpisodes": 0, "legalTriggerWindows": 0,
+                "autonomousPreparationEpisodes": 0, "legalPreparationChoices": 0,
+                "legalTriggerWindows": 0,
                 "activatedWindows": 0, "declinedWindows": 0,
                 "linkedEffectiveSettlements": 0, "linkedEffectiveEpisodes": 0,
                 "effectiveAttacks": 0, "removedUnits": 0, "newUnits": 0,
@@ -189,9 +199,12 @@ def aggregate_detail(episodes: list[dict]) -> dict:
                 "opponentCounterConfirmed": 0, "paidResourceCardsAttributed": 0,
                 "courseTargetSettlements": 0, "courseTargetEpisodes": 0,
                 "preparedAndUsedEpisodes": 0, "installedAtTakeoverEpisodes": 0,
-                "firstPreparationRounds": [], "unrealizedReasons": Counter()})
+                "firstPreparationRounds": [], "preparationToEffectiveRounds": [],
+                "missingInstallationAnomalies": 0, "unrealizedReasons": Counter()})
             target["autonomousPreparations"] += value["autonomousInstallations"]
             target["autonomousPreparationEpisodes"] += bool(value["autonomousInstallations"])
+            target["legalPreparationChoices"] += value.get("legalPreparationChoices", 0)
+            target["missingInstallationAnomalies"] += value.get("missingInstallationAnomaly", False)
             target["legalTriggerWindows"] += value["legalTriggerWindows"]
             target["activatedWindows"] += value["activatedWindows"]
             target["declinedWindows"] += value["declinedWindows"]
@@ -207,6 +220,8 @@ def aggregate_detail(episodes: list[dict]) -> dict:
             target["installedAtTakeoverEpisodes"] += value["installedAtTakeover"]
             if value["firstPreparationRound"] is not None:
                 target["firstPreparationRounds"].append(value["firstPreparationRound"])
+            if value.get("preparationToFirstEffectiveRounds") is not None:
+                target["preparationToEffectiveRounds"].append(value["preparationToFirstEffectiveRounds"])
             if value["unrealizedReason"]:
                 target["unrealizedReasons"][value["unrealizedReason"]] += 1
     for row in result.values():
@@ -214,6 +229,8 @@ def aggregate_detail(episodes: list[dict]) -> dict:
             opportunities = target["legalTriggerWindows"]
             target["activationRate"] = (target["activatedWindows"] / opportunities
                                         if opportunities else None)
+            target["preparationChoiceRate"] = (target["autonomousPreparations"] /
+                target["legalPreparationChoices"] if target["legalPreparationChoices"] else None)
             target["unrealizedReasons"] = dict(target["unrealizedReasons"])
     return {"version": VERSION, "groups": result,
         "note": "Only source-linked settled effects count. Missing causes stay unresolved; "
@@ -230,8 +247,13 @@ def merge_update_summaries(summaries: list[dict]) -> dict:
         "cancelledEffects", "opponentCounterConfirmed", "paidResourceCardsAttributed",
         "courseTargetSettlements", "courseTargetEpisodes", "preparedAndUsedEpisodes",
         "installedAtTakeoverEpisodes")
+    version = summaries[0]["version"] if summaries else VERSION
+    if version not in (VERSION, C4_VERSION):
+        raise ValueError("Unknown combo detail metrics version")
+    if version == C4_VERSION:
+        numeric += ("legalPreparationChoices", "missingInstallationAnomalies")
     for summary in summaries:
-        if summary.get("version") != VERSION:
+        if summary.get("version") != version:
             raise ValueError("Cannot combine reports with different C3 metrics versions")
         for group, row in summary["groups"].items():
             target_group = combined.setdefault(group, {"episodes": 0, "cards": {}})
@@ -239,15 +261,23 @@ def merge_update_summaries(summaries: list[dict]) -> dict:
             for card, value in row["cards"].items():
                 target = target_group["cards"].setdefault(card, {
                     **{key: 0 for key in numeric}, "firstPreparationRounds": [],
+                    "preparationToEffectiveRounds": [],
                     "unrealizedReasons": Counter()})
                 for key in numeric:
                     target[key] += value[key]
                 target["firstPreparationRounds"].extend(value["firstPreparationRounds"])
+                if version == C4_VERSION:
+                    target["preparationToEffectiveRounds"].extend(
+                        value.get("preparationToEffectiveRounds", []))
                 target["unrealizedReasons"].update(value["unrealizedReasons"])
     for row in combined.values():
         for value in row["cards"].values():
             legal = value["legalTriggerWindows"]
             value["activationRate"] = value["activatedWindows"] / legal if legal else None
+            if version == C4_VERSION:
+                offers = value["legalPreparationChoices"]
+                value["preparationChoiceRate"] = (value["autonomousPreparations"] / offers
+                                                  if offers else None)
             value["unrealizedReasons"] = dict(value["unrealizedReasons"])
-    return {"version": VERSION, "groups": combined,
+    return {"version": version, "groups": combined,
             "updates": len(summaries)}

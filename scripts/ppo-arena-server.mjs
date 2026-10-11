@@ -162,6 +162,9 @@ for await(const line of rl){
       const prior=request.comboTelemetry?arena.observe():null;
       const selected=prior?.candidates.find(candidate=>candidate.id===request.action.actionId);
       const selectedFrom=request.comboTelemetry?cardZone(arena.state,selected?.cardId):null;
+      const extraCards=request.comboTelemetry&&prior?.choiceKind==='EXTRA_CARD'?
+        (selected?.choiceIds??[]).map(id=>({cardId:id,fromZone:cardZone(arena.state,id),
+          definitionId:arena.state.decks[prior.decisionSeat]?.hand.find(card=>card.id===id)?.definitionId??null})):[];
       response=arena.step(request.action);
       if(request.comboTelemetry){
         if(!arena.takeComboTelemetry)throw new Error('Combo telemetry was not enabled at reset');
@@ -170,10 +173,13 @@ for await(const line of rl){
           node:prior.node,choiceKind:prior.choiceKind??null,
           offeredTriggers:prior.candidates.flatMap(candidate=>(candidate.choices??[])
             .filter(choice=>choice.kind==='trigger').map(choice=>choice.definitionId)),
+          offeredSources:prior.candidates.filter(candidate=>candidate.kind==='source'&&
+            !candidate.statusAction).map(candidate=>candidate.definitionId),
           selected:selected?{id:selected.id,kind:selected.kind,cardId:selected.cardId??null,
             definitionId:selected.definitionId??null,cardType:selected.cardType??null,
             statusAction:!!selected.statusAction,fromZone:selectedFrom,
             afterZone:cardZone(arena.state,selected.cardId),choiceIds:selected.choiceIds??[],
+            extraCards,
             choices:selected.choices??[]}:null,
           commits:arena.takeComboTelemetry()};
       }

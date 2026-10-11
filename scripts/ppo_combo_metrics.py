@@ -8,6 +8,7 @@ import os
 from pathlib import Path
 
 VERSION = "combo-report-v5-all-linked-starts-j1-occupation"
+C4_VERSION = "combo-report-v6-zone-confirmed-preparation"
 PREPARATION_SCHEMA_VERSION = "combo-preparation-v1"
 LEGACY_PREPARATION_REPORT_VERSIONS = {"combo-report-v4-linked-settlement"}
 CARD_TYPES = {"状态": "status", "响应": "response"}
@@ -62,13 +63,14 @@ def _detail_start(state: dict | None) -> dict:
     return {"installedAtTakeover": installed, "seenWindows": set(),
             "legalWindows": Counter(), "activatedWindows": Counter(),
             "declinedWindows": Counter(), "windowDecisions": [],
-            "sourceChoices": [], "paymentChoices": [], "paidCards": Counter(),
+            "sourceChoices": [], "preparationOffers": Counter(),
+            "paymentChoices": [], "paidCards": Counter(),
             "unattributedFeeCards": 0, "unavailableReasons": Counter()}
 
 
 def _mutable() -> dict:
     return {"pendingInstall": {}, "modelInstallSelections": Counter(),
-            "modelInstallations": [], "statusActions": Counter(),
+            "modelInstallations": [], "installedInstances": set(), "statusActions": Counter(),
             "triggerOpportunities": Counter(), "triggerSelections": Counter(),
             "triggerDeclines": Counter(), "opponentTriggers": [], "cancellations": [],
             "operations": [], "rawUnitAdds": Counter(), "rawUnitRemovals": Counter(),
@@ -171,12 +173,23 @@ def record_step(tracker: dict, telemetry: dict | None, decision_id: int,
             "stage": "pre_takeover" if preparation else "post_takeover"}
         if not preparation:
             tracker["modelInstallSelections"][card_type] += 1
+    if telemetry.get("choiceKind") == "EXTRA_CARD":
+        for extra in selected.get("extraCards") or []:
+            if (extra.get("fromZone") or {}).get("zone") != "hand":
+                continue
+            tracker["pendingInstall"][extra["cardId"]] = {
+                "cardId": extra["cardId"], "definitionId": extra.get("definitionId"),
+                "type": None, "decisionId": decision_id, "round": telemetry["round"],
+                "decisionSeat": telemetry.get("decisionSeat"),
+                "actionSource": "extra_card", "stage": "pre_takeover" if preparation else "post_takeover"}
     elif selected.get("kind") == "source" and selected.get("statusAction"):
         tracker["statusActions"][selected.get("definitionId") or "unknown"] += 1
     offered = set(telemetry.get("offeredTriggers") or [])
     detail = tracker.get("_detail")
     if detail is not None and not preparation:
         from scripts.ppo_combo_c3_metrics import CARDS as detail_cards
+        for definition_id in set(telemetry.get("offeredSources") or []) & set(detail_cards):
+            detail["preparationOffers"][definition_id] += 1
         eligible = offered & set(detail_cards)
         selected_trigger = _selected_trigger(telemetry)
         for definition_id in eligible:
@@ -238,12 +251,16 @@ def record_step(tracker: dict, telemetry: dict | None, decision_id: int,
             for event in commit["events"] if event.get("outcome") == "cancelled")
         for installation in commit["installs"]:
             pending = tracker["pendingInstall"].get(installation["cardId"])
-            if not pending or installation["zone"] != (
-                    "active" if pending["type"] == "status" else "faceDown"):
+            if (not pending or installation["cardId"] in tracker["installedInstances"] or
+                    pending["type"] is not None and installation["zone"] != (
+                    "active" if pending["type"] == "status" else "faceDown")):
                 continue
             item = {**pending, "completedRound": commit["round"],
-                    "zone": installation["zone"]}
+                    "zone": installation["zone"],
+                    "type": "status" if installation["zone"] == "active" else "response",
+                    "definitionId": installation["definitionId"]}
             tracker["modelInstallations"].append(item)
+            tracker["installedInstances"].add(installation["cardId"])
             del tracker["pendingInstall"][installation["cardId"]]
         for unit in commit["added"]:
             tracker["rawUnitAdds"][f"{unit['country']}:{unit['type']}:{unit['regionId']}"] += 1
@@ -441,7 +458,7 @@ def summarize(tracker: dict, outcome: dict, final_state: dict | None = None) -> 
         status = "source_unresolved"
     scores = outcome["allianceScores"]
     result = {key: value for key, value in tracker.items() if key not in
-              ("pendingInstall", "operations", "rawUnitAdds", "rawUnitRemovals",
+              ("pendingInstall", "installedInstances", "operations", "rawUnitAdds", "rawUnitRemovals",
                "cancellations", "opponentTriggers", "_detail")}
     for key in ("modelInstallSelections", "statusActions", "triggerOpportunities",
                 "triggerSelections", "triggerDeclines"):
