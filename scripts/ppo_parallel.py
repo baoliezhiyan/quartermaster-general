@@ -16,6 +16,7 @@ import threading
 import time
 from collections import Counter, defaultdict, deque
 from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
+from contextlib import ExitStack
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -679,6 +680,8 @@ def main():
     parser.add_argument("--no-eval", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--report", type=Path, default=None)
     parser.add_argument("--cpu", action="store_true")
+    parser.add_argument("--background-performance", action="store_true",
+                        help="Opt in to process-local execution-speed unthrottling for Python and Node workers")
     args = parser.parse_args()
     if args.workers < 1 or args.inference_batch_size < 1 or args.inference_wait_ms < 0:
         parser.error("Invalid worker or inference batch configuration")
@@ -723,7 +726,22 @@ def main():
               f"启动 {min(args.workers, BATCH_EPISODES)} 个环境并加载模型...", flush=True)
         startup_started = time.perf_counter()
         clients = open_clients(min(args.workers, BATCH_EPISODES), Path(directory), args.card_set)
+        qos_stack = ExitStack()
+        qos_status = {}
+        def ensure_worker_qos():
+            if not args.background_performance:
+                return
+            from scripts.ppo_process_qos import disable_execution_speed_throttling
+            for pid in [os.getpid(), *(client.process.pid for client in clients)]:
+                if pid not in qos_status:
+                    qos_status[pid] = qos_stack.enter_context(
+                        disable_execution_speed_throttling(pid))
+                    status = qos_status[pid]
+                    if not status.get("applied"):
+                        print(f"Background performance unavailable for PID {pid}: "
+                              f"{status.get('reason', 'not applied')}", flush=True)
         try:
+            ensure_worker_qos()
             encoder = ppo.Encoder(clients[0].schema)
             model = (make_network(args.architecture, encoder) if args.architecture else
                      ppo.PpoNetwork(encoder.state_dim, encoder.candidate_dim)).to(device)
@@ -875,6 +893,8 @@ def main():
                       "courseVersion": clients[0].schema["courseVersion"],
                       "overridesVersion": clients[0].schema["overridesVersion"],
                       "device": str(device), "workers": len(clients),
+                      "backgroundPerformance": {"requested": args.background_performance,
+                                                 "processes": list(qos_status.values())},
                       "startupSeconds": startup_seconds,
                       "inferenceBatchSize": args.inference_batch_size,
                       "inferenceWaitMs": args.inference_wait_ms,
@@ -926,6 +946,7 @@ def main():
                     torch.cuda.synchronize()
             report["warmupSeconds"] = time.perf_counter() - warmup_started
             for update in range(start_update + 1, start_update + args.updates + 1):
+                ensure_worker_qos()
                 if device.type == "cuda":
                     torch.cuda.reset_peak_memory_stats()
                 tasks = make_tasks(next_seed, BATCH_EPISODES, update, args.mode,
@@ -1113,6 +1134,7 @@ def main():
                   f"本轮训练检查点已保存；详细指标见 {args.report or args.checkpoint.parent}。",
                   flush=True)
         finally:
+            qos_stack.close()
             for client in clients:
                 client.close()
 
