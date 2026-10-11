@@ -63,7 +63,7 @@ REWARD_CONFIG = {"gamma": GAMMA, "lambdaRound": LAMBDA_ROUND, "potential": POTEN
 def reward_config(card_set):
     if card_set == "signals":
         return {**REWARD_CONFIG,
-                "actionWasteVersion": "complete-action-settled-benefit-v3"}
+                "actionWasteVersion": "complete-action-supply-origin-v4"}
     return REWARD_CONFIG
 ENCODER_DICTIONARY = {"effectKinds": EFFECT_KINDS, "actions": ACTIONS, "phases": PHASES,
                       "choiceKinds": CHOICE_KINDS, "choiceFields": CHOICE_FIELDS,

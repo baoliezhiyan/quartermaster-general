@@ -20,7 +20,7 @@ import {SEATS,type CardInstance,type Command,type CountryId,type GameState,type 
 import type {Effect,ChoiceRequest} from '../core/resolutionTypes';
 import {BASIC_ACTIONS,type BasicAction,type DecisionContext,type TraceLevel} from './basicArena';
 
-export const PPO_ARENA_FORMAT='quartermaster-ppo-arena-v2';
+export const PPO_ARENA_FORMAT='quartermaster-ppo-arena-v3-supply-origin';
 export const PPO_OBSERVATION_SCHEMA_VERSION='ppo-observation-v6-effective-straits';
 export const PPO_ACTION_SCHEMA_VERSION='ppo-actions-v5-action-ledger';
 export const PPO_STATIC_SCHEMA={observationSchemaVersion:PPO_OBSERVATION_SCHEMA_VERSION,
@@ -111,7 +111,8 @@ type ActionLedger={cardId:string;definitionId:string;seat:SeatId;originDecisionI
   supplyCandidates:string[]};
 type PendingTrigger={ruleId:string;label:string;cardId:string;seat:SeatId;decisionId:number;
   definitionId:string;supported:boolean};
-type TriggerLedger=PendingTrigger&{frameId:string;positive:string[];penalized:boolean};
+type TriggerLedger=PendingTrigger&{frameId:string;positive:string[];penalized:boolean;
+  newUnitIds:string[];usedUnitIds:string[];supplyCandidates:string[];completed:boolean};
 type PendingTargetCheck={decisionId:number;seat:SeatId;cardId:string;frameId?:string;
   effectIndex:number;action:string;regionId:string;relatedAttempt?:boolean};
 
@@ -418,10 +419,17 @@ export class PpoTrainingArena {
       if(activation){
         if(effect.kind==='action'){
           const id=effect.resultUnitId;
-          if(id&&!beforeIds.has(id)&&after.units.some(unit=>unit.id===id))
-            activation.positive.push(`new_unit:${event.id}`);
+          if(id&&!beforeIds.has(id)&&after.units.some(unit=>unit.id===id)){
+            if(!activation.newUnitIds.includes(id))activation.newUnitIds.push(id);
+            const prior=suppliedUnits(before),current=suppliedUnits(after);
+            if(before.units.some(unit=>unit.id!==id&&!prior.has(unit.id)&&current.has(unit.id)))
+              activation.positive.push(`supplied_other:${event.id}`);
+          }
           else if(['land_battle','sea_battle','destroy'].includes(effect.action)&&
             effect.option?.defenderId)activation.positive.push(`attack:${event.id}`);
+          if(effect.option?.attackerId&&effect.option.defenderId&&
+            activation.newUnitIds.includes(effect.option.attackerId))
+            activation.usedUnitIds.push(effect.option.attackerId);
         }else if(effect.kind==='remove'&&
           allianceOf(effect.unit.country)!==allianceOf(activation.seat)||
           effect.kind==='score'&&effect.amount>0&&
@@ -451,6 +459,34 @@ export class PpoTrainingArena {
       for(const action of Object.values(this.actionLedgers))if(action.supplyEligible&&
         action.newUnitIds.includes(id)&&!action.supplyCandidates.includes(id))
         action.supplyCandidates.push(id);
+    for(const id of supplyRemovedIds)
+      for(const activation of Object.values(this.triggerLedgers))if(
+        activation.newUnitIds.includes(id)&&!activation.supplyCandidates.includes(id))
+        activation.supplyCandidates.push(id);
+    if(newEvents.some(event=>event.type==='RULE_EVENT'&&event.code==='COUNTRY_SCORED'))
+      for(const [frameId,activation] of Object.entries(this.triggerLedgers))if(
+        activation.completed&&activation.newUnitIds.length){
+        const allLostToSupply=activation.supplyCandidates.length===activation.newUnitIds.length&&
+          activation.supplyCandidates.every(id=>!after.units.some(unit=>unit.id===id))&&
+          !activation.usedUnitIds.some(id=>activation.newUnitIds.includes(id))&&
+          !activation.positive.length;
+        if(allLostToSupply&&activation.supported&&!activation.penalized&&
+          !this.penalizedEffectFrames.has(frameId)){
+          activation.penalized=true;this.penalizedEffectFrames.add(frameId);
+          this.rewardAdjustments.push({decisionId:activation.decisionId,seat:activation.seat,
+            cardId:activation.cardId,reason:'same_turn_supply_loss',penalty:-0.01,
+            beforeCap:-0.01,afterCap:-0.01,effects:activation.supplyCandidates.map(
+              id=>`supply_removed:${id}`)});
+        }
+        this.wasteAssessments.push({decisionId:activation.decisionId,seat:activation.seat,
+          cardId:activation.cardId,reason:activation.penalized?'same_turn_supply_loss':
+            activation.positive.length?'actual_benefit':
+            activation.newUnitIds.some(id=>after.units.some(unit=>unit.id===id))?
+              'new_unit_survived':activation.usedUnitIds.length?'unit_contributed':
+              'uncertain_supply_causality',actualEffects:[...activation.positive],
+          newUnitIds:[...activation.newUnitIds],alternative:true,penalized:activation.penalized});
+        delete this.triggerLedgers[frameId];
+      }
     if(newEvents.some(event=>event.type==='RULE_EVENT'&&event.code==='COUNTRY_SCORED'))
       for(const [id,action] of Object.entries(this.actionLedgers))if(action.newUnitIds.length){
         const allLostToSupply=action.supplyEligible&&
@@ -474,6 +510,7 @@ export class PpoTrainingArena {
   }
   private assessTriggerFrames(before:GameState,after:GameState){
     for(const [frameId,activation] of Object.entries(this.triggerLedgers)){
+      if(activation.completed)continue;
       const frame=after.resolution?.frames.find(frame=>frame.id===frameId);
       const prior=before.resolution?.frames.find(frame=>frame.id===frameId);
       if(frame?.status!=='COMPLETE'&&!(prior&&!frame))continue;
@@ -484,6 +521,10 @@ export class PpoTrainingArena {
       const benefit=combineBenefits(related.map(event=>resolvedEventBenefit(event,activation.seat)));
       const cancelled=!!(frame??prior)?.cancelled||related.some(event=>event.cancelled&&
         event.effect?.kind==='action'&&!!event.effect.option?.defenderId);
+      activation.completed=true;
+      // A newly recruited unit is provisional until the corresponding supply
+      // settlement. Keep this activation ledger, including its original decision.
+      if(activation.newUnitIds.length&&!cancelled)continue;
       if(activation.supported&&!cancelled&&!activation.positive.length&&benefit==='no'){
         activation.penalized=true;
         this.penalizedEffectFrames.add(frameId);
@@ -568,9 +609,12 @@ export class PpoTrainingArena {
         const plans=boardOptions(before,effect).filter(plan=>command.ids.includes(
           choice.field==='option'?plan.id:choice.field==='regionId'?plan.regionId:
             choice.field==='defenderId'?plan.defenderId??'empty':plan.attackerId??''));
+        // An attack on a real defender remains useful even when countered.
+        // A placement is provisional: it must survive supply or contribute
+        // before it can count as a benefit.
         if(plans.some(plan=>!!plan.defenderId||
-          ['build_army','build_navy','recruit_army','recruit_navy','air_deploy'].includes(
-            effect.action)&&!plan.existingId))activation.positive.push('valid_action_attempt');
+          effect.action==='air_deploy'&&!plan.existingId))
+          activation.positive.push('valid_action_attempt');
       }
     }
     if(command.type==='RESOLVE_ENGINE_CHOICE'&&before.resolution?.choice?.kind==='TRIGGER'&&
@@ -649,7 +693,8 @@ export class PpoTrainingArena {
       const index=this.pendingTriggers.findIndex(p=>p.cardId===frame.cardId&&p.label===frame.source);
       if(index<0)continue;
       const [pending]=this.pendingTriggers.splice(index,1);
-      this.triggerLedgers[frame.id]={...pending,frameId:frame.id,positive:[],penalized:false};
+      this.triggerLedgers[frame.id]={...pending,frameId:frame.id,positive:[],penalized:false,
+        newUnitIds:[],usedUnitIds:[],supplyCandidates:[],completed:false};
     }
     if(!before.resolution?.running&&this.state.resolution?.running)this.resolutionEventOutcomes={};
     this.recordActionEffects(before,this.state,command,supplyRemovedIds);
@@ -1241,7 +1286,9 @@ export class PpoTrainingArena {
       saved.header.overridesVersion!==(saved.header.cardSet==='signals'?
         TRAINING_A2S1_OVERRIDES_VERSION:TRAINING_OVERRIDES_VERSION)||!saved.knownUnits||
       !saved.pendingSubmissions||!saved.actionLedgers||!saved.resolutionEventOutcomes||
-      !saved.pendingTriggers||!saved.triggerLedgers||!saved.pendingTargetChecks||
+      !saved.pendingTriggers||!saved.triggerLedgers||Object.values(saved.triggerLedgers).some(
+        ledger=>!Array.isArray(ledger.newUnitIds)||!Array.isArray(ledger.supplyCandidates)||
+          typeof ledger.completed!=='boolean')||!saved.pendingTargetChecks||
       !saved.penalizedEffectFrames)
       throw new Error('Incompatible PPO snapshot');
     const arena=new PpoTrainingArena(saved.header.seed,saved.header.gameId,options);
