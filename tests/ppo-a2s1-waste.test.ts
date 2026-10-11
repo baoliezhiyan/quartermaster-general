@@ -138,7 +138,7 @@ describe('A2S1 complete-action waste',()=>{
     expect(penalties(result.all).filter(item=>item.reason==='same_turn_supply_loss'))
       .toMatchObject([{decisionId:result.initial,penalty:-0.01}]);
   });
-  it('charges a Thailand response activation after its recruit is removed by supply',()=>{
+  it('charges Thailand activation after its recruit is removed by supply',()=>{
     const saved=arena('japan').exportSnapshot(),s=saved.state;
     const card=s.decks.japan.hand.find(c=>c.definitionId==='special_188')!;
     s.decks.japan.hand=s.decks.japan.hand.filter(c=>c.id!==card.id);
@@ -146,17 +146,21 @@ describe('A2S1 complete-action waste',()=>{
     s.phase='TURN_START_WINDOW';
     const a=PpoTrainingArena.fromSnapshot(saved,options);
     const all:PpoStepInfo[]=[];
-    let activationDecision=-1;
+    let activationDecision=-1,playedInvasion=false;
     for(let n=0;n<40;n++){
       const o=a.observe();if(!o)break;
       const trigger=o.candidates.find(c=>c.choices?.some(choice=>
         choice.definitionId==='special_188'));
       if(trigger)activationDecision=o.decision.decisionId;
-      const next=trigger??o.candidates.find(c=>c.kind==='pass')??o.candidates[0];
+      const invasion=!playedInvasion&&o.node==='SOURCE'&&activationDecision>=0?
+        o.candidates.find(c=>c.definitionId==='special_199'):undefined;
+      const next=trigger??invasion??o.candidates.find(c=>c.kind==='pass')??o.candidates[0];
+      if(next===invasion)playedInvasion=true;
       const result=act(a,o,next);all.push(result.info);
       if(penalties(all).some(item=>item.reason==='same_turn_supply_loss'))break;
     }
     expect(activationDecision).toBeGreaterThanOrEqual(0);
+    expect(playedInvasion).toBe(true);
     expect(penalties(all).filter(item=>item.reason==='same_turn_supply_loss'))
       .toMatchObject([{decisionId:activationDecision,seat:'japan',cardId:card.id,penalty:-0.01}]);
     expect(penalties(all).filter(item=>item.cardId===card.id)).toHaveLength(1);

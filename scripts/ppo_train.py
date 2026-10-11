@@ -94,6 +94,10 @@ TRAINER_SOURCE_HASH = hashlib.sha256(Path(__file__).read_bytes() +
      if Path(__file__).with_name("ppo_parallel.py").exists() else b"") +
     (Path(__file__).with_name("ppo_trajectory.py").read_bytes()
      if Path(__file__).with_name("ppo_trajectory.py").exists() else b"") +
+    b"".join(Path(__file__).with_name(name).read_bytes() for name in
+        ("ppo_auto_archive.py", "ppo_auto_explore.py", "ppo_auto_imitate.py",
+         "ppo_auto_library.py",
+         "ppo_process_qos.py") if Path(__file__).with_name(name).exists()) +
     Path(__file__).with_name("ppo-arena-server.mjs").read_bytes()).hexdigest()
 # These exact predecessors use the same observations, actions, rewards, policy
 # update and arena rules. Later changes affect progress/review presentation,
@@ -1104,7 +1108,7 @@ def restore_checkpoint(path, model, optimizer, encoder, client, mode, rng, card_
                              "87b7fa23046c8a38a0bb06623085ad414353f413fad16c976a56544bb924c8d2")
     if not source_compatible:
         raise ValueError("Checkpoint trainer source differs")
-    if experiment_id in ("A2S1", "A2S1W1", "A2S1C1", "A2S1C2", "A2S1C3", "A2S1C4") and saved.get("update", 0) > 1 and saved.get("samplingConfig") != {
+    if experiment_id in ("A2S1", "A2S1W1", "A2S1C1", "A2S1C2", "A2S1C3", "A2S1C4", "A2AUTOBASE", "A2AUTOCAND", "A2AUTO") and saved.get("update", 0) > 1 and saved.get("samplingConfig") != {
             "version": "chunk-shuffle-epoch-v1", "cacheLimitBytes": 1536 * 1024 ** 2,
             "prefetchLimitBytes": 256 * 1024 ** 2, "gradientMicrobatch": 64,
             "logicalMinibatch": 256, "epochs": 4}:

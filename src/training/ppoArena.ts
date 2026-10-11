@@ -403,6 +403,7 @@ export class PpoTrainingArena {
         directlyActing.positive.push('direct_score');
     }
     const frames=new Map(after.resolution?.frames.map(f=>[f.id,f.cardId])??[]);
+    const eventFrames=new Map(after.resolution?.events.map(event=>[event.id,event.frameId])??[]);
     for(const event of after.resolution?.events??[]){
       if(this.resolutionEventOutcomes[event.id]===event.outcome)continue;
       this.resolutionEventOutcomes[event.id]=event.outcome??'unknown';
@@ -415,8 +416,11 @@ export class PpoTrainingArena {
           placement.newUnitIds.includes(effect.option.attackerId))
           placement.usedUnitIds.push(effect.option.attackerId);
       const cardId=frames.get(event.frameId),action=cardId?this.actionLedgers[cardId]:undefined;
-      const activation=this.triggerLedgers[event.frameId];
-      if(activation){
+      const activationFrames=new Set([event.frameId,...event.ancestorIds.map(
+        id=>eventFrames.get(id)).filter((id):id is string=>!!id)]);
+      for(const activationFrame of activationFrames){
+      const activation=this.triggerLedgers[activationFrame];
+      if(!activation)continue;
         if(effect.kind==='action'){
           const id=effect.resultUnitId;
           if(id&&!beforeIds.has(id)&&after.units.some(unit=>unit.id===id)){
@@ -1266,6 +1270,17 @@ export class PpoTrainingArena {
   }
   truncate(reason='max_decisions'){if(this.done||!reason.trim())throw new Error('Invalid truncation');
     this.finalObservation=this.observe();this.terminationReason=reason;this.cached=null;return this.result!;}
+  /** Off-policy review only. Changes future streams, never the root's known cards or history. */
+  forkFutureRandom(seed:number){
+    if(!Number.isSafeInteger(seed)||seed<0||seed>0xffffffff||this.done)
+      throw new Error('Invalid off-policy review seed');
+    this.state=structuredClone(this.state);
+    this.state.randomState=seed>>>0;
+    if(!this.state.trainingCourse)throw new Error('Training random streams unavailable');
+    this.state.trainingCourse.openRandomState=(seed^0x7f4a7c15)>>>0;
+    this.state.trainingCourse.discardRandomState=(seed^0xd1b54a32)>>>0;
+    this.cached=undefined;
+  }
   exportSnapshot():PpoSnapshot{return structuredClone({format:PPO_ARENA_FORMAT,header:this.header,state:this.state,
     decisionCount:this.decisionCount,pendingCardId:this.pendingCardId,terminationReason:this.terminationReason,
     finalObservation:this.finalObservation,knownUnits:this.knownUnits,

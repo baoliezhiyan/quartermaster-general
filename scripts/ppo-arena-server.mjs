@@ -199,6 +199,10 @@ for await(const line of rl){
         cardSet:request.snapshot.header.cardSet,buildFingerprint:fingerprint,trace:request.trace??'none'});
       if(request.comboTelemetry)attachComboTelemetry(arena,request.comboTelemetry);
       response={observation:arena.observe(),header:arena.header,result:arena.result};
+    }else if(request.op==='review-fork-rng'){
+      if(!arena||request.purpose!=='off-policy-review')throw new Error('Review RNG fork unavailable');
+      arena.forkFutureRandom(request.seed);
+      response={observation:arena.observe(),randomConfig:{purpose:request.purpose,seed:request.seed}};
     }else if(request.op==='close'){
       send({ok:true});break;
     }else throw new Error('Unknown operation');

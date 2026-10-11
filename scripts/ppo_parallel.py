@@ -29,6 +29,7 @@ from scripts.ppo_trajectory import TrajectoryStore, ROOT as TRAJECTORY_ROOT, cle
 
 BATCH_EPISODES = 40
 POLICY_SALT = 0x9E3779B97F4A7C15
+AUTO_EXPERIMENTS = ("A2AUTOBASE", "A2AUTOCAND", "A2AUTO")
 
 
 class _MemoryCounters(ctypes.Structure):
@@ -206,6 +207,19 @@ def make_tasks(start_seed: int, count: int, update: int, mode: str,
     if combo_entries is not None:
         if count != BATCH_EPISODES:
             raise ValueError("Combo course requires exactly 40 complete episodes")
+        if combo_version in AUTO_EXPERIMENTS:
+            from scripts.ppo_combo_sampler_v2 import plan
+            quota = plan(combo_entries, update)
+            if len(quota["courseIds"]) != 20:
+                raise ValueError("Reviewed C4 sampler no longer has twenty course slots")
+            strata = ((0, 9, 2), (9, 12, 1), (12, 18, 3), (18, 20, 1))
+            selected = [quota["courseIds"][first + (update - 1 + offset) % (last-first)]
+                        for first, last, offset in strata]
+            for index, course_id in enumerate(selected):
+                tasks[36 + index]["courseId"] = course_id
+            for task in tasks:
+                task["comboDetail"] = True
+            return tasks
         if combo_version == "A2S1C4":
             from scripts.ppo_combo_sampler_v2 import plan
             quota = plan(combo_entries, update)
@@ -238,6 +252,51 @@ def make_tasks(start_seed: int, count: int, update: int, mode: str,
             for task in tasks:
                 task["comboDetail"] = True
     return tasks
+
+
+def discover_off_policy(clients, model, encoder, device, *, update, training_seed,
+                        source_hash, archive_root, pairs, review_parent,
+                        review_seconds):
+    """Separate real-engine exploration; never appends to the PPO trajectory store."""
+    from scripts.ppo_auto_archive import ExplorationArchive
+    from scripts.ppo_auto_explore import (VERSION, FrozenPolicy, capture_roots,
+        explore_pairs, review_routes)
+    archive_path = archive_root / f"update-{update:04d}" / "exploration.sqlite"
+    policy = FrozenPolicy.from_live(model, encoder, device, source_hash=source_hash)
+    identity = {"sourceCheckpointSha256": source_hash,
+        "sourceWeightsSha256": policy.weight_hash,
+        "buildFingerprint": clients[0].fingerprint,
+        "encoderVersion": ppo.encoder_version("signals"),
+        "rewardConfig": ppo.reward_config("signals"),
+        "explorerVersion": VERSION, "policyVersion": update-1}
+    started = time.perf_counter()
+    with ExplorationArchive(archive_path, identity) as archive:
+        capture = capture_roots(clients[0], policy, archive,
+                                training_seed+update*100_003+9_000_000,
+                                max_roots=12, max_decisions=240)
+        missing = max(0, pairs - archive.branch_pairs())
+        branching = explore_pairs(clients[:2], policy, archive,
+            max_pairs=missing, max_steps=6000, wall_seconds=1200,
+            seed=training_seed+update*100_003+9_100_000)
+        pending = len(archive.routes("candidate"))
+        if pending:
+            parent = FrozenPolicy(review_parent, clients[0], device="cpu")
+            review = review_routes(clients[:2], policy, parent, archive,
+                max_routes=3, max_steps=20_000, wall_seconds=review_seconds,
+                seed=training_seed+update*100_003+9_200_000)
+        else:
+            review = {"reviewed": [], "steps": 0, "remainingCandidates": 0}
+        demonstrations = archive.demonstration_batch(64, training_seed+update)
+        sentinel = [archive.read_root(root)["observation"]
+                    for root in archive.roots()[:4]]
+        stats = archive.stats()
+    return {"version": VERSION, "archive": str(archive_path),
+            "identity": identity, "capture": capture,
+            "branching": {key: value for key, value in branching.items() if key != "branches"},
+            "review": review, "archiveStats": stats,
+            "environmentSteps": capture["decisions"]+branching["steps"]+review["steps"],
+            "seconds": time.perf_counter()-started,
+            "demonstrationBatch": len(demonstrations)}, demonstrations, sentinel
 
 
 def policy_rng(seed: int, policy_version: int, training_seed: int) -> random.Random:
@@ -649,7 +708,7 @@ def summarize_evaluation(games):
 def main():
     parser = argparse.ArgumentParser(description="Parallel complete-episode PPO training")
     parser.add_argument("--mode", choices=["A", "B"], required=True)
-    parser.add_argument("--experiment-id", choices=["A1", "A2", "A1S1", "S2FLAT", "S2MAP", "A1S2", "A2S1", "A2S1W1", "A2S1C1", "A2S1C2", "A2S1C3", "A2S1C4"], default=None)
+    parser.add_argument("--experiment-id", choices=["A1", "A2", "A1S1", "S2FLAT", "S2MAP", "A1S2", "A2S1", "A2S1W1", "A2S1C1", "A2S1C2", "A2S1C3", "A2S1C4", *AUTO_EXPERIMENTS], default=None)
     parser.add_argument("--architecture", choices=["flat-v1-effective-straits",
         "shared-regions-actor-adjacency-ordered-actions-v2", "map-contextual-opening-adapter-v1",
         "map-contextual-opening-adapter-a2s1-v1"], default=None)
@@ -682,6 +741,11 @@ def main():
     parser.add_argument("--cpu", action="store_true")
     parser.add_argument("--background-performance", action="store_true",
                         help="Opt in to process-local execution-speed unthrottling for Python and Node workers")
+    parser.add_argument("--auto-exploration-pairs", type=int, default=0)
+    parser.add_argument("--auto-exploration-root", type=Path)
+    parser.add_argument("--auto-review-parent", type=Path)
+    parser.add_argument("--auto-review-seconds", type=int, default=120)
+    parser.add_argument("--auto-frozen-library", type=Path)
     args = parser.parse_args()
     if args.workers < 1 or args.inference_batch_size < 1 or args.inference_wait_ms < 0:
         parser.error("Invalid worker or inference batch configuration")
@@ -689,13 +753,24 @@ def main():
         parser.error("Production PPO updates require exactly 40 complete episodes")
     if args.updates < 0:
         parser.error("updates must be nonnegative")
+    if args.auto_exploration_pairs < 0 or args.auto_exploration_pairs > 100:
+        parser.error("auto exploration pairs must be between 0 and 100")
+    if args.auto_review_seconds < 1 or args.auto_review_seconds > 1800:
+        parser.error("auto review budget must be 1..1800 seconds")
+    if args.auto_exploration_pairs and (args.experiment_id not in AUTO_EXPERIMENTS or
+            args.auto_exploration_root is None or args.auto_review_parent is None):
+        parser.error("Automatic exploration needs an isolated experiment and explicit archive/parent")
+    if args.experiment_id not in AUTO_EXPERIMENTS and (args.auto_exploration_root or
+            args.auto_review_parent or args.auto_frozen_library):
+        parser.error("Automatic exploration is exclusive to its own experiments")
     if not math.isfinite(args.entropy_coefficient) or args.entropy_coefficient < 0:
         parser.error("entropy coefficient must be finite and nonnegative")
     if args.experiment_id and (args.mode != "A" or args.entropy_coefficient !=
                                {"A1": 0.01, "A2": 0.02, "A1S1": 0.01,
                                 "S2FLAT": 0.01, "S2MAP": 0.01, "A1S2": 0.01,
                                 "A2S1": 0.01, "A2S1W1": 0.01, "A2S1C1": 0.01,
-                                "A2S1C2": 0.01, "A2S1C3": 0.01, "A2S1C4": 0.01}[args.experiment_id] or
+                                "A2S1C2": 0.01, "A2S1C3": 0.01, "A2S1C4": 0.01,
+                                **{name: 0.01 for name in AUTO_EXPERIMENTS}}[args.experiment_id] or
                                not args.initial_weights or not args.expected_initial_hash):
         parser.error("A1/A2 require A resource mode, the prescribed entropy, and shared initialization")
     from scripts.ppo_network_factory import STAGE2_EXPERIMENTS, ACTIVE_EXPERIMENTS, make_network
@@ -711,9 +786,9 @@ def main():
             parser.error("Invalid A1S2 auxiliary configuration")
     elif args.auxiliary_data is not None or args.no_auxiliary:
         parser.error("Auxiliary learning is exclusive to A1S2")
-    if args.experiment_id in ("A2S1", "A2S1W1", "A2S1C1", "A2S1C2", "A2S1C3", "A2S1C4") and args.card_set != "signals":
+    if args.experiment_id in ("A2S1", "A2S1W1", "A2S1C1", "A2S1C2", "A2S1C3", "A2S1C4", *AUTO_EXPERIMENTS) and args.card_set != "signals":
         parser.error("A2S1 requires the signals course")
-    if (args.experiment_id in ("A2S1C1", "A2S1C2", "A2S1C3", "A2S1C4")) != (args.combo_pool is not None):
+    if (args.experiment_id in ("A2S1C1", "A2S1C2", "A2S1C3", "A2S1C4", *AUTO_EXPERIMENTS)) != (args.combo_pool is not None):
         parser.error("Combo experiments require their own reachable start pool")
     torch.set_num_threads(min(4, os.cpu_count() or 1))
     device = torch.device("cpu" if args.cpu or not torch.cuda.is_available() else "cuda")
@@ -753,7 +828,7 @@ def main():
                                                 "candidateDim": encoder.candidate_dim} or
                     args.architecture is not None and initial.get("networkArchitecture") != args.architecture):
                     raise ValueError("Comparison initialization schema differs")
-                if args.experiment_id in ("A2S1W1", "A2S1C1", "A2S1C2", "A2S1C3", "A2S1C4") and (
+                if args.experiment_id in ("A2S1W1", "A2S1C1", "A2S1C2", "A2S1C3", "A2S1C4", *AUTO_EXPERIMENTS) and (
                         initial.get("experimentId") != args.experiment_id or
                         initial.get("rewardConfig") != ppo.reward_config("signals") or
                         initial.get("optimizerMigration") != "new-Adam-no-old-momentum"):
@@ -776,6 +851,14 @@ def main():
                         initial.get("sourceC3CheckpointSha256") !=
                         "ed32ba1f9e6927be8a4cec739942533ff5d949137b39239429b53c9855b5c0b7"):
                     raise ValueError("A2S1C4 initializer is not the completed C3 update-20 model")
+                if args.experiment_id in AUTO_EXPERIMENTS and (
+                        initial.get("sourceExperimentId") != "A2S1C4" or
+                        initial.get("sourceUpdate") != 20 or
+                        initial.get("sourceCompletedEpisodes") != 800 or
+                        initial.get("experimentId") != args.experiment_id or
+                        initial.get("sourceC4CheckpointSha256") !=
+                        "165152a554bc68ee2a97bdbd4ab338537e21037190c6c091aec61288ebdc2e70"):
+                    raise ValueError("Automatic exploration initializer is not the completed C4 update-20 model")
                 if args.experiment_id in ("A2S1W1", "A2S1C1") and initial.get("sourceExperimentId") != "A2S1":
                     raise ValueError("Historical A2S1 initializer has a different parent")
                 model.load_state_dict(initial["modelState"])
@@ -784,7 +867,7 @@ def main():
                 raise ValueError("Comparison initialization weight hash differs")
             combo_entries, course_config, combo_generation, combo_preparation = None, None, None, None
             if args.combo_pool:
-                if args.experiment_id in ("A2S1C2", "A2S1C3", "A2S1C4"):
+                if args.experiment_id in ("A2S1C2", "A2S1C3", "A2S1C4", *AUTO_EXPERIMENTS):
                     from scripts import ppo_combo_course_v2 as combo_module
                 else:
                     from scripts import ppo_combo_course as combo_module
@@ -792,14 +875,14 @@ def main():
                     raise ValueError("Combo training requires an explicit migrated initializer")
                 expected = combo_module.pool_identity(clients[0], initial["sourceCheckpointSha256"],
                     initial.get("generatorWeightsSha256", initial_hash)
-                    if args.experiment_id in ("A2S1C2", "A2S1C3", "A2S1C4") else initial_hash)
+                    if args.experiment_id in ("A2S1C2", "A2S1C3", "A2S1C4", *AUTO_EXPERIMENTS) else initial_hash)
                 pool = combo_module.read_pool(args.combo_pool, expected)
-                combo_entries = {combo_module.course_id(item) if args.experiment_id in ("A2S1C2", "A2S1C3", "A2S1C4")
+                combo_entries = {combo_module.course_id(item) if args.experiment_id in ("A2S1C2", "A2S1C3", "A2S1C4", *AUTO_EXPERIMENTS)
                                  else f"{item['template']}:{item['variant']}:{item['layer']}": item
                                  for item in pool["entries"]}
                 if args.experiment_id == "A2S1C1" and (len(combo_entries) != 32 or len(pool["entries"]) != 32):
                     raise ValueError("A2S1C1 pool requires all eight templates and 32 starts")
-                if args.experiment_id in ("A2S1C2", "A2S1C3", "A2S1C4"):
+                if args.experiment_id in ("A2S1C2", "A2S1C3", "A2S1C4", *AUTO_EXPERIMENTS):
                     required = {f"{template.key}:{variant}:{layer}" for template in combo_module.TEMPLATES
                                 for variant in ("positive", "control") for layer in ("payoff", "preparation")}
                     if not all(any(key.startswith(prefix + ":") for key in combo_entries) for prefix in required):
@@ -813,7 +896,7 @@ def main():
                                  "poolIdentitySha256": expected["identitySha256"],
                                  "poolFileSha256": hashlib.sha256(args.combo_pool.read_bytes()).hexdigest(),
                                  "metricsVersion": COMBO_METRICS_VERSION + ("-c3" if args.experiment_id == "A2S1C3" else "-c2")
-                                    if args.experiment_id in ("A2S1C2", "A2S1C3", "A2S1C4") else COMBO_METRICS_VERSION}
+                                    if args.experiment_id in ("A2S1C2", "A2S1C3", "A2S1C4", *AUTO_EXPERIMENTS) else COMBO_METRICS_VERSION}
                 if args.experiment_id == "A2S1C4":
                     from scripts.ppo_combo_sampler_v2 import VERSION as SAMPLER_VERSION
                     course_config["mix"] = {"normal": 20, "positivePreparation": 9,
@@ -822,14 +905,31 @@ def main():
                     course_config["samplerVersion"] = SAMPLER_VERSION
                     from scripts.ppo_combo_metrics import C4_VERSION as C4_METRICS_VERSION
                     course_config["metricsVersion"] = C4_METRICS_VERSION + "-c4"
-                if args.experiment_id in ("A2S1C3", "A2S1C4"):
+                if args.experiment_id in AUTO_EXPERIMENTS:
+                    from scripts.ppo_combo_sampler_v2 import VERSION as SAMPLER_VERSION
+                    from scripts.ppo_combo_metrics import C4_VERSION as C4_METRICS_VERSION
+                    course_config["mix"] = {"normal": 36, "handWrittenCourse": 4}
+                    course_config["samplerVersion"] = SAMPLER_VERSION
+                    course_config["metricsVersion"] = C4_METRICS_VERSION + "-auto-v1"
+                    course_config["automaticExploration"] = {
+                        "version": "auto-exploration-per-complete-batch-v1",
+                        "pairsPerUpdate": args.auto_exploration_pairs,
+                        "reviewMaxSeconds": args.auto_review_seconds,
+                        "reviewParentSha256": (hashlib.sha256(
+                            args.auto_review_parent.read_bytes()).hexdigest()
+                            if args.auto_review_parent else None),
+                        "frozenLibrarySha256": (hashlib.sha256(
+                            args.auto_frozen_library.read_bytes()).hexdigest()
+                            if args.auto_frozen_library else None),
+                        "imitation": "reviewed-only-max2x64-lr1e-5-sentinel-kl-0.01"}
+                if args.experiment_id in ("A2S1C3", "A2S1C4", *AUTO_EXPERIMENTS):
                     from scripts.ppo_combo_c3_metrics import VERSION as C3_METRICS_VERSION
-                    if args.experiment_id == "A2S1C4":
+                    if args.experiment_id == "A2S1C4" or args.experiment_id in AUTO_EXPERIMENTS:
                         from scripts.ppo_combo_c3_metrics import C4_VERSION as C4_DETAIL_VERSION
                         course_config["detailMetricsVersion"] = C4_DETAIL_VERSION
                     else:
                         course_config["detailMetricsVersion"] = C3_METRICS_VERSION
-                if args.experiment_id in ("A2S1C2", "A2S1C3", "A2S1C4"):
+                if args.experiment_id in ("A2S1C2", "A2S1C3", "A2S1C4", *AUTO_EXPERIMENTS):
                     if not initial.get("demonstrationAuditSha256"):
                         raise ValueError("A2S1C2 requires an auditable separate imitation pass")
                     course_config["demonstrationAuditSha256"] = initial["demonstrationAuditSha256"]
@@ -868,7 +968,7 @@ def main():
                     ["git", "status", "--porcelain"], cwd=ppo.ROOT, text=True).strip())
             except (OSError, subprocess.CalledProcessError):
                 source_commit, source_dirty = None, None
-            gradient_microbatch = (64 if args.experiment_id in ("A2S1", "A2S1W1", "A2S1C1", "A2S1C2", "A2S1C3", "A2S1C4") else
+            gradient_microbatch = (64 if args.experiment_id in ("A2S1", "A2S1W1", "A2S1C1", "A2S1C2", "A2S1C3", "A2S1C4", *AUTO_EXPERIMENTS) else
                                    32 if args.experiment_id in ("S2MAP", "A1S2") else
                                    ppo.OPTIMIZER_CONFIG["minibatch"])
             report = {"mode": args.mode, "experimentId": args.experiment_id,
@@ -922,7 +1022,7 @@ def main():
                 for obsolete in ("baselineEvaluation", "baselineEvaluationSeconds", "evaluations"):
                     report.pop(obsolete, None)
             report["gradientMicrobatch"] = gradient_microbatch
-            if args.experiment_id in ("A2S1C1", "A2S1C2", "A2S1C3", "A2S1C4"):
+            if args.experiment_id in ("A2S1C1", "A2S1C2", "A2S1C3", "A2S1C4", *AUTO_EXPERIMENTS):
                 report["samplingConfig"] = {"version": "chunk-shuffle-epoch-v1",
                     "cacheLimitBytes": 1536 * 1024 ** 2,
                     "prefetchLimitBytes": 256 * 1024 ** 2,
@@ -958,13 +1058,19 @@ def main():
                     print(f"A2S1C4 更新 {update} 预定课程配额："
                           f"{course_quota['plannedCounts']}；缺失组合："
                           f"{course_quota['missingCombinations']}", flush=True)
+                if args.experiment_id in AUTO_EXPERIMENTS:
+                    chosen = [task["courseId"] for task in tasks if task.get("courseId")]
+                    course_quota = {"version": "auto-36-normal-4-course-v1",
+                        "plannedCounts": dict(Counter(":".join(key.split(":")[:3]) for key in chosen)),
+                        "missingCombinations": [], "cursor": 4 * (update - 1)}
+                    print(f"{args.experiment_id} 更新 {update} 预定课程：{chosen}", flush=True)
                 diagnostic = args.checkpoint.with_suffix(f".failed-update-{update}.json")
                 monitored_started = time.perf_counter()
                 label = (f"{args.experiment_id or args.mode}（资源{args.mode}，熵{args.entropy_coefficient:.2f}） "
                          f"{ordinal((update - 1) // 10 + 1, '轮')} · "
                          f"{ordinal((update - 1) % 10 + 1, '次更新')}")
                 store = TrajectoryStore(args.mode, update, root=trajectory_root,
-                    read_limit=(1536 * 1024 ** 2 if args.experiment_id in ("A2S1", "A2S1W1", "A2S1C1", "A2S1C2", "A2S1C3", "A2S1C4") else 16 * 1024 ** 2))
+                    read_limit=(1536 * 1024 ** 2 if args.experiment_id in ("A2S1", "A2S1W1", "A2S1C1", "A2S1C2", "A2S1C3", "A2S1C4", *AUTO_EXPERIMENTS) else 16 * 1024 ** 2))
                 phases = {"beforeCollection": phase_resources(clients, store, device)}
                 result = None
                 try:
@@ -982,6 +1088,30 @@ def main():
                                 if dict(actual) != course_quota["plannedCounts"]:
                                     raise ValueError(f"C4 course quota mismatch before PPO update: {dict(actual)}")
                             phases["afterCollection"] = phase_resources(clients, store, device)
+                            exploration, reviewed_demonstrations, sentinel = None, [], []
+                            if args.auto_exploration_pairs:
+                                progress.set_stage("离策略探索中")
+                                source_hash = hashlib.sha256((args.checkpoint if
+                                    args.checkpoint.exists() else args.initial_weights).read_bytes()).hexdigest()
+                                exploration, reviewed_demonstrations, sentinel = discover_off_policy(
+                                    clients, model, encoder, device, update=update,
+                                    training_seed=args.seed, source_hash=source_hash,
+                                    archive_root=args.auto_exploration_root,
+                                    pairs=args.auto_exploration_pairs,
+                                    review_parent=args.auto_review_parent,
+                                    review_seconds=args.auto_review_seconds)
+                                if args.auto_frozen_library:
+                                    from scripts.ppo_auto_library import load_batch
+                                    frozen = load_batch(args.auto_frozen_library,
+                                        expected_sha=course_config["automaticExploration"][
+                                            "frozenLibrarySha256"],
+                                        build_fingerprint=clients[0].fingerprint,
+                                        encoder_version=ppo.encoder_version("signals"),
+                                        reward_config=ppo.reward_config("signals"),
+                                        limit=max(1, 64-len(reviewed_demonstrations)),
+                                        seed=args.seed+update)
+                                    reviewed_demonstrations.extend(frozen[:64-len(reviewed_demonstrations)])
+                                    exploration["frozenReviewedDemonstrations"] = len(frozen)
                             progress.set_stage("优化中")
                             optimization_started = time.perf_counter()
                             model.train()
@@ -989,12 +1119,20 @@ def main():
                                                      entropy_coefficient=args.entropy_coefficient,
                                                      gradient_microbatch=gradient_microbatch,
                                                      sampling=("chunk-shuffle-epoch-v1" if
-                                                         args.experiment_id in ("A2S1", "A2S1W1", "A2S1C1", "A2S1C2", "A2S1C3", "A2S1C4") else
+                                                         args.experiment_id in ("A2S1", "A2S1W1", "A2S1C1", "A2S1C2", "A2S1C3", "A2S1C4", *AUTO_EXPERIMENTS) else
                                                          "global-shuffle-v1"))
                             auxiliary_metrics = (ppo_auxiliary.update(model, optimizer,
                                 auxiliary_bundle, device,
                                 ppo_auxiliary.weight_at_update(auxiliary_config, update), update)
                                 if auxiliary_config is not None else None)
+                            auto_auxiliary_metrics = None
+                            if args.auto_exploration_pairs:
+                                from scripts.ppo_auto_imitate import auxiliary_update
+                                auto_auxiliary_metrics = auxiliary_update(model, encoder,
+                                    reviewed_demonstrations, sentinel, device,
+                                    seed=args.seed+update)
+                                auto_auxiliary_metrics.pop("optimizerState", None)
+                                del reviewed_demonstrations, sentinel
                             optimization_seconds = time.perf_counter() - optimization_started
                             phases["afterUpdate"] = phase_resources(clients, store, device)
                     resource = monitor.report(time.perf_counter() - monitored_started)
@@ -1015,7 +1153,7 @@ def main():
                             "cacheLimitBytes": 1536 * 1024 ** 2,
                             "prefetchLimitBytes": 256 * 1024 ** 2,
                             "gradientMicrobatch": 64, "logicalMinibatch": 256,
-                            "epochs": 4} if args.experiment_id in ("A2S1", "A2S1W1", "A2S1C1", "A2S1C2", "A2S1C3", "A2S1C4") else None))
+                            "epochs": 4} if args.experiment_id in ("A2S1", "A2S1W1", "A2S1C1", "A2S1C2", "A2S1C3", "A2S1C4", *AUTO_EXPERIMENTS) else None))
                     args.checkpoint.parent.mkdir(parents=True, exist_ok=True)
                     temporary = args.checkpoint.with_suffix(".tmp")
                     torch.save(payload, temporary)
@@ -1034,6 +1172,8 @@ def main():
                               "trajectory": store.stats(),
                               "completedDecisionsPerSecond": batch_decisions / timing["collectionSeconds"],
                               "optimization": metrics, "auxiliary": auxiliary_metrics,
+                              "automaticExploration": exploration,
+                              "automaticImitation": auto_auxiliary_metrics,
                               "signals": {
                                   "sourceTypes": {kind: sum(e["sourceTypes"].get(kind, 0) for e in episodes)
                                       for kind in ("基本牌", "事件", "状态", "响应")},
@@ -1097,11 +1237,11 @@ def main():
                     if combo_entries is not None:
                         from scripts.ppo_combo_metrics import aggregate
                         result["comboCourseSummary"] = aggregate(episodes,
-                            group_by_template=args.experiment_id in ("A2S1C2", "A2S1C3", "A2S1C4"))
-                    if args.experiment_id in ("A2S1C3", "A2S1C4"):
+                            group_by_template=args.experiment_id in ("A2S1C2", "A2S1C3", "A2S1C4", *AUTO_EXPERIMENTS))
+                    if args.experiment_id in ("A2S1C3", "A2S1C4", *AUTO_EXPERIMENTS):
                         from scripts.ppo_combo_c3_metrics import aggregate_detail
                         result["comboDetailSummary"] = aggregate_detail(episodes)
-                        if args.experiment_id == "A2S1C4":
+                        if args.experiment_id == "A2S1C4" or args.experiment_id in AUTO_EXPERIMENTS:
                             from scripts.ppo_combo_c3_metrics import C4_VERSION
                             from scripts.ppo_combo_sampler_v2 import outcome_summary
                             result["comboDetailSummary"]["version"] = C4_VERSION
