@@ -7,12 +7,15 @@ from pathlib import Path
 from scripts import ppo_train as ppo
 from scripts.ppo_auto_archive import ExplorationArchive, complete_prefix, digest
 from scripts.ppo_auto_explore import demonstration_path
-from scripts.ppo_auto_semantic_v2_migrate import POOL
 from scripts.ppo_combo_accept import probe
+
+POOL = ppo.ROOT / 'PPO训练/.state/A2AUTO2SEM-V6/course-pool-v3.json.gz'
 
 
 class ContinuationPrefixTests(unittest.TestCase):
     def test_real_g1_reference_prefix_survives_archive_restart_and_teaches_install(self):
+        if not POOL.exists():
+            self.skipTest('Legally replayed v6 course fixture is a local artifact')
         with gzip.open(POOL, "rt", encoding="utf-8") as stream:
             entries = json.load(stream)["entries"]
         prep = next(item for item in entries if item["template"] == "G1" and

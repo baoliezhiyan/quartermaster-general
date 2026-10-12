@@ -18,6 +18,8 @@ import torch
 
 from scripts import ppo_train as ppo
 from scripts.ppo_auto_archive import ExplorationArchive, action_family, cell_key, complete_prefix, digest
+from scripts.ppo_auto_route_match import (route_context, match_recorded_action,
+    route_plan_with_ordinals, route_window_status)
 from scripts.ppo_network_factory import A2S1_ADAPTER, make_network
 
 VERSION = "auto-explorer-v4-audited-route-review"
@@ -134,53 +136,6 @@ def restore_equivalent(client, root):
     return restored["observation"]
 
 
-def route_context(observation):
-    return tuple(observation.get(key) for key in
-        ("decisionSeat", "activeSeat", "node", "phase", "choiceKind",
-         "choiceField", "sourceSeat"))
-
-
-def route_action_signature(candidate):
-    """Keep targets, costs and ordered effects; ignore presentation/instance IDs."""
-    def effect(item):
-        return {key: item.get(key) for key in (
-            "kind", "action", "country", "seat", "fee", "optional", "count",
-            "min", "max", "amount", "regions", "targetIds", "selectionRegion",
-            "from", "to", "filter", "tag", "children") if key in item}
-    return digest({"kind": candidate.get("kind"),
-        "definitionId": candidate.get("definitionId"),
-        "cardType": candidate.get("cardType"),
-        "statusAction": candidate.get("statusAction"),
-        "choiceIds": candidate.get("choiceIds"),
-        "choices": [{key: choice.get(key) for key in (
-            "regionId", "country", "action", "unitType", "targetId", "repeated",
-            "recycleId") if key in choice} for choice in candidate.get("choices", ())],
-        "effects": [effect(item) for item in candidate.get("effects", ())]})
-
-
-def match_recorded_action(recorded, observation):
-    before = recorded["observation"]
-    if route_context(before) != route_context(observation):
-        return None, "decision_context_changed"
-    originals = [item for item in before["candidates"]
-                 if item["id"] == recorded["actionId"]]
-    if len(originals) != 1 or digest(before["candidates"]) != recorded["candidateHash"]:
-        return None, "recorded_action_or_candidates_invalid"
-    target = route_action_signature(originals[0])
-    matches = [index for index, item in enumerate(observation["candidates"])
-               if route_action_signature(item) == target]
-    if len(matches) == 1:
-        return matches[0], None
-    if len(matches) > 1:
-        exact = [index for index in matches if observation["candidates"][index].get("cardId") ==
-                 originals[0].get("cardId") and observation["candidates"][index]["id"] ==
-                 recorded["actionId"]]
-        if len(exact) == 1:
-            return exact[0], None
-        return None, "ambiguous_equivalent_action"
-    return None, "required_action_illegal_or_missing"
-
-
 def run_branch(client, root, policy, first_index, *, kind, seed, max_steps=120,
                max_extra_interventions=2, review_seed=None, stop_after_two_turns=True,
                deadline=None, archive=None, budget_key=None, budget_ceiling=None,
@@ -202,6 +157,7 @@ def run_branch(client, root, policy, first_index, *, kind, seed, max_steps=120,
     interventions = 0
     planned = 0
     route_interruption = None
+    seen_contexts = Counter()
     result = None
     for depth in range(max_steps):
         if deadline is not None and time.time() >= deadline:
@@ -209,6 +165,8 @@ def run_branch(client, root, policy, first_index, *, kind, seed, max_steps=120,
         if archive is not None and not archive.consume_budget(budget_key, 1, budget_ceiling):
             break
         candidates = observation["candidates"]
+        context = route_context(observation)
+        seen_contexts[context] += 1
         acting_policy = (opponent_policy if opponent_policy is not None and
             ppo.team_of(observation["decisionSeat"]) != side else policy)
         probs, value = acting_policy.probabilities(observation)
@@ -231,7 +189,12 @@ def run_branch(client, root, policy, first_index, *, kind, seed, max_steps=120,
             if route_plan and planned < len(route_plan) and route_interruption is None and \
                     ppo.team_of(observation["decisionSeat"]) == side:
                 expected = route_plan[planned]
-                if route_context(expected["observation"]) == route_context(observation):
+                window = route_window_status(expected, observation, seen_contexts)
+                if window not in ("match", "wait"):
+                    route_interruption = window
+                    index = sample(probs, rng)
+                    behavior = "frozen_sample_after_route_interruption"
+                elif window == "match":
                     index, route_interruption = match_recorded_action(expected, observation)
                     if index is not None:
                         behavior = "review_route_intervention"
@@ -242,11 +205,6 @@ def run_branch(client, root, policy, first_index, *, kind, seed, max_steps=120,
                 else:
                     index = sample(probs, rng)
                     behavior = "frozen_sample"
-                    # A matching decision seat has moved past the expected
-                    # phase/window: do not splice a later favorable branch.
-                    if observation["decisionSeat"] == expected["observation"]["decisionSeat"] and \
-                            observation["round"] > expected["observation"]["round"]:
-                        route_interruption = "expected_window_expired"
             elif relevant and interventions < max_extra_interventions:
                 current = {"observation": observation, "cell": cell_key(observation)}
                 index = choose_exploration_action(archive, current, depth)
@@ -592,9 +550,7 @@ def review_routes(clients, policy, parent_policy, archive, *, max_routes=3,
             reports.append({"routeId": route_id, "status": "unresolved",
                             "reason": "route_labels_invalid", "detail": str(error)})
             continue
-        route_keys = {(step["decisionId"], step["actionId"]) for step in route["path"]}
-        route_plan = [item for item in labels if
-                      (item["decisionId"], item["actionId"]) in route_keys]
+        route_plan = route_plan_with_ordinals(route["path"], labels)
         proposal = next((index for index, candidate in enumerate(root["observation"]["candidates"])
                          if candidate["id"] == route["firstActionId"]), None)
         if proposal is None:

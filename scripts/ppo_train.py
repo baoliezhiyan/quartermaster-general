@@ -34,7 +34,7 @@ GAMMA = 1.0
 LAMBDA_ROUND = 0.95
 POTENTIAL_SCALE = 0.3
 ENCODER_VERSION = "ppo-vector-v7-effective-straits"
-A2S1_ENCODER_VERSION = "ppo-vector-a2s1-v5-audited-potential"
+A2S1_ENCODER_VERSION = "ppo-vector-a2s1-v6-effect-scopes"
 TRAINER_VERSION = "ppo-trainer-v9-actor-map"
 EFFECT_KINDS = ["action", "score", "draw", "deckTop", "forceHand", "signal", "choose", "cards",
                 "extraPlay", "rebuild", "remove", "flag", "balance", "trace", "cancel", "randomReturn",
@@ -49,17 +49,29 @@ CHOICE_FIELDS = ["regionId", "defenderId", "attackerId", "option"]
 TARGET_SLOTS = 8
 UNIT_TYPES = ["army", "navy", "air"]
 POTENTIAL_ACTIONS = ACTIONS + ["score", "prevent_remove", "home_base", "supply",
-                               "recycle_play", "return_card", "discard_status"]
+                               "remove_supply_point", "recycle_play", "return_card",
+                               "discard_status"]
 POTENTIAL_MISC = ["CARD_EFFECT", "CARD_EFFECT_DONE", "CARD_PLAYED", "STANDARD_CARD_PLAYED",
                   "remove", "deckTop", "ARMAMENT", "*", "action:*", "PHASE:*"]
 POTENTIAL_TARGETS = ["adjacent_built_army", "adjacent_built_navy", "battle_region",
     "battle_or_adjacent", "adjacent_battle_region", "any_legal", "same_unit",
     "new_enemy_navy", "any_chinese_army", "global_navy_count", "removed_unit_region",
     "adjacent_allied_army", "discard_build_army", "all_own_army", "all_french_units",
-    "played_build_army", "triggered_german_status", "fixed", "fixed_or_adjacent",
+    "played_build_army", "triggered_german_status", "all_chinese_units",
+    "new_enemy_army",
+    "fixed", "fixed_or_adjacent",
     "fixed_then_adjacent", "battle_then_fixed_or_adjacent", "any_legal_except", "unknown"]
 POTENTIAL_BRANCHES = ["single", "sequence", "conditional", "range_1_2",
                       "replace_play", "replacement", "unknown"]
+POTENTIAL_SOURCES = ["unknown", "owner", "enemy_army", "attacked_defender",
+                     "fixed", "adjacent_japanese_unit", "adjacent_uk_us_army"]
+POTENTIAL_PERSISTENT = ["axis_adjacent:sea_baltic:sea_north_sea",
+                        "allies_not_adjacent:sea_baltic:sea_north_sea"]
+POTENTIAL_FEE_CONDITIONS = ["none", "allies_control_scandinavia"]
+POTENTIAL_CONDITIONS = ["none", "no_allied_army", "any_owner_army",
+                        "axis_army_western_europe", "owner_navy_present",
+                        "owner_army_present", "owner_navy_and_army"]
+POTENTIAL_ALLIANCES = ["owner", "ally", "enemy", "unknown"]
 NODES = ["SOURCE", "TARGETS", "ENGINE_CHOICE"]
 CANDIDATE_KINDS = ["source", "pass", "choice", "targets"]
 CHOICE_SLOTS = 16
@@ -93,7 +105,13 @@ def encoder_dictionary_hash(encoder):
         "maxActionSlots": encoder.max_action_slots,
         "schema": encoder.schema["observationSchemaVersion"],
         "potentialActions": POTENTIAL_ACTIONS, "potentialMisc": POTENTIAL_MISC,
-        "potentialTargets": POTENTIAL_TARGETS, "potentialBranches": POTENTIAL_BRANCHES},
+        "potentialTargets": POTENTIAL_TARGETS, "potentialBranches": POTENTIAL_BRANCHES,
+        "potentialSources": POTENTIAL_SOURCES,
+        "potentialPersistent": POTENTIAL_PERSISTENT,
+        "potentialFeeConditions": POTENTIAL_FEE_CONDITIONS,
+        "potentialConditions": POTENTIAL_CONDITIONS,
+        "potentialAlliances": POTENTIAL_ALLIANCES,
+        "effectScopeSlots": 8},
         sort_keys=True).encode()).hexdigest()
 TRAINER_SOURCE_HASH = hashlib.sha256(Path(__file__).read_bytes() +
     Path(__file__).with_name("ppo_action_semantics.py").read_bytes() +
@@ -608,6 +626,53 @@ class Encoder:
             raise ValueError("Unknown potential fee")
         unit = item.get("unitConstraint") or []
         known = item.get("known") or {}
+        scopes = item.get("effectScopes") or []
+        if len(scopes) > 8 or (item and len(scopes) != len(future)):
+            raise ValueError("Potential effect scopes incomplete or excessive")
+        scoped = []
+        for effect in scopes:
+            if (effect.get("action") not in POTENTIAL_ACTIONS or
+                effect.get("targetMode") not in POTENTIAL_TARGETS or
+                effect.get("sourceMode") not in POTENTIAL_SOURCES):
+                raise ValueError("Unknown scoped potential semantic")
+            target_regions = effect.get("targetRegions") or []
+            source_regions = effect.get("sourceRegions") or []
+            if any(region not in self.regions for region in target_regions + source_regions):
+                raise ValueError("Unknown scoped potential region")
+            excluded = effect.get("excludedCountries") or []
+            if any(country not in self.countries for country in excluded):
+                raise ValueError("Unknown scoped excluded country")
+            condition = effect.get("condition", "none")
+            if condition not in POTENTIAL_CONDITIONS:
+                raise ValueError("Unknown scoped potential condition")
+            units = effect.get("unitConstraint") or ["unknown"]
+            if any(unit not in (*UNIT_TYPES, "unknown") for unit in units):
+                raise ValueError("Unknown scoped potential unit constraint")
+            alliance = effect.get("allianceConstraint", "unknown")
+            if alliance not in POTENTIAL_ALLIANCES:
+                raise ValueError("Unknown scoped potential alliance constraint")
+            scoped.extend(onehot(effect["action"], POTENTIAL_ACTIONS) +
+                onehot(effect["targetMode"], POTENTIAL_TARGETS) +
+                onehot(effect["sourceMode"], POTENTIAL_SOURCES) +
+                [float(region in target_regions) for region in self.regions] +
+                [float(region in source_regions) for region in self.regions] +
+                [float(country in excluded) for country in self.countries] +
+                onehot(condition, POTENTIAL_CONDITIONS) +
+                [float(unit in units) for unit in UNIT_TYPES] +
+                [float("unknown" in units)] +
+                onehot(alliance, POTENTIAL_ALLIANCES) +
+                [float(effect.get("known", False))])
+        scope_width = len(POTENTIAL_ACTIONS) + len(POTENTIAL_TARGETS) + \
+            len(POTENTIAL_SOURCES) + 2 * len(self.regions) + len(self.countries) + \
+            len(POTENTIAL_CONDITIONS) + len(UNIT_TYPES) + 1 + \
+            len(POTENTIAL_ALLIANCES) + 1
+        scoped += [0.0] * ((8-len(scopes)) * scope_width)
+        persistent = item.get("persistentRules") or []
+        if any(rule not in POTENTIAL_PERSISTENT for rule in persistent):
+            raise ValueError("Unknown potential persistent rule")
+        condition = item.get("conditionalFeeCondition", "none")
+        if condition not in POTENTIAL_FEE_CONDITIONS:
+            raise ValueError("Unknown potential conditional fee")
         return (timing + phases + actions + misc + ordered +
                 onehot(item.get("targetMode"), POTENTIAL_TARGETS) +
                 [float(region in fixed_regions) for region in self.regions] +
@@ -622,7 +687,9 @@ class Encoder:
                 onehot(item.get("branchMode"), POTENTIAL_BRANCHES) +
                 [float(known.get(name, False)) for name in
                  ("effects", "target", "fee", "unit", "alliance")] +
-                [float(bool(item.get("potentialOnly"))), float(bool(potential))])
+                [float(bool(item.get("potentialOnly"))), float(bool(potential))] +
+                scoped + [float(rule in persistent) for rule in POTENTIAL_PERSISTENT] +
+                onehot(condition, POTENTIAL_FEE_CONDITIONS))
 
     def _action_semantics(self, obs, candidate):
         outcomes = ("unknown", "new", "repeated", "blocked", "target", "empty")

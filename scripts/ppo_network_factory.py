@@ -90,3 +90,30 @@ def migrate_signal_potential(saved, encoder):
             raise ValueError(f"Source tensor cannot migrate: {name}")
     model.load_state_dict(target, strict=True)
     return model
+
+
+def migrate_scoped_signal(saved, encoder):
+    """Migrate only when the obsolete potential suffix had no policy influence.
+
+    The opening adapter also measures candidate distance. Zero first-layer
+    weights alone do not prove neutrality when opening_logit is nonzero.
+    """
+    if saved.get("encoderVersion") != "ppo-vector-a2s1-v5-audited-potential":
+        raise ValueError("Scoped migration requires the audited v5 encoder")
+    old = saved.get("network", {})
+    core = saved.get("semanticMigration", {}).get("unchangedCoreDim")
+    if not isinstance(core, int) or not core < old.get("candidateDim", 0):
+        raise ValueError("Historical common candidate prefix is unverified")
+    state = saved["modelState"]
+    for name in ("map.base.candidate_net.0.weight", "prototype_candidate"):
+        value = state[name]
+        if value.shape[-1] != old["candidateDim"] or torch.count_nonzero(value[..., core:]):
+            raise ValueError("Historical potential suffix has trained weights")
+    if torch.count_nonzero(state["opening_logit"]):
+        raise ValueError("Opening gate used obsolete potential semantics; exact migration impossible")
+    cropped = {name: tensor.detach().clone() for name, tensor in state.items()}
+    for name in ("map.base.candidate_net.0.weight", "prototype_candidate"):
+        cropped[name] = cropped[name][..., :core].clone()
+    source = {**saved, "network": {**old, "candidateDim": core},
+              "modelState": cropped}
+    return migrate_signal_potential(source, encoder)

@@ -33,7 +33,7 @@ export const PPO_STATIC_SCHEMA={observationSchemaVersion:PPO_OBSERVATION_SCHEMA_
   bindingKeys:['built-navy','new-china','xiangxi-battle'],maxEffectTokens:32};
 /** Historical A2S1 observations remain identifiable by their schema version. */
 export const PPO_A2S1_STATIC_SCHEMA={...PPO_STATIC_SCHEMA,
-  observationSchemaVersion:'ppo-observation-a2s1-v4-audited-potential',actionSchemaVersion:'ppo-actions-a2s1-v2',
+  observationSchemaVersion:'ppo-observation-a2s1-v5-effect-scopes',actionSchemaVersion:'ppo-actions-a2s1-v2',
   courseVersion:TRAINING_A2S1_COURSE_VERSION,overridesVersion:TRAINING_A2S1_OVERRIDES_VERSION,
   eventIds:[...Object.values(TRAINING_EVENT_IDS_BY_SEAT).flat(),
     ...Object.values(TRAINING_SIGNAL_IDS_BY_SEAT).flat()],maxEffectTokens:32,maxActionSlots:12,

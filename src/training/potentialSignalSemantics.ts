@@ -8,6 +8,11 @@ import {TRAINING_SIGNAL_IDS_BY_SEAT} from '../core/trainingCourse';
 
 type Row=readonly [effects:string,target:string,fee:string,limit?:string,
   unit?:string,alliance?:string,branch?:string,conditionalExtraFee?:number];
+/** Per-effect scope is descriptive only; legality always comes from core. */
+type EffectScope={action:string;targetMode:string;targetRegions:string[];
+  sourceMode:string;sourceRegions:string[];excludedCountries?:string[];
+  unitConstraint?:string[];allianceConstraint?:string;
+  condition?:string;known:boolean;ruleSource:string};
 const rows:Record<number,Row>={
   // Germany
   139:['score','fixed:ukraine,kazakhstan,ross_region','none'],
@@ -60,8 +65,8 @@ const rows:Record<number,Row>={
   58:['recruit_army,recruit_army','fixed:siberia,kazakhstan','none','none','army'],
   55:['prevent_remove','fixed:siberia,kazakhstan','none','none','army'],
   44:['land_battle','adjacent_built_army','hand:2:build_army,land_battle','none','army'],
-  52:['recruit_army','fixed:western_china,eastern_china,mongolia','none','none','army','owner','replace_play'],
-  42:['home_base,supply','fixed:siberia,moscow','none'],
+  52:['supply,recruit_army','fixed:western_china,eastern_china,mongolia','none','none','army','owner','replace_play'],
+  42:['home_base,supply,remove_supply_point','fixed:siberia,moscow','none'],
   50:['build_army','any_legal','hand:1:build_army','turn','army'],
   59:['recruit_army,destroy','fixed_or_adjacent:moscow','none','none','army','enemy','sequence'],
   60:['prevent_remove','fixed:ross_region','none','none','army'],
@@ -70,7 +75,7 @@ const rows:Record<number,Row>={
   57:['destroy','fixed_or_adjacent:moscow','none','none','army','enemy'],
   43:['land_battle','battle_or_adjacent','hand:2:any','turn','army'],
   46:['recycle_play','discard_build_army','hand:2:any','none','army','owner','replace_play'],
-  48:['supply','fixed:ukraine','none'],
+  48:['remove_supply_point','fixed:ukraine','none'],
   47:['supply','all_own_army','none','none','army'],
   51:['land_battle','battle_region','hand:1:any','turn','army'],
   45:['return_card','played_build_army','none','none','army'],
@@ -107,13 +112,113 @@ const rows:Record<number,Row>={
 
 const actionNames=new Set(['build_army','build_navy','recruit_army','recruit_navy',
   'land_battle','sea_battle','destroy','score','prevent_remove','home_base',
-  'supply','recycle_play','return_card','discard_status']);
-const targetNames=new Set(['adjacent_built_army','adjacent_built_navy','battle_region',
+  'supply','remove_supply_point','recycle_play','return_card','discard_status']);
+const targetNames=new Set(['unknown','adjacent_built_army','adjacent_built_navy','battle_region',
   'battle_or_adjacent','adjacent_battle_region','any_legal','same_unit',
-  'new_enemy_navy','any_chinese_army','global_navy_count','removed_unit_region',
+  'new_enemy_navy','new_enemy_army','any_chinese_army','global_navy_count','removed_unit_region',
   'adjacent_allied_army','discard_build_army','all_own_army','all_french_units',
   'played_build_army','triggered_german_status']);
 const split=(value:string)=>value?value.split(','):[];
+const scope=(action:string,targetMode:string,regions:string[],ruleSource:string,
+  sourceMode='unknown',sourceRegions:string[]=[]):EffectScope=>({action,targetMode,
+    targetRegions:regions,sourceMode,sourceRegions,known:true,ruleSource});
+
+const scopedCorrections:Record<number,{effects:EffectScope[];persistentRules?:string[];
+  targetMode?:string;targetRegions?:string[];sourceMode?:string;sourceRegions?:string[]}>={
+  5:{effects:[{...scope('home_base','fixed',['british_isles'],
+    'src/core/modifiers.ts:17'),condition:'axis_army_western_europe'}],
+    targetMode:'fixed',targetRegions:['british_isles']},
+  19:{effects:[{...scope('recruit_army','battle_region',[],
+    'src/core/fullCardTriggers.ts:110'),unitConstraint:['army'],
+    allianceConstraint:'ally'}],targetMode:'battle_region',targetRegions:[]},
+  3:{effects:[{...scope('score','fixed',['sea_north_atlantic'],
+    'src/core/fullCardTriggers.ts:106'),condition:'owner_navy_present'},
+    {...scope('score','fixed',['canada'],'src/core/fullCardTriggers.ts:106'),
+      condition:'owner_army_present'}]},
+  7:{effects:[scope('supply','fixed',['eastern_europe'],'src/core/modifiers.ts:28'),
+    scope('recruit_army','fixed',['eastern_europe'],'src/core/statusActions.ts:18')]},
+  10:{effects:[scope('supply','fixed',['south_africa'],'src/core/modifiers.ts:29'),
+    scope('recruit_army','fixed',['south_africa'],'src/core/statusActions.ts:19')]},
+  42:{effects:[scope('home_base','fixed',['siberia'],'src/core/modifiers.ts:17'),
+    scope('supply','fixed',['siberia'],'src/core/modifiers.ts:27'),
+    scope('remove_supply_point','fixed',['moscow'],'src/core/modifiers.ts:25')]},
+  48:{effects:[scope('remove_supply_point','fixed',['ukraine'],'src/core/modifiers.ts:26')],
+    targetMode:'fixed',targetRegions:['ukraine']},
+  52:{effects:[scope('supply','all_chinese_units',[],'src/core/modifiers.ts:22'),
+    scope('recruit_army','fixed',['western_china','eastern_china','mongolia'],
+      'src/core/statusActions.ts:21')]},
+  58:{effects:[scope('recruit_army','fixed',['siberia'],'src/core/fullCardTriggers.ts:79'),
+    scope('recruit_army','fixed',['kazakhstan'],'src/core/fullCardTriggers.ts:79')]},
+  131:{effects:[{...scope('score','fixed',['sea_baltic'],
+    'src/core/fullCardTriggers.ts:149'),condition:'owner_navy_present'},
+    {...scope('score','fixed',['scandinavia'],'src/core/fullCardTriggers.ts:149'),
+      condition:'owner_navy_and_army'}]},
+  174:{effects:[{...scope('score','fixed',['hawaii'],
+    'src/core/fullCardTriggers.ts:167'),condition:'no_allied_army'}]},
+  175:{effects:[{...scope('score','fixed',['iwo_jima','philippines'],
+    'src/core/fullCardTriggers.ts:168'),condition:'any_owner_army'}]},
+  177:{effects:[{...scope('score','fixed',['hawaii','canada','new_zealand'],
+    'src/core/fullCardTriggers.ts:170'),condition:'any_owner_army'}]},
+  172:{effects:[{...scope('score','fixed',['vladivostok'],
+    'src/core/fullCardTriggers.ts:165'),condition:'owner_army_present'},
+    {...scope('score','fixed',['siberia'],'src/core/fullCardTriggers.ts:165'),
+      condition:'owner_army_present'}]},
+  178:{effects:[scope('build_army','fixed',['vladivostok'],'src/core/fullCardTriggers.ts:41'),
+    scope('land_battle','fixed_or_adjacent',['vladivostok'],
+      'src/core/fullCardTriggers.ts:41')]},
+  183:{effects:[scope('land_battle','adjacent_built_navy',[],
+      'src/core/fullCardTriggers.ts:172'),scope('land_battle','adjacent_built_navy',[],
+      'src/core/fullCardTriggers.ts:172')]},
+  184:{effects:[scope('sea_battle','adjacent_built_navy',[],
+      'src/core/fullCardTriggers.ts:172'),scope('sea_battle','adjacent_built_navy',[],
+      'src/core/fullCardTriggers.ts:172')]},
+  192:{effects:[scope('sea_battle','any_legal',[],'src/core/fullCardTriggers.ts:179'),
+    {...scope('land_battle','any_legal_except',[],
+      'src/core/fullCardTriggers.ts:179'),excludedCountries:['united_states']}]},
+  193:{effects:[scope('build_army','adjacent_built_navy',[],
+      'src/core/fullCardTriggers.ts:172'),scope('build_army','adjacent_built_navy',[],
+      'src/core/fullCardTriggers.ts:172')]},
+  196:{effects:[{...scope('destroy','new_enemy_navy',[],
+    'src/core/fullCardTriggers.ts:110','adjacent_japanese_unit'),
+    unitConstraint:['navy'],allianceConstraint:'enemy'}]},
+  197:{effects:[scope('sea_battle','fixed',['sea_south_china'],
+      'src/core/fullCardTriggers.ts:181'),scope('recruit_army','fixed',['southeast_asia'],
+      'src/core/fullCardTriggers.ts:181')]},
+  198:{effects:[scope('build_army','adjacent_battle_region',[],
+      'src/core/fullCardTriggers.ts:172'),scope('build_army','adjacent_battle_region',[],
+      'src/core/fullCardTriggers.ts:172')]},
+  199:{effects:[scope('build_army','battle_region',[],
+      'src/core/fullCardTriggers.ts:182'),scope('land_battle','fixed_or_adjacent',
+      ['eastern_china'],'src/core/fullCardTriggers.ts:182')]},
+  218:{effects:[{...scope('destroy','new_enemy_army',[],
+    'src/core/fullCardTriggers.ts:110','adjacent_uk_us_army'),
+    unitConstraint:['army'],allianceConstraint:'enemy'}],
+    targetMode:'new_enemy_army',targetRegions:[],sourceMode:'adjacent_uk_us_army'},
+  // fullCardTriggers.ts:92; balanceEnabled uses near() and requires a sea.
+  86:{effects:[{action:'prevent_remove',targetMode:'fixed_or_adjacent',
+    targetRegions:['sea_central_pacific'],sourceMode:'attacked_defender',
+    sourceRegions:[],unitConstraint:['navy'],allianceConstraint:'owner',
+    known:true,ruleSource:'src/core/fullCardTriggers.ts:86'}],
+    targetMode:'fixed_or_adjacent',targetRegions:['sea_central_pacific']},
+  // specialCards.ts:96: the second effect is Moscow only.
+  59:{effects:[{action:'recruit_army',targetMode:'fixed_or_adjacent',
+    targetRegions:['moscow'],sourceMode:'owner',sourceRegions:[],
+    unitConstraint:['army'],allianceConstraint:'owner',known:true,
+    ruleSource:'src/core/specialCards.ts:59'},
+    {action:'destroy',targetMode:'fixed',targetRegions:['moscow'],
+    sourceMode:'enemy_army',sourceRegions:[],unitConstraint:['army'],
+    allianceConstraint:'enemy',known:true,
+    ruleSource:'src/core/specialCards.ts:59'}],targetMode:'unknown',targetRegions:[]},
+  // statusActions.ts:15 binds the attacking navy; supply.ts:35 changes the strait.
+  163:{effects:[{action:'sea_battle',targetMode:'any_legal',targetRegions:[],
+    sourceMode:'fixed',sourceRegions:['sea_baltic'],unitConstraint:['navy'],
+    allianceConstraint:'owner',known:true,
+    ruleSource:'src/core/statusActions.ts:15'}],
+    persistentRules:['axis_adjacent:sea_baltic:sea_north_sea',
+      'allies_not_adjacent:sea_baltic:sea_north_sea'],
+    targetMode:'any_legal',targetRegions:[],sourceMode:'fixed',
+    sourceRegions:['sea_baltic']},
+};
 
 export const potentialSignalCoverage=()=>{
   const ids=Object.values(TRAINING_SIGNAL_IDS_BY_SEAT).flat();
@@ -124,11 +229,22 @@ export const potentialSignalCoverage=()=>{
 };
 
 export const potentialSignalSemantics=(id:string)=>{
-  const row=rows[Number(id.slice(8))];
+  const numericId=Number(id.slice(8));
+  const row=rows[numericId];
   if(!row)return undefined;
   const [rawEffects,rawTarget,rawFee,limit='none',unit='unknown',alliance='unknown',branch='single',conditionalExtraFee=0]=row;
   const effects=split(rawEffects);
-  const [targetMode,regionsRaw='']=rawTarget.split(':');
+  const [legacyTargetMode,regionsRaw='']=rawTarget.split(':');
+  const correction=scopedCorrections[numericId];
+  // A shared target relation cannot truthfully describe two different effects.
+  const targetMode=correction?.targetMode??(effects.length===1?legacyTargetMode:'unknown');
+  const targetRegions=correction?.targetRegions??(effects.length===1?split(regionsRaw):[]);
+  const effectScopes=correction?.effects??effects.map(action=>({action,
+    targetMode:effects.length===1?targetMode:'unknown',
+    targetRegions:effects.length===1?targetRegions:[],
+    sourceMode:'unknown',sourceRegions:[],known:false,
+    ruleSource:effects.length===1?'legacy-training-description-pending-core-audit':
+      'multi-effect-scope-pending-core-audit'}));
   const [feeKind,feeCountRaw='0',resourcesRaw='']=rawFee.split(':');
   const feeCount=Number(feeCountRaw);
   if(effects.some(effect=>!actionNames.has(effect))||
@@ -138,10 +254,16 @@ export const potentialSignalSemantics=(id:string)=>{
      (feeKind!=='unknown'&&!Number.isFinite(feeCount)))
     throw new Error(`Training signal semantics invalid: ${id}`);
   return {subscriptions:triggerSubscriptions(id).sort(),futureActions:effects,
-    targetMode,targetRegions:split(regionsRaw),feeKind,feeCount,
-    feeResourceActions:split(resourcesRaw),conditionalExtraFee,useLimit:limit,unitConstraint:split(unit),
-    allianceConstraint:alliance,branchMode:branch,
-    known:{effects:true,target:targetMode!=='unknown',fee:feeKind!=='unknown',
-      unit:unit!=='unknown',alliance:alliance!=='unknown'},
+    targetMode,targetRegions,sourceMode:correction?.sourceMode??'unknown',
+    sourceRegions:correction?.sourceRegions??[],effectScopes,
+    persistentRules:correction?.persistentRules??[],feeKind,feeCount,
+    conditionalFeeCondition:numericId===163?'allies_control_scandinavia':'none',
+    feeResourceActions:split(resourcesRaw),conditionalExtraFee,useLimit:limit,
+    unitConstraint:effects.length===1?split(unit):['unknown'],
+    allianceConstraint:effects.length===1?alliance:'unknown',branchMode:branch,
+    known:{effects:true,target:targetMode!=='unknown'&&effectScopes.every(e=>e.known),
+      fee:feeKind!=='unknown',
+      unit:effects.length===1&&unit!=='unknown',
+      alliance:effects.length===1&&alliance!=='unknown'},
     potentialOnly:true};
 };

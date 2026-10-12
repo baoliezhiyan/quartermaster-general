@@ -2,6 +2,8 @@ import {describe,expect,it} from 'vitest';
 import {PpoTrainingArena,PPO_A2S1_STATIC_SCHEMA} from '../src/training/ppoArena';
 import {TRAINING_A2S1_IDS,TRAINING_EVENT_IDS,TRAINING_SIGNAL_IDS_BY_SEAT} from '../src/core/trainingCourse';
 import {regularCatalog} from '../src/core/cardCatalog';
+import {createGame} from '../src/core/game';
+import {realTriggers} from '../src/core/specialCards';
 import {startResolution,resolveChoice} from '../src/core/resolution';
 import {potentialSignalCoverage,potentialSignalSemantics} from '../src/training/potentialSignalSemantics';
 
@@ -99,8 +101,70 @@ describe('A2S1 signals course',()=>{
     expect(potentialSignalSemantics('special_188')?.targetRegions).toEqual(['southeast_asia']);
     expect(potentialSignalSemantics('special_199')?.futureActions).toEqual(['build_army','land_battle']);
     expect(potentialSignalSemantics('special_199')?.branchMode).toBe('sequence');
+    expect(potentialSignalSemantics('special_199')?.effectScopes.map(e=>e.targetMode)).toEqual([
+      'battle_region','fixed_or_adjacent']);
+    expect(potentialSignalSemantics('special_197')?.effectScopes.map(e=>e.targetRegions)).toEqual([
+      ['sea_south_china'],['southeast_asia']]);
+    expect(potentialSignalSemantics('special_192')?.effectScopes[1].excludedCountries).toEqual([
+      'united_states']);
     expect(potentialSignalSemantics('special_163')?.feeCount).toBe(2);
     expect(potentialSignalSemantics('special_163')?.conditionalExtraFee).toBe(1);
+    const radar=potentialSignalSemantics('special_86')!;
+    expect(radar.effectScopes[0]).toMatchObject({action:'prevent_remove',
+      targetMode:'fixed_or_adjacent',targetRegions:['sea_central_pacific'],
+      sourceMode:'attacked_defender'});
+    const defense=potentialSignalSemantics('special_59')!;
+    expect(defense.effectScopes.map(effect=>[effect.action,effect.targetMode,
+      effect.targetRegions])).toEqual([
+        ['recruit_army','fixed_or_adjacent',['moscow']],
+        ['destroy','fixed',['moscow']]]);
+    expect(defense.effectScopes.map(effect=>effect.allianceConstraint)).toEqual([
+      'owner','enemy']);
+    expect(defense.allianceConstraint).toBe('unknown');
+    expect(defense.known.target).toBe(false); // no misleading shared scope
+    const jutland=potentialSignalSemantics('special_163')!;
+    expect(jutland.effectScopes[0]).toMatchObject({action:'sea_battle',
+      sourceMode:'fixed',sourceRegions:['sea_baltic'],targetMode:'any_legal'});
+    expect(jutland.conditionalFeeCondition).toBe('allies_control_scandinavia');
+    expect(jutland.persistentRules).toContain('axis_adjacent:sea_baltic:sea_north_sea');
+    expect(potentialSignalSemantics('special_48')?.futureActions).toEqual(['remove_supply_point']);
+    expect(potentialSignalSemantics('special_218')?.effectScopes[0]).toMatchObject({
+      targetMode:'new_enemy_army',sourceMode:'adjacent_uk_us_army'});
+    expect(potentialSignalSemantics('special_196')?.effectScopes[0]).toMatchObject({
+      targetMode:'new_enemy_navy',sourceMode:'adjacent_japanese_unit'});
+    expect(potentialSignalSemantics('special_174')?.effectScopes[0].condition).toBe('no_allied_army');
+    expect(potentialSignalSemantics('special_42')?.effectScopes.map(e=>
+      [e.action,e.targetRegions])).toEqual([
+        ['home_base',['siberia']],['supply',['siberia']],
+        ['remove_supply_point',['moscow']]]);
+    for(const id of Object.values(TRAINING_SIGNAL_IDS_BY_SEAT).flat()){
+      if(id==='special_227')continue;
+      const item=potentialSignalSemantics(id)!;
+      expect(item.effectScopes.map(effect=>effect.action)).toEqual(item.futureActions);
+      if(item.futureActions.length>1&&!['special_59'].includes(id))
+        expect(item.known.target).toBe(false);
+    }
+  });
+
+  it('compares Defense of the Motherland scopes with actual engine effects',()=>{
+    const state=createGame('defense-scope',31,'FULL',false,false,true);
+    state.status='PLAYING';state.activeSeat='soviet_union';
+    state.phase='TURN_START_WINDOW';
+    const deck=state.decks.soviet_union;
+    const zone=deck.hand.some(card=>card.definitionId==='special_59')?'hand':'drawPile';
+    const card=deck[zone].find(item=>item.definitionId==='special_59')!;
+    deck[zone]=deck[zone].filter(item=>item.id!==card.id);
+    deck.faceDown.push(card);
+    const frame={id:'scope-frame',cardId:card.id,currentEventId:'scope-event'} as any;
+    const rule=realTriggers(state,frame,{kind:'signal',tag:'PHASE:TURN_START_WINDOW',
+      label:'turn start'},'After').find(item=>item.sourceInstanceId===card.id)!;
+    const actions=rule.effects.filter(effect=>effect.kind==='action');
+    expect(actions.map(effect=>effect.kind==='action'&&effect.action)).toEqual([
+      'recruit_army','destroy']);
+    expect(actions[0]).toMatchObject({kind:'action',country:'soviet_union'});
+    expect(actions[0].kind==='action'&&actions[0].regions).toContain('moscow');
+    expect(actions[0].kind==='action'&&actions[0].regions?.length).toBeGreaterThan(1);
+    expect(actions[1]).toMatchObject({kind:'action',action:'destroy',regions:['moscow']});
   });
 
   it('separates future signal capability from the immediate INSTALL effect',()=>{
