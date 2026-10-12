@@ -137,6 +137,29 @@ class AutoArchiveTests(unittest.TestCase):
                 archive.set_route_status(route, "revoked", "failed re-review")
             self.assertEqual(load_batch(frozen, **args), [])
 
+    def test_complete_prefix_replaces_incomplete_representative_without_erasing_audit(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "prefix.sqlite"
+            obs = self.observation()
+            snapshot = {"state": {"turn": 2}}
+            incomplete = [{"actionId": obs["candidates"][0]["id"],
+                           "candidateHash": digest(obs["candidates"]),
+                           "observation": None}]
+            complete = [{**incomplete[0], "observation": obs}]
+            with ExplorationArchive(path, {"version": "test"}, representatives=1) as archive:
+                old, _ = archive.add_root(snapshot, obs, incomplete)
+                new, reason = archive.add_root(snapshot, obs, complete)
+                self.assertEqual(reason, "replaced_incomplete_prefix")
+                self.assertNotEqual(new, old)
+                self.assertEqual(archive.roots(), [new])
+                self.assertEqual(archive.read_root(old)["prefix"], incomplete)
+                self.assertEqual(archive.read_root(new)["prefix"], complete)
+                self.assertEqual(archive.db.execute(
+                    "SELECT reason FROM root_replacements WHERE old_id=? AND new_id=?",
+                    (old, new)).fetchone()[0], "incomplete_prefix_replaced")
+            with ExplorationArchive(path, {"version": "test"}) as reopened:
+                self.assertEqual(reopened.roots(), [new])
+
 
 if __name__ == "__main__":
     unittest.main()

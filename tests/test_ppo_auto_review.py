@@ -70,11 +70,18 @@ class ReviewTests(unittest.TestCase):
 
         def fake_branch(_client, _root, _policy, _index, *, kind, **_kwargs):
             proposed = kind == "proposal-review"
+            if proposed:
+                self.assertEqual(len(_kwargs["route_plan"]), 1)
+                self.assertEqual(_kwargs["route_plan"][0]["actionId"], "explore")
+            else:
+                self.assertIsNone(_kwargs["route_plan"])
+            self.assertEqual(_policy.weight_hash, "new")
             return {"steps": 2, "naturalEnd": True,
                 "reward": {"axis": 1.0 if proposed else 0.0, "allies": 0.0},
                 "side": "axis", "outcome": "useful" if proposed else "completed",
                 "routeSignature": ["unit:germany:army:ukraine"] if proposed else [],
-                "mechanismSignature": ["attack-then-build"] if proposed else []}
+                "mechanismSignature": ["attack-then-build"] if proposed else [],
+                "routeInterruption": None, "routeComplete": proposed}
 
         with patch("scripts.ppo_auto_explore.run_branch", side_effect=fake_branch):
             report = review_routes([object(), object()], Policy("new"), Policy("old"),
@@ -82,6 +89,7 @@ class ReviewTests(unittest.TestCase):
         self.assertEqual(archive.status, "enabled")
         self.assertEqual(len(report["reviewed"][0]["pairs"]), 8)
         self.assertEqual(report["reviewed"][0]["routeRepetitions"], 8)
+        self.assertEqual(report["reviewed"][0]["naturalArgmaxRepetitions"], 0)
         self.assertEqual(len(archive.labels), 1)
         self.assertEqual(archive.labels[0]["actionId"], "explore")
 
@@ -94,7 +102,8 @@ class ReviewTests(unittest.TestCase):
                            "allies": 0.0},
                 "side": "axis", "outcome": "useful",
                 "routeSignature": ["unit:germany:army:ukraine"],
-                "mechanismSignature": ["attack-then-build"]}
+                "mechanismSignature": ["attack-then-build"],
+                "routeInterruption": None, "routeComplete": kind == "proposal-review"}
 
         with patch("scripts.ppo_auto_explore.run_branch", side_effect=fake_branch):
             report = review_routes([object(), object()], Policy("new"), Policy("old"),

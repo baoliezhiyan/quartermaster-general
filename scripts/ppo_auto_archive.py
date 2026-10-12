@@ -13,7 +13,7 @@ import time
 import zlib
 from pathlib import Path
 
-VERSION = "auto-exploration-archive-v3-persistent-heldout"
+VERSION = "auto-exploration-archive-v4-complete-prefix"
 MAX_CELLS = 1_000
 MAX_REPRESENTATIVES = 3
 MAX_BYTES = 1 << 30
@@ -74,6 +74,18 @@ def representative_key(observation):
         "turnUses": observation.get("visibleUseCounts")})
 
 
+def complete_prefix(prefix):
+    """A resumable route may only teach decisions with their original legal input."""
+    for step in prefix:
+        observation = step.get("observation") if isinstance(step, dict) else None
+        if not observation or digest(observation.get("candidates", ())) != step.get("candidateHash"):
+            return False
+        if sum(item.get("id") == step.get("actionId") for item in
+               observation["candidates"]) != 1:
+            return False
+    return True
+
+
 class ExplorationArchive:
     def __init__(self, path: Path, identity: dict, *, max_cells=MAX_CELLS,
                  max_bytes=MAX_BYTES, representatives=MAX_REPRESENTATIVES):
@@ -89,7 +101,11 @@ class ExplorationArchive:
             id TEXT PRIMARY KEY,cell TEXT NOT NULL,representative TEXT NOT NULL,
             snapshot BLOB NOT NULL,observation BLOB NOT NULL,prefix BLOB NOT NULL,
             byte_count INTEGER NOT NULL,created REAL NOT NULL,progress REAL NOT NULL,
-            parent_path TEXT,UNIQUE(cell,representative));
+            parent_path TEXT,active INTEGER NOT NULL DEFAULT 1,
+            UNIQUE(cell,representative));
+          CREATE TABLE IF NOT EXISTS root_replacements(
+            old_id TEXT NOT NULL,new_id TEXT NOT NULL,reason TEXT NOT NULL,
+            created REAL NOT NULL,PRIMARY KEY(old_id,new_id));
           CREATE INDEX IF NOT EXISTS roots_cell ON roots(cell);
           CREATE TABLE IF NOT EXISTS coverage(
             cell TEXT NOT NULL,signature TEXT NOT NULL,family TEXT NOT NULL,
@@ -150,15 +166,22 @@ class ExplorationArchive:
             "SELECT SUM(length(observation)+length(snapshot)) FROM sentinels"))
 
     def add_root(self, snapshot, observation, prefix, parent_path=None):
-        cell, representative = cell_key(observation), representative_key(observation)
-        if self.db.execute("SELECT 1 FROM roots WHERE cell=? AND representative=?",
-                           (cell, representative)).fetchone():
-            return None, "duplicate"
-        cells = self.db.execute("SELECT COUNT(DISTINCT cell) FROM roots").fetchone()[0]
-        count = self.db.execute("SELECT COUNT(*) FROM roots WHERE cell=?", (cell,)).fetchone()[0]
+        cell, base = cell_key(observation), representative_key(observation)
+        old = self.db.execute("SELECT id,prefix FROM roots WHERE cell=? AND active=1 "
+            "AND (representative=? OR representative LIKE ?) ORDER BY created LIMIT 1",
+            (cell, base, base+':%')).fetchone()
+        replaced = None
+        if old:
+            if not complete_prefix(prefix) or complete_prefix(self._unpack(old[1])):
+                return None, "duplicate"
+            replaced = old[0]
+        representative = base if not replaced else base+':'+digest(prefix)
+        cells = self.db.execute("SELECT COUNT(DISTINCT cell) FROM roots WHERE active=1").fetchone()[0]
+        count = self.db.execute("SELECT COUNT(*) FROM roots WHERE cell=? AND active=1",
+                                (cell,)).fetchone()[0]
         if cells >= self.max_cells and not count:
             return None, "cell_capacity"
-        if count >= self.representatives:
+        if count >= self.representatives and not replaced:
             return None, "representative_capacity"
         chunks = tuple(map(self._pack, (snapshot, observation, prefix)))
         size = sum(map(len, chunks))
@@ -169,17 +192,23 @@ class ExplorationArchive:
                           "state": snapshot.get("state"), "prefix": prefix})
         now = time.time()
         with self.db:
-            self.db.execute("INSERT INTO roots VALUES(?,?,?,?,?,?,?,?,?,?)",
+            if replaced:
+                self.db.execute("UPDATE roots SET active=0 WHERE id=?", (replaced,))
+            self.db.execute("INSERT INTO roots VALUES(?,?,?,?,?,?,?,?,?,?,1)",
                 (root_id, cell, representative, *chunks, size, now, now, parent_path))
-        return root_id, "stored"
+            if replaced:
+                self.db.execute("INSERT INTO root_replacements VALUES(?,?,?,?)",
+                    (replaced, root_id, "incomplete_prefix_replaced", now))
+        return root_id, "replaced_incomplete_prefix" if replaced else "stored"
 
     def roots(self):
-        return [row[0] for row in self.db.execute("SELECT id FROM roots ORDER BY created,id")]
+        return [row[0] for row in self.db.execute(
+            "SELECT id FROM roots WHERE active=1 ORDER BY created,id")]
 
     def roots_by_queue(self, queue):
         condition = "parent_path IS NOT NULL" if queue == "continuation" else "parent_path IS NULL"
         return [row[0] for row in self.db.execute(
-            f"SELECT id FROM roots WHERE {condition} ORDER BY progress,id")]
+            f"SELECT id FROM roots WHERE active=1 AND {condition} ORDER BY progress,id")]
 
     def read_root(self, root_id):
         row = self.db.execute("SELECT snapshot,observation,prefix,cell FROM roots WHERE id=?",

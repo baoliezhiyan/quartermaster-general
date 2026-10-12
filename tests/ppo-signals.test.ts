@@ -3,6 +3,7 @@ import {PpoTrainingArena,PPO_A2S1_STATIC_SCHEMA} from '../src/training/ppoArena'
 import {TRAINING_A2S1_IDS,TRAINING_EVENT_IDS,TRAINING_SIGNAL_IDS_BY_SEAT} from '../src/core/trainingCourse';
 import {regularCatalog} from '../src/core/cardCatalog';
 import {startResolution,resolveChoice} from '../src/core/resolution';
+import {potentialSignalCoverage,potentialSignalSemantics} from '../src/training/potentialSignalSemantics';
 
 const fingerprint='a'.repeat(64);
 const options={mode:'A' as const,cardSet:'signals' as const,buildFingerprint:fingerprint};
@@ -64,6 +65,42 @@ describe('A2S1 signals course',()=>{
       expect(definition?.type).toMatch(/^(状态|响应|事件)$/);
     }
     expect(PPO_A2S1_STATIC_SCHEMA.eventIds).toHaveLength(147);
+    const coverage=potentialSignalCoverage();
+    expect(coverage.missing).toEqual([]);
+    expect(coverage.extra).toEqual([]);
+    expect(coverage.described).toBe(88);
+    for(const id of added.filter(id=>id!=='special_227')){
+      const meaning=potentialSignalSemantics(id)!;
+      expect(meaning.futureActions.length).toBeGreaterThan(0);
+      expect(meaning.known.effects).toBe(true);
+      expect(meaning.known.fee).toBe(true);
+      for(const region of meaning.targetRegions){
+        if(region==='united_states')continue; // exclusion denotes a country
+        expect(PPO_A2S1_STATIC_SCHEMA.regions.map(item=>item.id)).toContain(region);
+      }
+    }
+  });
+
+  it('keeps audited triggers, effects, costs and target constraints separate',()=>{
+    const blitz=potentialSignalSemantics('special_136')!;
+    expect(blitz.subscriptions).toContain('After:action:land_battle');
+    expect(blitz.futureActions).toEqual(['build_army']);
+    expect(blitz.targetMode).toBe('battle_region');
+    expect(blitz.feeCount).toBe(1);
+    const rapid=potentialSignalSemantics('special_137')!;
+    expect(rapid.subscriptions).toContain('After:action:build_army');
+    expect(rapid.futureActions).toEqual(['land_battle']);
+    expect(rapid.targetMode).toBe('adjacent_built_army');
+    const yard=potentialSignalSemantics('special_84')!;
+    expect(yard.subscriptions).toContain('After:action:build_navy');
+    expect(yard.futureActions).toEqual(['build_navy']);
+    expect(potentialSignalSemantics('special_44')?.feeResourceActions).toEqual(['build_army','land_battle']);
+    expect(potentialSignalSemantics('special_44')?.feeCount).toBe(2);
+    expect(potentialSignalSemantics('special_188')?.targetRegions).toEqual(['southeast_asia']);
+    expect(potentialSignalSemantics('special_199')?.futureActions).toEqual(['build_army','land_battle']);
+    expect(potentialSignalSemantics('special_199')?.branchMode).toBe('sequence');
+    expect(potentialSignalSemantics('special_163')?.feeCount).toBe(2);
+    expect(potentialSignalSemantics('special_163')?.conditionalExtraFee).toBe(1);
   });
 
   it('separates future signal capability from the immediate INSTALL effect',()=>{
@@ -83,10 +120,15 @@ describe('A2S1 signals course',()=>{
     expect(rapid.effects?.some(effect=>effect.tag==='INSTALL')).toBe(true);
     expect(rapid.potential?.subscriptions).toContain('After:action:build_army');
     expect(rapid.potential?.futureActions).toContain('land_battle');
-    expect(rapid.potential?.feeKinds).toContain('deck_top');
+    expect(rapid.potential?.feeKind).toBe('deck');
+    expect(rapid.potential?.feeCount).toBe(1);
+    expect(rapid.potential?.futureActions).toEqual(['land_battle']);
+    expect(rapid.potential?.targetMode).toBe('adjacent_built_army');
     expect(rapid.potential?.useLimit).toBe('turn');
     expect(blitz.potential?.subscriptions).toContain('After:action:land_battle');
     expect(blitz.potential?.futureActions).toContain('build_army');
+    expect(blitz.potential?.futureActions).toEqual(['build_army']);
+    expect(blitz.potential?.targetMode).toBe('battle_region');
     expect(rapid.potential).not.toEqual(blitz.potential);
   });
 

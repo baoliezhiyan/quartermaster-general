@@ -5,6 +5,7 @@ import argparse
 import json
 import os
 import time
+from collections import Counter
 from pathlib import Path
 
 import torch
@@ -15,10 +16,10 @@ from scripts.ppo_auto_behavior import probe as behavior_probe
 from scripts.ppo_auto_explore import (VERSION, FrozenPolicy, capture_roots,
     capture_sentinels, explore_pairs, review_routes)
 from scripts.ppo_auto_imitate import auxiliary_update
-from scripts.ppo_auto_semantic_migrate import POOL, REVIEW, ROOT
+from scripts.ppo_auto_semantic_v2_migrate import POOL, REVIEW, ROOT
 
-ARCHIVE = ROOT / "short-closure-v1.sqlite"
-REPORT = ROOT / "short-closure-v1.json"
+ARCHIVE = ROOT / "short-closure-audited-v1.sqlite"
+REPORT = ROOT / "short-closure-audited-v1.json"
 
 
 def run(archive_path=ARCHIVE, report_path=REPORT):
@@ -33,7 +34,7 @@ def run(archive_path=ARCHIVE, report_path=REPORT):
                     "encoderVersion": ppo.encoder_version("signals"),
                     "rewardConfig": ppo.reward_config("signals"),
                     "explorerVersion": VERSION,
-                    "scope": "A2AUTO2-bounded-closure-v1"}
+                    "scope": "A2AUTO2SEM-bounded-closure-v1"}
         with ExplorationArchive(archive_path, identity) as archive:
             p2_deadline = archive.phase_deadline("p2", 1200)
             capture = capture_roots(clients[0], policy, archive, 20261012,
@@ -65,6 +66,8 @@ def run(archive_path=ARCHIVE, report_path=REPORT):
             else:
                 imitation = {"status": "empty_qualified_library_no_learning",
                              "minibatches": 0}
+            branches = exploration.get("branches", [])
+            review_items = review.get("reviewed", [])
             report = {"format": "auto-closed-loop-short-v1",
                 "scope": "off-policy-only-no-PPO-training",
                 "identity": identity,
@@ -73,7 +76,21 @@ def run(archive_path=ARCHIVE, report_path=REPORT):
                 "capture": capture, "heldout": heldout,
                 "exploration": {key: value for key, value in exploration.items()
                                 if key != "branches"},
+                "discoveryDiagnostics": {
+                    "branchOutcomes": dict(Counter(item.get("outcome", "unknown")
+                        for item in branches)),
+                    "extraInterventions": sum(item.get("extraInterventions", 0)
+                        for item in branches),
+                    "candidateRoutes": len(archive.routes("candidate"))},
                 "review": review, "qualifiedDemonstrations": len(demonstrations),
+                "routeValidity": {"examined": len(review_items),
+                    "enabled": sum(item.get("status") == "enabled" for item in review_items),
+                    "interrupted": sum(bool(item.get("routeInterruptions")) for item in review_items),
+                    "notMeasuredReason": "no_candidate_routes" if not review_items else None},
+                "currentPolicyMastery": {"naturalArgmaxRepetitions": sum(
+                    item.get("naturalArgmaxRepetitions", 0) for item in review_items),
+                    "reviewedRouteCount": len(review_items),
+                    "notMeasuredReason": "no_candidate_routes" if not review_items else None},
                 "imitation": imitation,
                 "budgets": {"p2EngineSteps": archive.counter("p2_engine_steps"),
                     "p3EngineSteps": archive.counter("p3_engine_steps"),

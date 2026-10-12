@@ -17,10 +17,10 @@ from pathlib import Path
 import torch
 
 from scripts import ppo_train as ppo
-from scripts.ppo_auto_archive import ExplorationArchive, action_family, cell_key, digest
+from scripts.ppo_auto_archive import ExplorationArchive, action_family, cell_key, complete_prefix, digest
 from scripts.ppo_network_factory import A2S1_ADAPTER, make_network
 
-VERSION = "auto-explorer-v3-persistent-path"
+VERSION = "auto-explorer-v4-audited-route-review"
 QUEUE = ("coverage", "coverage", "coverage", "coverage", "coverage",
          "continuation", "continuation", "continuation", "review", "review")
 
@@ -134,10 +134,57 @@ def restore_equivalent(client, root):
     return restored["observation"]
 
 
+def route_context(observation):
+    return tuple(observation.get(key) for key in
+        ("decisionSeat", "activeSeat", "node", "phase", "choiceKind",
+         "choiceField", "sourceSeat"))
+
+
+def route_action_signature(candidate):
+    """Keep targets, costs and ordered effects; ignore presentation/instance IDs."""
+    def effect(item):
+        return {key: item.get(key) for key in (
+            "kind", "action", "country", "seat", "fee", "optional", "count",
+            "min", "max", "amount", "regions", "targetIds", "selectionRegion",
+            "from", "to", "filter", "tag", "children") if key in item}
+    return digest({"kind": candidate.get("kind"),
+        "definitionId": candidate.get("definitionId"),
+        "cardType": candidate.get("cardType"),
+        "statusAction": candidate.get("statusAction"),
+        "choiceIds": candidate.get("choiceIds"),
+        "choices": [{key: choice.get(key) for key in (
+            "regionId", "country", "action", "unitType", "targetId", "repeated",
+            "recycleId") if key in choice} for choice in candidate.get("choices", ())],
+        "effects": [effect(item) for item in candidate.get("effects", ())]})
+
+
+def match_recorded_action(recorded, observation):
+    before = recorded["observation"]
+    if route_context(before) != route_context(observation):
+        return None, "decision_context_changed"
+    originals = [item for item in before["candidates"]
+                 if item["id"] == recorded["actionId"]]
+    if len(originals) != 1 or digest(before["candidates"]) != recorded["candidateHash"]:
+        return None, "recorded_action_or_candidates_invalid"
+    target = route_action_signature(originals[0])
+    matches = [index for index, item in enumerate(observation["candidates"])
+               if route_action_signature(item) == target]
+    if len(matches) == 1:
+        return matches[0], None
+    if len(matches) > 1:
+        exact = [index for index in matches if observation["candidates"][index].get("cardId") ==
+                 originals[0].get("cardId") and observation["candidates"][index]["id"] ==
+                 recorded["actionId"]]
+        if len(exact) == 1:
+            return exact[0], None
+        return None, "ambiguous_equivalent_action"
+    return None, "required_action_illegal_or_missing"
+
+
 def run_branch(client, root, policy, first_index, *, kind, seed, max_steps=120,
                max_extra_interventions=2, review_seed=None, stop_after_two_turns=True,
                deadline=None, archive=None, budget_key=None, budget_ceiling=None,
-               save_observations=True):
+               save_observations=True, route_plan=None, opponent_policy=None):
     observation = restore_equivalent(client, root)
     if review_seed is not None:
         response = client.request(op="review-fork-rng", seed=review_seed,
@@ -153,6 +200,8 @@ def run_branch(client, root, policy, first_index, *, kind, seed, max_steps=120,
     path, successors, reward = [], [], {"axis": 0.0, "allies": 0.0}
     side = ppo.team_of(observation["decisionSeat"])
     interventions = 0
+    planned = 0
+    route_interruption = None
     result = None
     for depth in range(max_steps):
         if deadline is not None and time.time() >= deadline:
@@ -160,16 +209,45 @@ def run_branch(client, root, policy, first_index, *, kind, seed, max_steps=120,
         if archive is not None and not archive.consume_budget(budget_key, 1, budget_ceiling):
             break
         candidates = observation["candidates"]
-        probs, value = policy.probabilities(observation)
+        acting_policy = (opponent_policy if opponent_policy is not None and
+            ppo.team_of(observation["decisionSeat"]) != side else policy)
+        probs, value = acting_policy.probabilities(observation)
         if depth == 0:
             index = first_index
             behavior = "explicit_exploration" if kind != "reference" else "frozen_argmax"
+            if route_plan:
+                matched, reason = match_recorded_action(route_plan[0], observation)
+                if matched != first_index:
+                    route_interruption = reason or "first_action_mismatch"
+                    index = sample(probs, rng)
+                    behavior = "frozen_sample_after_route_interruption"
+                else:
+                    planned = 1
         else:
             relevant = (kind == "coverage" and archive is not None and
                 ppo.team_of(observation["decisionSeat"]) == side and
                 len(structural_choices(observation)) >= 2 and
                 observation["node"] in ("SOURCE", "ENGINE_CHOICE"))
-            if relevant and interventions < max_extra_interventions:
+            if route_plan and planned < len(route_plan) and route_interruption is None and \
+                    ppo.team_of(observation["decisionSeat"]) == side:
+                expected = route_plan[planned]
+                if route_context(expected["observation"]) == route_context(observation):
+                    index, route_interruption = match_recorded_action(expected, observation)
+                    if index is not None:
+                        behavior = "review_route_intervention"
+                        planned += 1
+                    else:
+                        index = sample(probs, rng)
+                        behavior = "frozen_sample"
+                else:
+                    index = sample(probs, rng)
+                    behavior = "frozen_sample"
+                    # A matching decision seat has moved past the expected
+                    # phase/window: do not splice a later favorable branch.
+                    if observation["decisionSeat"] == expected["observation"]["decisionSeat"] and \
+                            observation["round"] > expected["observation"]["round"]:
+                        route_interruption = "expected_window_expired"
+            elif relevant and interventions < max_extra_interventions:
                 current = {"observation": observation, "cell": cell_key(observation)}
                 index = choose_exploration_action(archive, current, depth)
                 if index is not None:
@@ -202,9 +280,11 @@ def run_branch(client, root, policy, first_index, *, kind, seed, max_steps=120,
             "definitionId": candidate.get("definitionId"),
             "candidateHash": digest(candidates), "policyProbability": probs[index],
             "behavior": behavior, "value": value,
+            "sourcePolicySha256": acting_policy.weight_hash,
             "selection": response.get("comboTelemetry", {}).get("selected"),
-            "observation": before if save_observations and
-                ppo.team_of(before["decisionSeat"]) == side else None,
+            # Keep opponent observations for exact path replay. The imitation
+            # filter still excludes decisions by the other alliance.
+            "observation": before if save_observations else None,
             "events": commits, "baseReward": base, "trainingReward": train,
             "rewardAdjustments": response["info"].get("rewardAdjustments", ())})
         observation = response["observation"]
@@ -226,6 +306,8 @@ def run_branch(client, root, policy, first_index, *, kind, seed, max_steps=120,
         if stop_after_two_turns and observation["round"] >= start_round + 2 and \
                 observation["activeSeat"] == start_seat:
             break
+    if route_plan and planned < len(route_plan) and route_interruption is None:
+        route_interruption = "required_window_not_reached"
     final = client.request(op="snapshot")["snapshot"]
     attributed = [(depth, commit, event) for depth, step in enumerate(path)
                   for commit in step["events"] for event in commit.get("events", ())
@@ -256,11 +338,17 @@ def run_branch(client, root, policy, first_index, *, kind, seed, max_steps=120,
         "startHash": _state_hash(root["snapshot"]), "endHash": _state_hash(final),
         "path": path, "successors": successors, "steps": len(path),
         "extraInterventions": interventions,
+        "plannedRouteSteps": planned,
+        "routeInterruption": route_interruption,
+        "routeComplete": route_plan is not None and route_interruption is None and
+            planned == len(route_plan),
         "durationSeconds": time.perf_counter()-started,
         "naturalEnd": bool(result and result.get("termination") == "natural"),
         "winner": result.get("winner") if result else None,
         "score": final["state"]["scores"], "reward": reward, "side": side,
         "rootCardId": first_card_id, "rootDefinitionId": first_definition,
+        "opponentPolicyWeightsSha256": opponent_policy.weight_hash if opponent_policy else
+            policy.weight_hash,
         "usefulEventIds": [event["id"] for event in useful],
         "survivingNewUnits": [unit["id"] for unit in surviving],
         "routeSignature": signature, "mechanismSignature": mechanism,
@@ -433,7 +521,7 @@ def explore_pairs(clients, policy, archive, *, max_pairs=2, max_steps=6000,
                                     "p2_engine_steps", max_steps)),
                                 deadline=deadline, archive=archive,
                                 budget_key="p2_engine_steps", budget_ceiling=max_steps,
-                                save_observations=kind != "reference",
+                                save_observations=True,
                                 max_extra_interventions=min(2, 3-used_interventions))
             card = choices[index]
             family = action_family(card)
@@ -494,6 +582,19 @@ def review_routes(clients, policy, parent_policy, archive, *, max_routes=3,
             break
         route = archive.route(route_id)["evidence"]
         root = archive.read_root(route["rootId"])
+        if not complete_prefix(root["prefix"]):
+            reports.append({"routeId": route_id, "status": "unresolved",
+                            "reason": "preparation_prefix_incomplete"})
+            continue
+        try:
+            labels = demonstration_path(root, route)
+        except (ValueError, KeyError) as error:
+            reports.append({"routeId": route_id, "status": "unresolved",
+                            "reason": "route_labels_invalid", "detail": str(error)})
+            continue
+        route_keys = {(step["decisionId"], step["actionId"]) for step in route["path"]}
+        route_plan = [item for item in labels if
+                      (item["decisionId"], item["actionId"]) in route_keys]
         proposal = next((index for index, candidate in enumerate(root["observation"]["candidates"])
                          if candidate["id"] == route["firstActionId"]), None)
         if proposal is None:
@@ -503,8 +604,8 @@ def review_routes(clients, policy, parent_policy, archive, *, max_routes=3,
         for trial in range(8):
             if archive.remaining_budget("p3_engine_steps", max_steps) <= 0 or time.time() >= deadline:
                 break
-            frozen = policies[trial % 2]
-            probs, _ = frozen.probabilities(root["observation"])
+            frozen_opponent = policies[trial % 2]
+            probs, _ = policy.probabilities(root["observation"])
             reference_index = max(range(len(probs)), key=lambda index: probs[index])
             paired_seed = seed + 7919 * trial
             trial_results = []
@@ -513,26 +614,38 @@ def review_routes(clients, policy, parent_policy, archive, *, max_routes=3,
                 remaining = archive.remaining_budget("p3_engine_steps", max_steps)
                 if remaining <= 0 or time.time() >= deadline:
                     break
-                trial_results.append(run_branch(client, root, frozen, index,
+                trial_results.append(run_branch(client, root, policy, index,
                     kind=kind, seed=paired_seed, review_seed=paired_seed,
                     max_steps=min(1400, remaining), stop_after_two_turns=False,
                     deadline=deadline, archive=archive,
                     budget_key="p3_engine_steps", budget_ceiling=max_steps,
-                    save_observations=False, max_extra_interventions=0))
+                    save_observations=False, max_extra_interventions=0,
+                    opponent_policy=frozen_opponent,
+                    route_plan=route_plan if kind == "proposal-review" else None))
             if len(trial_results) != 2:
                 steps += sum(item["steps"] for item in trial_results)
                 break
             steps += sum(item["steps"] for item in trial_results)
             left, right = trial_results
-            pairs.append({"seed": paired_seed, "opponentPolicySha256": frozen.weight_hash,
+            natural_repeated = left["outcome"] == "useful" and bool(
+                route["candidate"].get("mechanismSignature")) and mechanism_matches(
+                route["candidate"]["mechanismSignature"], left["mechanismSignature"])
+            pairs.append({"seed": paired_seed,
+                "actorPolicySha256": policy.weight_hash,
+                "opponentPolicySha256": frozen_opponent.weight_hash,
                 "referenceReward": left["reward"], "proposalReward": right["reward"],
                 "referenceNatural": left["naturalEnd"], "proposalNatural": right["naturalEnd"],
-                "routeRepeated": right["outcome"] == "useful" and bool(
+                "routeInterrupted": right["routeInterruption"],
+                "routeComplete": right["routeComplete"],
+                "routeRepeated": right["routeComplete"] and
+                    right["outcome"] == "useful" and bool(
                     route["candidate"].get("mechanismSignature")) and
                     mechanism_matches(route["candidate"]["mechanismSignature"],
                                       right["mechanismSignature"]) and bool(
                     set(route["candidate"]["routeSignature"]) &
                     set(right["routeSignature"])),
+                "naturalArgmaxRouteRepeated": natural_repeated,
+                "naturalRootActionProbability": probs[proposal],
                 "difference": right["reward"][right["side"]] - left["reward"][left["side"]],
                 "steps": left["steps"] + right["steps"]})
         completed = len(pairs) == 8 and all(item["referenceNatural"] and
@@ -543,12 +656,16 @@ def review_routes(clients, policy, parent_policy, archive, *, max_routes=3,
         qualified = completed and pass_count >= 6 and mean_difference > 0 and replay_count >= 4
         report = {"routeId": route_id, "completed": completed, "pairs": pairs,
             "nonnegativePairs": pass_count, "routeRepetitions": replay_count,
+            "routeInterruptions": dict(Counter(item["routeInterrupted"] for item in pairs
+                if item["routeInterrupted"])),
+            "naturalArgmaxRepetitions": sum(item["naturalArgmaxRouteRepeated"] for item in pairs),
+            "naturalRootActionProbabilityMean": sum(item["naturalRootActionProbability"]
+                for item in pairs)/len(pairs) if pairs else None,
             "meanDifference": mean_difference,
             "status": "enabled" if qualified else "reviewed" if completed else "unresolved"}
         if completed:
             archive.set_route_status(route_id, "enabled" if qualified else "reviewed")
             if qualified:
-                labels = demonstration_path(root, route)
                 report["demonstration"] = archive.add_demonstrations(route_id,
                     route["firstDefinitionId"] or "structural-action", labels)
         reports.append(report)

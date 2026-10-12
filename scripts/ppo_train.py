@@ -34,7 +34,7 @@ GAMMA = 1.0
 LAMBDA_ROUND = 0.95
 POTENTIAL_SCALE = 0.3
 ENCODER_VERSION = "ppo-vector-v7-effective-straits"
-A2S1_ENCODER_VERSION = "ppo-vector-a2s1-v4-potential-signals"
+A2S1_ENCODER_VERSION = "ppo-vector-a2s1-v5-audited-potential"
 TRAINER_VERSION = "ppo-trainer-v9-actor-map"
 EFFECT_KINDS = ["action", "score", "draw", "deckTop", "forceHand", "signal", "choose", "cards",
                 "extraPlay", "rebuild", "remove", "flag", "balance", "trace", "cancel", "randomReturn",
@@ -48,9 +48,18 @@ CHOICE_KINDS = ["BUILD_ORDER", "EFFECT_DECISION", "AIR_DEFENSE", "AIR_INTERCEPT"
 CHOICE_FIELDS = ["regionId", "defenderId", "attackerId", "option"]
 TARGET_SLOTS = 8
 UNIT_TYPES = ["army", "navy", "air"]
-POTENTIAL_ACTIONS = ACTIONS + ["score"]
+POTENTIAL_ACTIONS = ACTIONS + ["score", "prevent_remove", "home_base", "supply",
+                               "recycle_play", "return_card", "discard_status"]
 POTENTIAL_MISC = ["CARD_EFFECT", "CARD_EFFECT_DONE", "CARD_PLAYED", "STANDARD_CARD_PLAYED",
                   "remove", "deckTop", "ARMAMENT", "*", "action:*", "PHASE:*"]
+POTENTIAL_TARGETS = ["adjacent_built_army", "adjacent_built_navy", "battle_region",
+    "battle_or_adjacent", "adjacent_battle_region", "any_legal", "same_unit",
+    "new_enemy_navy", "any_chinese_army", "global_navy_count", "removed_unit_region",
+    "adjacent_allied_army", "discard_build_army", "all_own_army", "all_french_units",
+    "played_build_army", "triggered_german_status", "fixed", "fixed_or_adjacent",
+    "fixed_then_adjacent", "battle_then_fixed_or_adjacent", "any_legal_except", "unknown"]
+POTENTIAL_BRANCHES = ["single", "sequence", "conditional", "range_1_2",
+                      "replace_play", "replacement", "unknown"]
 NODES = ["SOURCE", "TARGETS", "ENGINE_CHOICE"]
 CANDIDATE_KINDS = ["source", "pass", "choice", "targets"]
 CHOICE_SLOTS = 16
@@ -83,7 +92,8 @@ def encoder_dictionary_hash(encoder):
         "cards": encoder.cards, "nodes": encoder.nodes,
         "maxActionSlots": encoder.max_action_slots,
         "schema": encoder.schema["observationSchemaVersion"],
-        "potentialActions": POTENTIAL_ACTIONS, "potentialMisc": POTENTIAL_MISC},
+        "potentialActions": POTENTIAL_ACTIONS, "potentialMisc": POTENTIAL_MISC,
+        "potentialTargets": POTENTIAL_TARGETS, "potentialBranches": POTENTIAL_BRANCHES},
         sort_keys=True).encode()).hexdigest()
 TRAINER_SOURCE_HASH = hashlib.sha256(Path(__file__).read_bytes() +
     Path(__file__).with_name("ppo_action_semantics.py").read_bytes() +
@@ -573,7 +583,7 @@ class Encoder:
         return values
 
     def _potential_vector(self, potential):
-        """Potential trigger facts have a separate channel from resolved effects."""
+        """Audited installed capability; neither the trigger nor its cost is an effect."""
         item = potential or {}
         subscriptions = item.get("subscriptions") or []
         triggers = [entry.split(":", 1) for entry in subscriptions]
@@ -587,11 +597,32 @@ class Encoder:
             raise ValueError("Unknown or excessive potential action")
         ordered = [number for name in future for number in onehot(name, POTENTIAL_ACTIONS)]
         ordered += [0.0] * ((8-len(future)) * len(POTENTIAL_ACTIONS))
-        return (timing + phases + actions + misc +
-                [float(name in (item.get("feeKinds") or [])) for name in ("deck_top", "hand")] +
-                onehot(item.get("useLimit"), ["turn", "round", "none"]) +
-                [float(item.get("regionConstrained", False)),
-                 float(item.get("conditional", False)), float(bool(potential))] + ordered)
+        fixed_regions = item.get("targetRegions") or []
+        if any(region not in self.regions for region in fixed_regions):
+            raise ValueError("Unknown potential fixed region")
+        if item.get("targetMode") not in (None, *POTENTIAL_TARGETS):
+            raise ValueError("Unknown potential target relation")
+        if item.get("branchMode") not in (None, *POTENTIAL_BRANCHES):
+            raise ValueError("Unknown potential branch")
+        if item.get("feeKind") not in (None, "none", "deck", "hand", "unknown"):
+            raise ValueError("Unknown potential fee")
+        unit = item.get("unitConstraint") or []
+        known = item.get("known") or {}
+        return (timing + phases + actions + misc + ordered +
+                onehot(item.get("targetMode"), POTENTIAL_TARGETS) +
+                [float(region in fixed_regions) for region in self.regions] +
+                onehot(item.get("feeKind"), ["none", "deck", "hand", "unknown"]) +
+                [min(item.get("feeCount", 0), 10) / 10.0,
+                 min(item.get("conditionalExtraFee", 0), 10) / 10.0] +
+                [float(action in (item.get("feeResourceActions") or [])) for action in ACTIONS] +
+                onehot(item.get("useLimit"), ["turn", "round", "none", "unknown"]) +
+                [float(name in unit) for name in UNIT_TYPES] +
+                [float("unknown" in unit)] +
+                onehot(item.get("allianceConstraint"), ["owner", "ally", "enemy", "unknown"]) +
+                onehot(item.get("branchMode"), POTENTIAL_BRANCHES) +
+                [float(known.get(name, False)) for name in
+                 ("effects", "target", "fee", "unit", "alliance")] +
+                [float(bool(item.get("potentialOnly"))), float(bool(potential))])
 
     def _action_semantics(self, obs, candidate):
         outcomes = ("unknown", "new", "repeated", "blocked", "target", "empty")

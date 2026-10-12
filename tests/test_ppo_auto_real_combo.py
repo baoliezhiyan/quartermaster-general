@@ -5,7 +5,7 @@ import unittest
 from scripts import ppo_train as ppo
 from scripts.ppo_auto_archive import digest
 from scripts.ppo_auto_explore import demonstration_path
-from scripts.ppo_auto_semantic_migrate import POOL
+from scripts.ppo_auto_semantic_v2_migrate import POOL
 from scripts.ppo_combo_accept import probe
 
 
