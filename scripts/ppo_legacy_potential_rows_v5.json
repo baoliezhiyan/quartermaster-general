@@ -1,0 +1,668 @@
+{
+  "rows": {
+    "special_1": [
+      "land_battle",
+      "fixed:western_europe,italy",
+      "hand:2:any",
+      "none",
+      "army",
+      "owner",
+      "replace_play"
+    ],
+    "special_10": [
+      "supply,recruit_army",
+      "fixed:south_africa",
+      "none",
+      "none",
+      "army",
+      "owner",
+      "replace_play"
+    ],
+    "special_11": [
+      "prevent_remove",
+      "same_unit",
+      "none",
+      "none",
+      "army"
+    ],
+    "special_12": [
+      "destroy",
+      "fixed:india,australia,canada",
+      "none",
+      "none",
+      "army",
+      "enemy"
+    ],
+    "special_129": [
+      "recruit_army",
+      "fixed:germany",
+      "deck:1",
+      "turn",
+      "army"
+    ],
+    "special_130": [
+      "build_army",
+      "adjacent_built_army",
+      "deck:2",
+      "turn",
+      "army"
+    ],
+    "special_131": [
+      "score,score",
+      "fixed:sea_baltic,scandinavia",
+      "none",
+      "none",
+      "army,navy",
+      "owner",
+      "conditional"
+    ],
+    "special_134": [
+      "land_battle",
+      "battle_or_adjacent",
+      "deck:1",
+      "turn",
+      "army"
+    ],
+    "special_135": [
+      "build_army",
+      "any_legal",
+      "deck:2",
+      "none",
+      "army",
+      "owner",
+      "replace_play"
+    ],
+    "special_136": [
+      "build_army",
+      "battle_region",
+      "deck:1",
+      "turn",
+      "army"
+    ],
+    "special_137": [
+      "land_battle",
+      "adjacent_built_army",
+      "deck:1",
+      "turn",
+      "army"
+    ],
+    "special_139": [
+      "score",
+      "fixed:ukraine,kazakhstan,ross_region",
+      "none"
+    ],
+    "special_14": [
+      "prevent_remove",
+      "fixed_or_adjacent:british_isles",
+      "none",
+      "none",
+      "any"
+    ],
+    "special_16": [
+      "prevent_remove",
+      "same_unit",
+      "none",
+      "none",
+      "navy",
+      "ally"
+    ],
+    "special_163": [
+      "sea_battle",
+      "fixed:sea_baltic",
+      "deck:2",
+      "none",
+      "navy",
+      "owner",
+      "replace_play",
+      1
+    ],
+    "special_17": [
+      "discard_status",
+      "triggered_german_status",
+      "none",
+      "none",
+      "unknown",
+      "enemy"
+    ],
+    "special_171": [
+      "score",
+      "global_navy_count",
+      "none",
+      "none",
+      "navy"
+    ],
+    "special_172": [
+      "score,score",
+      "fixed:vladivostok,siberia",
+      "none",
+      "none",
+      "army",
+      "owner",
+      "conditional"
+    ],
+    "special_173": [
+      "score",
+      "fixed:sea_central_pacific",
+      "none",
+      "none",
+      "navy"
+    ],
+    "special_174": [
+      "score",
+      "fixed:hawaii",
+      "none",
+      "none",
+      "army",
+      "enemy"
+    ],
+    "special_175": [
+      "score",
+      "fixed:iwo_jima,philippines",
+      "none",
+      "none",
+      "army"
+    ],
+    "special_176": [
+      "score",
+      "fixed:indonesia,new_guinea,southeast_asia",
+      "none",
+      "none",
+      "army"
+    ],
+    "special_177": [
+      "score",
+      "fixed:hawaii,canada,new_zealand",
+      "none",
+      "none",
+      "army"
+    ],
+    "special_178": [
+      "build_army,land_battle",
+      "fixed_then_adjacent:vladivostok",
+      "none",
+      "none",
+      "army",
+      "owner",
+      "sequence"
+    ],
+    "special_18": [
+      "prevent_remove",
+      "same_unit",
+      "none",
+      "none",
+      "army"
+    ],
+    "special_183": [
+      "land_battle,land_battle",
+      "adjacent_built_navy",
+      "none",
+      "none",
+      "army",
+      "owner",
+      "range_1_2"
+    ],
+    "special_184": [
+      "sea_battle,sea_battle",
+      "adjacent_built_navy",
+      "none",
+      "none",
+      "navy",
+      "owner",
+      "range_1_2"
+    ],
+    "special_185": [
+      "build_army",
+      "fixed:india",
+      "none",
+      "none",
+      "army"
+    ],
+    "special_186": [
+      "sea_battle",
+      "any_legal",
+      "none",
+      "none",
+      "navy"
+    ],
+    "special_187": [
+      "land_battle",
+      "fixed_or_adjacent:eastern_china",
+      "none",
+      "none",
+      "army"
+    ],
+    "special_188": [
+      "recruit_army",
+      "fixed:southeast_asia",
+      "none",
+      "none",
+      "army"
+    ],
+    "special_189": [
+      "recruit_army",
+      "fixed:eastern_china",
+      "none",
+      "none",
+      "army"
+    ],
+    "special_19": [
+      "recruit_army",
+      "fixed:north_africa,south_africa,middle_east,western_europe",
+      "none",
+      "none",
+      "army",
+      "ally"
+    ],
+    "special_190": [
+      "destroy",
+      "any_chinese_army",
+      "none",
+      "none",
+      "army",
+      "enemy"
+    ],
+    "special_192": [
+      "sea_battle,land_battle",
+      "any_legal_except:united_states",
+      "none",
+      "none",
+      "army,navy",
+      "owner",
+      "sequence"
+    ],
+    "special_193": [
+      "build_army,build_army",
+      "adjacent_built_navy",
+      "none",
+      "none",
+      "army",
+      "owner",
+      "range_1_2"
+    ],
+    "special_194": [
+      "recruit_navy",
+      "fixed_or_adjacent:sea_north_pacific",
+      "none",
+      "none",
+      "navy"
+    ],
+    "special_195": [
+      "prevent_remove",
+      "fixed:eastern_china,western_china,vladivostok,mongolia",
+      "none",
+      "none",
+      "army"
+    ],
+    "special_196": [
+      "destroy",
+      "new_enemy_navy",
+      "none",
+      "none",
+      "navy",
+      "enemy"
+    ],
+    "special_197": [
+      "sea_battle,recruit_army",
+      "fixed:sea_south_china,southeast_asia",
+      "none",
+      "none",
+      "army,navy",
+      "owner",
+      "sequence"
+    ],
+    "special_198": [
+      "build_army,build_army",
+      "adjacent_battle_region",
+      "none",
+      "none",
+      "army",
+      "owner",
+      "range_1_2"
+    ],
+    "special_199": [
+      "build_army,land_battle",
+      "battle_then_fixed_or_adjacent:eastern_china",
+      "none",
+      "none",
+      "army",
+      "owner",
+      "sequence"
+    ],
+    "special_2": [
+      "recruit_army",
+      "fixed:australia",
+      "none",
+      "none",
+      "army",
+      "owner",
+      "replacement"
+    ],
+    "special_200": [
+      "prevent_remove",
+      "same_unit",
+      "none",
+      "none",
+      "navy"
+    ],
+    "special_201": [
+      "land_battle",
+      "battle_or_adjacent",
+      "none",
+      "none",
+      "army"
+    ],
+    "special_212": [
+      "score",
+      "fixed:western_europe",
+      "none",
+      "none",
+      "army"
+    ],
+    "special_213": [
+      "score",
+      "global_navy_count",
+      "none",
+      "none",
+      "navy"
+    ],
+    "special_214": [
+      "score",
+      "fixed:north_africa,south_africa,middle_east",
+      "none",
+      "none",
+      "army",
+      "ally"
+    ],
+    "special_215": [
+      "land_battle",
+      "any_legal",
+      "deck:2",
+      "none",
+      "army",
+      "owner",
+      "replace_play"
+    ],
+    "special_216": [
+      "score",
+      "fixed:ross_region,ukraine",
+      "none",
+      "none",
+      "army"
+    ],
+    "special_217": [
+      "score",
+      "fixed:balkans",
+      "none",
+      "none",
+      "army"
+    ],
+    "special_218": [
+      "destroy",
+      "adjacent_allied_army",
+      "none",
+      "none",
+      "army",
+      "enemy"
+    ],
+    "special_219": [
+      "prevent_remove",
+      "fixed_or_adjacent:italy",
+      "none",
+      "none",
+      "army"
+    ],
+    "special_221": [
+      "recruit_army",
+      "removed_unit_region",
+      "none",
+      "none",
+      "army",
+      "ally"
+    ],
+    "special_222": [
+      "prevent_remove",
+      "fixed:italy",
+      "none",
+      "none",
+      "army",
+      "ally"
+    ],
+    "special_223": [
+      "recruit_army",
+      "removed_unit_region",
+      "none",
+      "none",
+      "army",
+      "ally"
+    ],
+    "special_249": [
+      "destroy",
+      "fixed:hawaii",
+      "none",
+      "none",
+      "army",
+      "enemy"
+    ],
+    "special_3": [
+      "score,score",
+      "fixed:sea_north_atlantic,canada",
+      "none",
+      "none",
+      "army,navy",
+      "owner",
+      "conditional"
+    ],
+    "special_4": [
+      "sea_battle",
+      "battle_or_adjacent",
+      "hand:2:any",
+      "turn",
+      "navy"
+    ],
+    "special_42": [
+      "home_base,supply",
+      "fixed:siberia,moscow",
+      "none"
+    ],
+    "special_43": [
+      "land_battle",
+      "battle_or_adjacent",
+      "hand:2:any",
+      "turn",
+      "army"
+    ],
+    "special_44": [
+      "land_battle",
+      "adjacent_built_army",
+      "hand:2:build_army,land_battle",
+      "none",
+      "army"
+    ],
+    "special_45": [
+      "return_card",
+      "played_build_army",
+      "none",
+      "none",
+      "army"
+    ],
+    "special_46": [
+      "recycle_play",
+      "discard_build_army",
+      "hand:2:any",
+      "none",
+      "army",
+      "owner",
+      "replace_play"
+    ],
+    "special_47": [
+      "supply",
+      "all_own_army",
+      "none",
+      "none",
+      "army"
+    ],
+    "special_48": [
+      "supply",
+      "fixed:ukraine",
+      "none"
+    ],
+    "special_5": [
+      "home_base",
+      "fixed:western_europe,british_isles",
+      "none"
+    ],
+    "special_50": [
+      "build_army",
+      "any_legal",
+      "hand:1:build_army",
+      "turn",
+      "army"
+    ],
+    "special_51": [
+      "land_battle",
+      "battle_region",
+      "hand:1:any",
+      "turn",
+      "army"
+    ],
+    "special_52": [
+      "recruit_army",
+      "fixed:western_china,eastern_china,mongolia",
+      "none",
+      "none",
+      "army",
+      "owner",
+      "replace_play"
+    ],
+    "special_54": [
+      "prevent_remove",
+      "fixed:ukraine",
+      "none",
+      "none",
+      "army"
+    ],
+    "special_55": [
+      "prevent_remove",
+      "fixed:siberia,kazakhstan",
+      "none",
+      "none",
+      "army"
+    ],
+    "special_56": [
+      "prevent_remove",
+      "fixed:moscow",
+      "none",
+      "none",
+      "army"
+    ],
+    "special_57": [
+      "destroy",
+      "fixed_or_adjacent:moscow",
+      "none",
+      "none",
+      "army",
+      "enemy"
+    ],
+    "special_58": [
+      "recruit_army,recruit_army",
+      "fixed:siberia,kazakhstan",
+      "none",
+      "none",
+      "army"
+    ],
+    "special_59": [
+      "recruit_army,destroy",
+      "fixed_or_adjacent:moscow",
+      "none",
+      "none",
+      "army",
+      "enemy",
+      "sequence"
+    ],
+    "special_60": [
+      "prevent_remove",
+      "fixed:ross_region",
+      "none",
+      "none",
+      "army"
+    ],
+    "special_7": [
+      "supply,recruit_army",
+      "fixed:eastern_europe",
+      "none",
+      "none",
+      "army",
+      "owner",
+      "replace_play"
+    ],
+    "special_78": [
+      "land_battle",
+      "adjacent_built_navy",
+      "deck:1",
+      "none",
+      "army"
+    ],
+    "special_79": [
+      "score",
+      "fixed:eastern_europe,south_africa,latin_america,western_china",
+      "none"
+    ],
+    "special_8": [
+      "recruit_army",
+      "fixed:india",
+      "none",
+      "none",
+      "army",
+      "owner",
+      "replacement"
+    ],
+    "special_80": [
+      "build_army",
+      "adjacent_built_navy",
+      "deck:1",
+      "turn",
+      "army"
+    ],
+    "special_83": [
+      "build_army",
+      "any_legal",
+      "deck:1",
+      "turn",
+      "army"
+    ],
+    "special_84": [
+      "build_navy",
+      "any_legal",
+      "deck:1",
+      "turn",
+      "navy"
+    ],
+    "special_86": [
+      "prevent_remove",
+      "fixed:sea_central_pacific",
+      "deck:2",
+      "turn",
+      "navy"
+    ],
+    "special_88": [
+      "build_army",
+      "battle_region",
+      "deck:1",
+      "turn",
+      "army"
+    ],
+    "special_89": [
+      "build_navy",
+      "battle_region",
+      "deck:1",
+      "turn",
+      "navy"
+    ],
+    "special_9": [
+      "supply",
+      "all_french_units",
+      "none"
+    ]
+  },
+  "sourceCommit": "21e3763"
+}

@@ -20,7 +20,7 @@ from scripts import ppo_train as ppo
 from scripts.ppo_auto_archive import ExplorationArchive, action_family, cell_key, complete_prefix, digest
 from scripts.ppo_auto_route_match import (route_context, match_recorded_action,
     route_plan_with_ordinals, route_window_status)
-from scripts.ppo_network_factory import A2S1_ADAPTER, make_network
+from scripts.ppo_network_factory import A2S1_ADAPTER, HISTORICAL_GATE_ADAPTER, make_network
 
 VERSION = "auto-explorer-v4-audited-route-review"
 QUEUE = ("coverage", "coverage", "coverage", "coverage", "coverage",
@@ -51,20 +51,33 @@ class FrozenPolicy:
         self.checkpoint = Path(checkpoint)
         self.file_hash = sha256(checkpoint)
         self.saved = torch.load(checkpoint, map_location="cpu", weights_only=False)
-        initial = self.saved.get("format") == "quartermaster-ppo-comparison-initial-v1"
+        initial = self.saved.get("format") in (
+            "quartermaster-ppo-comparison-initial-v1",
+            "quartermaster-ppo-causal-migration-initial-v1")
         if ((self.saved.get("resourceMode") if initial else self.saved.get("mode")) != "A" or
             ("signals" if initial else self.saved.get("cardSet")) != "signals" or
-            self.saved.get("networkArchitecture") != A2S1_ADAPTER or
+            self.saved.get("networkArchitecture") not in (A2S1_ADAPTER,
+                                                         HISTORICAL_GATE_ADAPTER) or
             self.saved.get("buildFingerprint") != client.fingerprint):
             raise ValueError("Exploration model is not the reviewed A-mode signals map network")
-        self.encoder = ppo.Encoder(client.schema)
+        architecture = self.saved["networkArchitecture"]
+        if architecture == HISTORICAL_GATE_ADAPTER:
+            from scripts.ppo_legacy_potential import encoder_classes
+            self.encoder = encoder_classes()[1](client.schema)
+            expected_version = self.encoder.version
+        else:
+            self.encoder = ppo.Encoder(client.schema)
+            expected_version = ppo.encoder_version("signals")
         if self.saved.get("network") != {"stateDim": self.encoder.state_dim,
                                           "candidateDim": self.encoder.candidate_dim}:
             raise ValueError("Exploration model input dimensions differ")
-        if self.saved.get("encoderVersion") != ppo.encoder_version("signals"):
+        if self.saved.get("encoderVersion") != expected_version:
             raise ValueError("Exploration model observation encoding differs")
+        if architecture == HISTORICAL_GATE_ADAPTER and self.saved.get(
+                "encoderDictionarySha256") != ppo.encoder_dictionary_hash(self.encoder):
+            raise ValueError("Historical-gate projection dictionary differs")
         self.device = torch.device(device)
-        self.model = make_network(A2S1_ADAPTER, self.encoder).to(self.device)
+        self.model = make_network(architecture, self.encoder).to(self.device)
         self.model.load_state_dict(self.saved["modelState"], strict=True)
         self.model.eval()
         self.weight_hash = ppo.model_weights_sha256(self.model)
@@ -133,19 +146,20 @@ def restore_equivalent(client, root):
     current = client.request(op="snapshot")["snapshot"]
     if _state_hash(current) != _state_hash(root["snapshot"]):
         raise ValueError("Restored root has different engine state")
-    return restored["observation"]
+    return restored["observation"], restored.get("routeCausality")
 
 
 def run_branch(client, root, policy, first_index, *, kind, seed, max_steps=120,
                max_extra_interventions=2, review_seed=None, stop_after_two_turns=True,
                deadline=None, archive=None, budget_key=None, budget_ceiling=None,
                save_observations=True, route_plan=None, opponent_policy=None):
-    observation = restore_equivalent(client, root)
+    observation, current_causality = restore_equivalent(client, root)
     if review_seed is not None:
         response = client.request(op="review-fork-rng", seed=review_seed,
                                   purpose="off-policy-review")
         if digest(response["observation"]) != digest(observation):
             raise ValueError("Future RNG fork changed current legal observation")
+        current_causality = response.get("routeCausality")
     rng = random.Random(seed)
     start_seat = observation["activeSeat"]
     start_round = observation["round"]
@@ -174,7 +188,8 @@ def run_branch(client, root, policy, first_index, *, kind, seed, max_steps=120,
             index = first_index
             behavior = "explicit_exploration" if kind != "reference" else "frozen_argmax"
             if route_plan:
-                matched, reason = match_recorded_action(route_plan[0], observation)
+                matched, reason = match_recorded_action(route_plan[0], observation,
+                                                       current_causality)
                 if matched != first_index:
                     route_interruption = reason or "first_action_mismatch"
                     index = sample(probs, rng)
@@ -189,13 +204,15 @@ def run_branch(client, root, policy, first_index, *, kind, seed, max_steps=120,
             if route_plan and planned < len(route_plan) and route_interruption is None and \
                     ppo.team_of(observation["decisionSeat"]) == side:
                 expected = route_plan[planned]
-                window = route_window_status(expected, observation, seen_contexts)
+                window = route_window_status(expected, observation, seen_contexts,
+                                             current_causality)
                 if window not in ("match", "wait"):
                     route_interruption = window
                     index = sample(probs, rng)
                     behavior = "frozen_sample_after_route_interruption"
                 elif window == "match":
-                    index, route_interruption = match_recorded_action(expected, observation)
+                    index, route_interruption = match_recorded_action(expected, observation,
+                                                                      current_causality)
                     if index is not None:
                         behavior = "review_route_intervention"
                         planned += 1
@@ -243,9 +260,11 @@ def run_branch(client, root, policy, first_index, *, kind, seed, max_steps=120,
             # Keep opponent observations for exact path replay. The imitation
             # filter still excludes decisions by the other alliance.
             "observation": before if save_observations else None,
+            "routeCausality": current_causality,
             "events": commits, "baseReward": base, "trainingReward": train,
             "rewardAdjustments": response["info"].get("rewardAdjustments", ())})
         observation = response["observation"]
+        current_causality = response.get("routeCausality")
         result = response["result"]
         meaningful = any(commit.get("installs") or commit.get("added") or
             commit.get("removed") or any(event.get("outcome") == "succeeded" and

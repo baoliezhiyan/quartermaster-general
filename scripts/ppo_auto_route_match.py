@@ -121,8 +121,15 @@ def route_context(observation):
         "selectedTargetFacts", "bindingFacts")})
 
 
-def match_recorded_action(recorded, observation):
+def match_recorded_action(recorded, observation, current_causality=None):
     before = recorded.get("observation") or {}
+    if before.get("node") == "ENGINE_CHOICE":
+        expected_source = (recorded.get("routeCausality") or {}).get("origin")
+        actual_source = (current_causality or {}).get("origin")
+        if not expected_source or not actual_source:
+            return None, "unresolved_window_causality"
+        if expected_source != actual_source:
+            return None, "causal_source_mismatch"
     if route_context(before) != route_context(observation):
         return None, "decision_context_changed"
     original = [item for item in before.get("candidates", ())
@@ -157,13 +164,36 @@ def route_plan_with_ordinals(path, labels):
     for label in labels:
         key = label["decisionId"], label["actionId"]
         if key in numbered:
-            result.append({**label, "_routeOrdinal": numbered[key]})
+            original = next(step for step in path if
+                (step["decisionId"], step["actionId"]) == key)
+            result.append({**label, "_routeOrdinal": numbered[key],
+                "routeCausality": original.get("routeCausality")})
     return result
 
 
-def route_window_status(expected, current, seen_contexts):
+def route_window_status(expected, current, seen_contexts, current_causality=None):
     """A later lookalike window cannot replace a missed causal node."""
     prior = expected["observation"]
+    if prior.get("node") == "ENGINE_CHOICE":
+        wanted_source = (expected.get("routeCausality") or {}).get("origin")
+        wanted_epoch = (expected.get("routeCausality") or {}).get("epoch")
+        if not wanted_source or current_causality is None:
+            return "unresolved_window_causality"
+        if wanted_epoch is None or current_causality.get("epoch") is None:
+            return "unresolved_window_causality"
+        if current_causality["epoch"] > wanted_epoch:
+            return "expected_parent_resolution_closed"
+        if current_causality["epoch"] < wanted_epoch:
+            return "wait"
+        status = (current_causality.get("lifecycle") or {}).get(wanted_source)
+        actual_source = current_causality.get("origin")
+        if status in ("cancelled", "branch-left", "legacy-branch", "invalidated"):
+            return "expected_window_cancelled_or_invalidated"
+        if current.get("node") == "ENGINE_CHOICE" and route_context(current) == route_context(prior):
+            if actual_source != wanted_source:
+                return "causal_source_mismatch"
+        if actual_source == wanted_source and status not in ("open", None):
+            return "expected_window_closed"
     context = route_context(current)
     wanted = route_context(prior)
     ordinal = expected.get("_routeOrdinal", 1)

@@ -10,6 +10,7 @@ import torch
 from torch import nn
 
 from scripts.ppo_map_network import PpoMapNetwork
+from scripts.ppo_legacy_potential import vector as historical_vector
 
 
 class PpoOpeningAdapter(nn.Module):
@@ -61,4 +62,35 @@ class A2S1MapAdapter(PpoOpeningAdapter):
             self.prototype_candidate[:legacy]).square().sum(-1)
         gate = torch.exp(-state_distance[:, None] / self.state_scale -
                          candidate_distance / self.candidate_scale)
+        return (logits + self.opening_logit * gate).masked_fill(~mask, -1e9), value
+
+
+class A2S1HistoricalGateAdapter(PpoOpeningAdapter):
+    """v7: learn current semantics, but preserve the v5 opening gate exactly.
+
+    The frozen historical projection is appended after the v6 effect-scope
+    channel. Only the gate reads that suffix; the map's new input weights start
+    at zero and can be learned in a later, separately authorized experiment.
+    """
+    architecture = "map-contextual-opening-adapter-a2s1-historical-gate-v2"
+
+    def __init__(self, encoder):
+        super().__init__(encoder)
+        self.gate_core_dim = encoder.candidate_dim - len(encoder._potential_vector(None)) - \
+            len(historical_vector(encoder, None, None))
+        self.historical_start = encoder.historical_start
+
+    def forward(self, states, candidates, mask):
+        # The historical projection is solely for the old opening gate; the
+        # trainable map branch sees the current semantic channel instead.
+        map_candidates = candidates.clone()
+        map_candidates[..., self.historical_start:] = 0
+        logits, value = self.map(states, map_candidates, mask)
+        state_distance = (states - self.prototype_state).square().sum(-1)
+        core_distance = (candidates[..., :self.gate_core_dim] -
+            self.prototype_candidate[:self.gate_core_dim]).square().sum(-1)
+        historical_distance = (candidates[..., self.historical_start:] -
+            self.prototype_candidate[self.historical_start:]).square().sum(-1)
+        gate = torch.exp(-state_distance[:, None] / self.state_scale -
+                         (core_distance + historical_distance) / self.candidate_scale)
         return (logits + self.opening_logit * gate).masked_fill(~mask, -1e9), value

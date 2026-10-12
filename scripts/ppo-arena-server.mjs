@@ -3,6 +3,7 @@ import {createHash} from 'node:crypto';
 import {createInterface} from 'node:readline';
 import {createWriteStream,mkdirSync,readFileSync,writeFileSync,existsSync} from 'node:fs';
 import {dirname,resolve} from 'node:path';
+import {RouteCausality} from './ppo_route_causality.mjs';
 
 const args=process.argv.slice(2);
 const get=(name,fallback)=>{const i=args.indexOf(name);return i<0?fallback:args[i+1];};
@@ -24,6 +25,7 @@ const schemaCardSet=get('--card-set','events');
 if(!['basics','events','signals'].includes(schemaCardSet))throw new Error('Unknown arena schema course');
 const staticSchema=schemaCardSet==='signals'?PPO_A2S1_STATIC_SCHEMA:PPO_STATIC_SCHEMA;
 let arena=null;
+let routeCausality=null;
 let log=null;
 if(logPath){const path=resolve(logPath);mkdirSync(dirname(path),{recursive:true});log=createWriteStream(path,{encoding:'utf8'});}
 const send=value=>process.stdout.write(`${JSON.stringify(value)}\n`);
@@ -152,9 +154,12 @@ for await(const line of rl){
         mode:request.mode,cardSet:request.cardSet??'events',
         buildFingerprint:fingerprint,trace:request.trace??'none',captureReplay:logSnapshots});
       if(request.comboTelemetry)attachComboTelemetry(arena,request.comboTelemetry);
+      if(request.comboTelemetry){routeCausality=new RouteCausality();
+        routeCausality.ingest(arena.state);}
       record({recordType:'AI训练记录',logFormat:'quartermaster-ppo-training-jsonl-v2',
         trainingMetadata:request.recordMetadata??null,...arena.header});
       response={observation:arena.observe(),header:arena.header};
+      if(routeCausality)response.routeCausality=routeCausality.current;
       if(logSnapshots)record({recordType:'state',decisionCount:arena.decisions,
         snapshot:arena.exportSnapshot()});
     }else if(request.op==='step'){
@@ -166,6 +171,8 @@ for await(const line of rl){
         (selected?.choiceIds??[]).map(id=>({cardId:id,fromZone:cardZone(arena.state,id),
           definitionId:arena.state.decks[prior.decisionSeat]?.hand.find(card=>card.id===id)?.definitionId??null})):[];
       response=arena.step(request.action);
+      if(routeCausality){routeCausality.ingest(arena.state);
+        response.routeCausality=routeCausality.current;}
       if(request.comboTelemetry){
         if(!arena.takeComboTelemetry)throw new Error('Combo telemetry was not enabled at reset');
         response.comboTelemetry={version:'combo-settlement-v1',round:prior.round,
@@ -194,15 +201,21 @@ for await(const line of rl){
     }else if(request.op==='snapshot'){
       if(!arena)throw new Error('Reset the arena first');
       response={snapshot:arena.exportSnapshot()};
+      if(routeCausality)response.snapshot.routeCausality=routeCausality.snapshot();
     }else if(request.op==='restore'){
       arena=PpoTrainingArena.fromSnapshot(request.snapshot,{mode:request.snapshot.header.mode,
         cardSet:request.snapshot.header.cardSet,buildFingerprint:fingerprint,trace:request.trace??'none'});
       if(request.comboTelemetry)attachComboTelemetry(arena,request.comboTelemetry);
+      routeCausality=request.comboTelemetry?new RouteCausality(request.snapshot.routeCausality):null;
+      if(routeCausality)routeCausality.ingest(arena.state);
       response={observation:arena.observe(),header:arena.header,result:arena.result};
+      if(routeCausality)response.routeCausality=routeCausality.current;
     }else if(request.op==='review-fork-rng'){
       if(!arena||request.purpose!=='off-policy-review')throw new Error('Review RNG fork unavailable');
       arena.forkFutureRandom(request.seed);
       response={observation:arena.observe(),randomConfig:{purpose:request.purpose,seed:request.seed}};
+      if(routeCausality){routeCausality.ingest(arena.state);
+        response.routeCausality=routeCausality.current;}
     }else if(request.op==='close'){
       send({ok:true});break;
     }else throw new Error('Unknown operation');

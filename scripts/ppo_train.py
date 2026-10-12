@@ -100,7 +100,7 @@ def encoder_version(card_set):
 def encoder_dictionary_hash(encoder):
     if not encoder.signals:
         return ENCODER_DICTIONARY_HASH
-    return hashlib.sha256(json.dumps({"base": ENCODER_DICTIONARY,
+    dictionary = {"base": ENCODER_DICTIONARY,
         "cards": encoder.cards, "nodes": encoder.nodes,
         "maxActionSlots": encoder.max_action_slots,
         "schema": encoder.schema["observationSchemaVersion"],
@@ -111,8 +111,14 @@ def encoder_dictionary_hash(encoder):
         "potentialFeeConditions": POTENTIAL_FEE_CONDITIONS,
         "potentialConditions": POTENTIAL_CONDITIONS,
         "potentialAlliances": POTENTIAL_ALLIANCES,
-        "effectScopeSlots": 8},
-        sort_keys=True).encode()).hexdigest()
+        "effectScopeSlots": 8}
+    if hasattr(encoder, "historical_start"):
+        rows = Path(__file__).with_name("ppo_legacy_potential_rows_v5.json")
+        dictionary["historicalGateProjection"] = {
+            "start": encoder.historical_start,
+            "rowsSha256": hashlib.sha256(rows.read_bytes()).hexdigest(),
+            "version": "audited-v5-only-for-gate"}
+    return hashlib.sha256(json.dumps(dictionary, sort_keys=True).encode()).hexdigest()
 TRAINER_SOURCE_HASH = hashlib.sha256(Path(__file__).read_bytes() +
     Path(__file__).with_name("ppo_action_semantics.py").read_bytes() +
     (Path(__file__).with_name("ppo_network_factory.py").read_bytes()
@@ -596,7 +602,8 @@ class Encoder:
                 raise ValueError(f"Unknown A2S1 card type: {card_type}")
             values += onehot(card_type, ["基本牌", "事件", "状态", "响应"])
             values += self._potential_vector(candidate.get("potential"))
-        if hasattr(self, "candidate_dim") and len(values) != self.candidate_dim:
+        if hasattr(self, "candidate_dim") and len(values) != getattr(
+                self, "base_candidate_dim", self.candidate_dim):
             raise ValueError("Variable candidate vector dimension")
         return values
 

@@ -37,20 +37,39 @@ class RouteExecutorTests(unittest.TestCase):
                     deck["active"].append(card)
                     break
             self.assertIsNotNone(card)
-            before = client.request(op="restore", snapshot=snapshot)["observation"]
+            restored = client.request(op="restore", snapshot=snapshot,
+                                      comboTelemetry="full")
+            before = restored["observation"]
             root = {"id":"g1-real-engine", "snapshot":client.request(op="snapshot")["snapshot"],
                     "observation":before, "prefix":[]}
             attack = next(candidate for candidate in before["candidates"] if any(
                 choice.get("action") == "land_battle" and choice.get("regionId") == "ukraine"
                 for choice in candidate.get("choices", ())))
-            after = client.request(op="step", action={**before["decision"],
-                "actionId":attack["id"]})["observation"]
+            advanced = client.request(op="step", action={**before["decision"],
+                "actionId":attack["id"]}, comboTelemetry=True)
+            after = advanced["observation"]
+            self.assertNotIn("routeCausality", after)
+            paused = client.request(op="snapshot")["snapshot"]
+            other_client = ppo.ArenaClient(card_set="signals")
+            try:
+                resumed = other_client.request(op="restore", snapshot=paused,
+                    comboTelemetry="full")
+                self.assertEqual(resumed["routeCausality"],
+                                 advanced["routeCausality"])
+                forked = other_client.request(op="review-fork-rng", seed=291,
+                    purpose="off-policy-review")
+                self.assertEqual(forked["routeCausality"],
+                                 advanced["routeCausality"])
+            finally:
+                other_client.close()
             trigger = next(candidate for candidate in after["candidates"] if any(
                 choice.get("definitionId") == "special_136"
                 for choice in candidate.get("choices", ())))
             recorded = [{"observation": observation, "actionId": selected["id"],
-                "candidateHash": digest(observation["candidates"])} for observation, selected
-                in ((before, attack), (after, trigger))]
+                "candidateHash": digest(observation["candidates"]),
+                "routeCausality": causal} for observation, selected, causal
+                in ((before, attack, restored["routeCausality"]),
+                    (after, trigger, advanced["routeCausality"]))]
             first = next(index for index, candidate in enumerate(
                 root["observation"]["candidates"]) if
                 candidate["id"] == recorded[0]["actionId"])
@@ -156,27 +175,39 @@ class RouteExecutorTests(unittest.TestCase):
             "node": "ENGINE_CHOICE", "phase": "PLAY", "choiceKind": "TRIGGER",
             "currentSourceDefinition": "special_136", "originAction": {
                 "country": "germany", "action": "land_battle", "regionId": "ukraine"}}
-        step = {"decisionId": 1, "actionId": "fire", "observation": base}
+        causal = {"version": "route-causality-v1", "epoch": 7,
+                  "origin": "original-window", "lifecycle": {"original-window": "open"}}
+        step = {"decisionId": 1, "actionId": "fire", "observation": base,
+                "routeCausality": causal}
         expected = route_plan_with_ordinals([step], [step])[0]
         seen = {route_context(base): 1}
-        self.assertEqual(route_window_status(expected, base, seen), "match")
+        self.assertEqual(route_window_status(expected, base, seen, causal), "match")
         seen[route_context(base)] = 2
-        self.assertEqual(route_window_status(expected, base, seen),
+        self.assertEqual(route_window_status(expected, base, seen, causal),
                          "expected_window_ordinal_missed")
-        self.assertEqual(route_window_status(expected, {**base, "round": 3}, seen),
-                         "expected_round_expired")
-        self.assertEqual(route_window_status(expected, {**base, "node": "SOURCE"}, seen),
+        self.assertEqual(route_window_status(expected, {**base, "round": 3}, seen,
+            {**causal, "epoch": 8, "origin": None}),
+                         "expected_parent_resolution_closed")
+        self.assertEqual(route_window_status(expected, {**base, "node": "SOURCE"}, seen,
+            causal),
                          "expected_parent_resolution_closed")
         # An opponent response may appear before the original window returns.
         self.assertEqual(route_window_status(expected, {**base,
-            "decisionSeat": "soviet_union"}, seen), "wait")
+            "decisionSeat": "soviet_union"}, seen, causal), "wait")
         self.assertEqual(route_window_status(expected, {**base,
-            "round": 1, "node": "SOURCE"}, seen), "wait")
-        two = [{"decisionId": 1, "actionId": "skip", "observation": base},
-               {"decisionId": 2, "actionId": "fire", "observation": base}]
+            "round": 1, "node": "SOURCE"}, seen, causal), "wait")
+        two = [{"decisionId": 1, "actionId": "skip", "observation": base,
+                "routeCausality": causal},
+               {"decisionId": 2, "actionId": "fire", "observation": base,
+                "routeCausality": causal}]
         second = route_plan_with_ordinals(two, [two[1]])[0]
         self.assertEqual(second["_routeOrdinal"], 2)
-        self.assertEqual(route_window_status(second, base, seen), "match")
+        self.assertEqual(route_window_status(second, base, seen, causal), "match")
+        cancelled = {**causal, "origin": "later-similar-window",
+                     "lifecycle": {"original-window": "cancelled",
+                                   "later-similar-window": "open"}}
+        self.assertEqual(route_window_status(expected, base, seen, cancelled),
+                         "expected_window_cancelled_or_invalidated")
 
     def test_different_fee_branch_or_status_never_matches(self):
         base = {"round": 1, "decisionSeat": "germany", "activeSeat": "germany",
@@ -188,7 +219,8 @@ class RouteExecutorTests(unittest.TestCase):
             "regions": ["ukraine"]}]}
         before = {**base, "candidates": [chosen]}
         recorded = {"observation": before, "actionId": "one",
-                    "candidateHash": digest(before["candidates"])}
+                    "candidateHash": digest(before["candidates"]),
+                    "routeCausality": {"epoch": 1, "origin": "frame-one"}}
         variants = [
             {**chosen, "choices": [{**chosen["choices"][0], "definitionId": "special_136"}]},
             {**chosen, "effects": [{**chosen["effects"][0], "count": 2}]},
@@ -198,11 +230,13 @@ class RouteExecutorTests(unittest.TestCase):
         for candidate in variants:
             with self.subTest(candidate=candidate):
                 self.assertEqual(match_recorded_action(recorded,
-                    {**base, "candidates": [candidate]}),
+                    {**base, "candidates": [candidate]},
+                    {"epoch": 1, "origin": "frame-one"}),
                     (None, "required_action_illegal_or_missing"))
         unknown = {**chosen, "unexpectedPaymentRule": "free"}
         self.assertEqual(match_recorded_action(recorded,
-            {**base, "candidates": [unknown]}),
+            {**base, "candidates": [unknown]},
+            {"epoch": 1, "origin": "frame-one"}),
             (None, "unsupported_or_incomplete_action_intent"))
 
     def test_targets_candidate_matches_visible_unit_semantics_not_instance_number(self):

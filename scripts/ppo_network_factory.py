@@ -4,12 +4,14 @@ from __future__ import annotations
 import torch
 
 from scripts.ppo_train import PpoNetwork
+from scripts.ppo_legacy_potential import vector as historical_vector
 
 FLAT = "flat-v1-effective-straits"
 MAP = "shared-regions-actor-adjacency-ordered-actions-v2"
 STAGE2_EXPERIMENTS = {"S2FLAT": FLAT, "S2MAP": MAP}
 ADAPTED_MAP = "map-contextual-opening-adapter-v1"
 A2S1_ADAPTER = "map-contextual-opening-adapter-a2s1-v1"
+HISTORICAL_GATE_ADAPTER = "map-contextual-opening-adapter-a2s1-historical-gate-v2"
 ACTIVE_EXPERIMENTS = {"A1S2": ADAPTED_MAP, "A2S1": A2S1_ADAPTER,
                       "A2S1W1": A2S1_ADAPTER, "A2S1C1": A2S1_ADAPTER,
                       "A2S1C2": A2S1_ADAPTER, "A2S1C3": A2S1_ADAPTER,
@@ -31,6 +33,9 @@ def make_network(architecture, encoder):
     if architecture == A2S1_ADAPTER:
         from scripts.ppo_opening_adapter import A2S1MapAdapter
         return A2S1MapAdapter(encoder)
+    if architecture == HISTORICAL_GATE_ADAPTER:
+        from scripts.ppo_opening_adapter import A2S1HistoricalGateAdapter
+        return A2S1HistoricalGateAdapter(encoder)
     raise ValueError(f"Unknown PPO architecture: {architecture}")
 
 
@@ -117,3 +122,36 @@ def migrate_scoped_signal(saved, encoder):
     source = {**saved, "network": {**old, "candidateDim": core},
               "modelState": cropped}
     return migrate_signal_potential(source, encoder)
+
+
+def migrate_scoped_signal_historical_gate(saved, encoder):
+    """Preserve trained v5 opening similarity via a separate old-feature suffix."""
+    if (saved.get("encoderVersion") != "ppo-vector-a2s1-v5-audited-potential" or
+            saved.get("networkArchitecture") != A2S1_ADAPTER or
+            saved.get("mode") != "A" or saved.get("cardSet") != "signals"):
+        raise ValueError("Source is not the audited A-mode v5 adapter")
+    old = saved.get("network", {})
+    core = saved.get("semanticMigration", {}).get("unchangedCoreDim")
+    if (not isinstance(core, int) or old.get("stateDim") != encoder.state_dim or
+            old.get("candidateDim") != core +
+            len(historical_vector(encoder, None, None)) or
+            encoder.historical_start <= core):
+        raise ValueError("Historical candidate projection layout differs")
+    source = saved["modelState"]
+    old_weight = source["map.base.candidate_net.0.weight"]
+    if old_weight.shape[-1] != old["candidateDim"] or torch.count_nonzero(old_weight[..., core:]):
+        raise ValueError("Historical potential was learned by the base network")
+    model = make_network(HISTORICAL_GATE_ADAPTER, encoder)
+    target = model.state_dict()
+    for name, value in source.items():
+        if name in ("map.base.candidate_net.0.weight", "prototype_candidate"):
+            target[name].zero_()
+            target[name][..., :core] = value[..., :core]
+            if name == "prototype_candidate":
+                target[name][..., encoder.historical_start:] = value[..., core:]
+        elif name in target and target[name].shape == value.shape:
+            target[name] = value.detach().clone()
+        else:
+            raise ValueError(f"Historical parameter cannot migrate: {name}")
+    model.load_state_dict(target, strict=True)
+    return model
