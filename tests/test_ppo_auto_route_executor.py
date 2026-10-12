@@ -205,6 +205,25 @@ class RouteExecutorTests(unittest.TestCase):
             {**base, "candidates": [unknown]}),
             (None, "unsupported_or_incomplete_action_intent"))
 
+    def test_targets_candidate_matches_visible_unit_semantics_not_instance_number(self):
+        before = {"round": 2, "decisionSeat": "germany", "activeSeat": "germany",
+            "node": "TARGETS", "phase": "PLAY", "sourceSeat": "germany",
+            "units": [{"id":"old-soviet","country":"soviet_union",
+                       "type":"army","regionId":"ukraine"}],
+            "candidates": [{"id":"choose-old-soviet","kind":"targets",
+                            "targetIds":["old-soviet"]}]}
+        recorded = {"observation": before, "actionId":"choose-old-soviet",
+                    "candidateHash":digest(before["candidates"])}
+        renumbered = {**before, "units":[{"id":"new-soviet",
+            "country":"soviet_union","type":"army","regionId":"ukraine"}],
+            "candidates":[{"id":"choose-new-soviet","kind":"targets",
+                           "targetIds":["new-soviet"]}]}
+        self.assertEqual(match_recorded_action(recorded, renumbered), (0, None))
+        replaced = {**renumbered, "units":[{"id":"new-soviet",
+            "country":"united_kingdom","type":"army","regionId":"ukraine"}]}
+        self.assertEqual(match_recorded_action(recorded, replaced),
+                         (None, "required_action_illegal_or_missing"))
+
 
 if __name__ == "__main__":
     unittest.main()
