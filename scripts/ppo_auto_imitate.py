@@ -9,6 +9,7 @@ from collections import defaultdict
 import torch
 
 from scripts import ppo_train as ppo
+from scripts.ppo_auto_archive import digest
 
 VERSION = "auto-imitation-v1"
 DEFAULT_CONFIG = {"maxMinibatches": 2, "minibatchSize": 64, "learningRate": 1e-5,
@@ -21,6 +22,8 @@ def _encode_batch(encoder, items, device):
     for item in items:
         observation = item["observation"]
         choices = observation["candidates"]
+        if item.get("candidateHash") != digest(choices):
+            raise ValueError("Demonstration candidate hash changed")
         positions = [index for index, candidate in enumerate(choices)
                      if candidate["id"] == item["actionId"]]
         if len(positions) != 1:
@@ -71,14 +74,32 @@ def route_balanced_samples(demonstrations, limit, seed):
 
 
 def auxiliary_update(model, encoder, demonstrations, sentinel_observations, device,
-                     *, config=None, optimizer_state=None, seed=0):
+                     *, config=None, optimizer_state=None, pause_state=None,
+                     behavior_check=None, seed=0):
     """Never touches PPO samples, return/value targets, or PPO optimizer state."""
     settings = {**DEFAULT_CONFIG, **(config or {})}
+    pause = dict(pause_state or {"paused": False, "consecutiveRollbacks": 0})
+    if pause.get("paused"):
+        return {"status": "paused_persistently", "version": VERSION,
+                "minibatches": 0, "optimizerState": optimizer_state,
+                "pauseState": pause}
     if not demonstrations:
         return {"status": "empty_library", "version": VERSION,
-                "minibatches": 0, "optimizerState": optimizer_state}
+                "minibatches": 0, "optimizerState": optimizer_state,
+                "pauseState": pause}
     if not sentinel_observations:
         raise ValueError("Auxiliary imitation requires a non-training sentinel set")
+    demonstration_observations = {digest(item["observation"]) for item in demonstrations}
+    if any(digest(item) in demonstration_observations for item in sentinel_observations):
+        raise ValueError("Independent sentinel overlaps an imitation observation")
+    # A budget-exhausted behavioral probe can decline before any parameter or
+    # optimizer mutation. Keep this outside the temporary requires_grad scope.
+    behavioral_base = behavior_check(model) if behavior_check else None
+    if behavior_check and behavioral_base is None:
+        return {"status": "behavior_unverified", "version": VERSION,
+                "minibatches": 0, "optimizerState": optimizer_state,
+                "pauseState": pause}
+    base = _sentinel(model, encoder, sentinel_observations, device)
     policy_parameters = [(name, parameter) for name, parameter in model.named_parameters()
                          if "value" not in name]
     optimizer = torch.optim.Adam([parameter for _, parameter in policy_parameters],
@@ -90,8 +111,7 @@ def auxiliary_update(model, encoder, demonstrations, sentinel_observations, devi
     for name, parameter in model.named_parameters():
         if "value" in name:
             parameter.requires_grad_(False)
-    base = _sentinel(model, encoder, sentinel_observations, device)
-    metrics, rollbacks = [], 0
+    metrics, rollbacks = [], int(pause.get("consecutiveRollbacks", 0))
     try:
         for number in range(settings["maxMinibatches"]):
             items = route_balanced_samples(demonstrations,
@@ -114,6 +134,7 @@ def auxiliary_update(model, encoder, demonstrations, sentinel_observations, devi
             optimizer.zero_grad(set_to_none=True)
             loss.backward()
             optimizer.step()
+            behavioral_after = None
             if any(not torch.isfinite(parameter).all() for parameter in model.parameters()):
                 accepted, reason, kl, drift = False, "nonfinite_parameter", None, None
             else:
@@ -122,6 +143,10 @@ def auxiliary_update(model, encoder, demonstrations, sentinel_observations, devi
                             kl <= settings["sentinelKlLimit"] and
                             drift <= settings["valueDriftLimit"])
                 reason = "accepted" if accepted else "sentinel_drift"
+                if accepted and behavior_check:
+                    from scripts.ppo_auto_behavior import acceptable
+                    behavioral_after = behavior_check(model)
+                    accepted, reason = acceptable(behavioral_base, behavioral_after)
             if not accepted:
                 model.load_state_dict(weights_before)
                 optimizer.load_state_dict(optimizer_before)
@@ -133,12 +158,16 @@ def auxiliary_update(model, encoder, demonstrations, sentinel_observations, devi
             metrics.append({"minibatch": number+1, "accepted": accepted,
                             "reason": reason, "loss": float(loss.detach()),
                             "sentinelKl": kl, "valueDrift": drift,
+                            "behaviorBefore": behavioral_base,
+                            "behaviorAfter": behavioral_after if behavior_check else None,
                             "learningRateAfter": optimizer.param_groups[0]["lr"]})
             if rollbacks >= settings["maxConsecutiveRollbacks"]:
                 break
-        return {"status": "paused_after_rollbacks" if rollbacks >= 2 else "complete",
+        paused = rollbacks >= settings["maxConsecutiveRollbacks"]
+        return {"status": "paused_after_rollbacks" if paused else "complete",
                 "version": VERSION, "config": settings, "minibatches": len(metrics),
-                "metrics": metrics, "optimizerState": optimizer.state_dict()}
+                "metrics": metrics, "optimizerState": optimizer.state_dict(),
+                "pauseState": {"paused": paused, "consecutiveRollbacks": rollbacks}}
     finally:
         for parameter in model.parameters():
             parameter.requires_grad_(original_requires_grad[id(parameter)])

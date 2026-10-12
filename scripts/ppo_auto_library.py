@@ -72,16 +72,24 @@ def freeze(source: Path, target: Path, *, build_fingerprint, encoder_version,
 
 
 def load_batch(path: Path, *, expected_sha, build_fingerprint, encoder_version,
-               reward_config, limit=64, seed=0):
+               reward_config, limit=64, seed=0, live_archive=None):
     if not 1 <= limit <= 64 or sha(path) != expected_sha:
         raise ValueError("Frozen demonstration file or bounded-read limit differs")
+    if live_archive is None:
+        raise ValueError("A frozen library requires live route-status validation")
     db = _read_only(path)
+    live = _read_only(live_archive)
     try:
         verify(db, build_fingerprint=build_fingerprint,
                encoder_version=encoder_version, reward_config=reward_config)
+        verify(live, build_fingerprint=build_fingerprint,
+               encoder_version=encoder_version, reward_config=reward_config)
+        active = {row[0] for row in live.execute(
+            "SELECT id FROM routes WHERE status='enabled'")}
         routes = [row[0] for row in db.execute(
             "SELECT DISTINCT d.route_id FROM demonstrations d JOIN routes r "
-            "ON r.id=d.route_id WHERE r.status='enabled' ORDER BY d.route_id")]
+            "ON r.id=d.route_id WHERE r.status='enabled' ORDER BY d.route_id")
+            if row[0] in active]
         rng = random.Random(seed)
         rows = []
         while routes and len(rows) < limit:
@@ -103,6 +111,7 @@ def load_batch(path: Path, *, expected_sha, build_fingerprint, encoder_version,
         return output
     finally:
         db.close()
+        live.close()
 
 
 def main():

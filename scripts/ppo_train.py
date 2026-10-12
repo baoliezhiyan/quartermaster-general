@@ -34,7 +34,7 @@ GAMMA = 1.0
 LAMBDA_ROUND = 0.95
 POTENTIAL_SCALE = 0.3
 ENCODER_VERSION = "ppo-vector-v7-effective-straits"
-A2S1_ENCODER_VERSION = "ppo-vector-a2s1-v3-use-scopes"
+A2S1_ENCODER_VERSION = "ppo-vector-a2s1-v4-potential-signals"
 TRAINER_VERSION = "ppo-trainer-v9-actor-map"
 EFFECT_KINDS = ["action", "score", "draw", "deckTop", "forceHand", "signal", "choose", "cards",
                 "extraPlay", "rebuild", "remove", "flag", "balance", "trace", "cancel", "randomReturn",
@@ -48,6 +48,9 @@ CHOICE_KINDS = ["BUILD_ORDER", "EFFECT_DECISION", "AIR_DEFENSE", "AIR_INTERCEPT"
 CHOICE_FIELDS = ["regionId", "defenderId", "attackerId", "option"]
 TARGET_SLOTS = 8
 UNIT_TYPES = ["army", "navy", "air"]
+POTENTIAL_ACTIONS = ACTIONS + ["score"]
+POTENTIAL_MISC = ["CARD_EFFECT", "CARD_EFFECT_DONE", "CARD_PLAYED", "STANDARD_CARD_PLAYED",
+                  "remove", "deckTop", "ARMAMENT", "*", "action:*", "PHASE:*"]
 NODES = ["SOURCE", "TARGETS", "ENGINE_CHOICE"]
 CANDIDATE_KINDS = ["source", "pass", "choice", "targets"]
 CHOICE_SLOTS = 16
@@ -79,7 +82,9 @@ def encoder_dictionary_hash(encoder):
     return hashlib.sha256(json.dumps({"base": ENCODER_DICTIONARY,
         "cards": encoder.cards, "nodes": encoder.nodes,
         "maxActionSlots": encoder.max_action_slots,
-        "schema": encoder.schema["observationSchemaVersion"]}, sort_keys=True).encode()).hexdigest()
+        "schema": encoder.schema["observationSchemaVersion"],
+        "potentialActions": POTENTIAL_ACTIONS, "potentialMisc": POTENTIAL_MISC},
+        sort_keys=True).encode()).hexdigest()
 TRAINER_SOURCE_HASH = hashlib.sha256(Path(__file__).read_bytes() +
     Path(__file__).with_name("ppo_action_semantics.py").read_bytes() +
     (Path(__file__).with_name("ppo_network_factory.py").read_bytes()
@@ -562,9 +567,31 @@ class Encoder:
             if card_type not in (None, "基本牌", "事件", "状态", "响应"):
                 raise ValueError(f"Unknown A2S1 card type: {card_type}")
             values += onehot(card_type, ["基本牌", "事件", "状态", "响应"])
+            values += self._potential_vector(candidate.get("potential"))
         if hasattr(self, "candidate_dim") and len(values) != self.candidate_dim:
             raise ValueError("Variable candidate vector dimension")
         return values
+
+    def _potential_vector(self, potential):
+        """Potential trigger facts have a separate channel from resolved effects."""
+        item = potential or {}
+        subscriptions = item.get("subscriptions") or []
+        triggers = [entry.split(":", 1) for entry in subscriptions]
+        tags = [tag for _, tag in triggers]
+        timing = [float(any(side == name for side, _ in triggers)) for name in ("Before", "After")]
+        phases = [float("PHASE:" + name in tags) for name in PHASES]
+        actions = [float("action:" + name in tags) for name in ACTIONS]
+        misc = [float(name in tags) for name in POTENTIAL_MISC]
+        future = item.get("futureActions") or []
+        if len(future) > 8 or any(name not in POTENTIAL_ACTIONS for name in future):
+            raise ValueError("Unknown or excessive potential action")
+        ordered = [number for name in future for number in onehot(name, POTENTIAL_ACTIONS)]
+        ordered += [0.0] * ((8-len(future)) * len(POTENTIAL_ACTIONS))
+        return (timing + phases + actions + misc +
+                [float(name in (item.get("feeKinds") or [])) for name in ("deck_top", "hand")] +
+                onehot(item.get("useLimit"), ["turn", "round", "none"]) +
+                [float(item.get("regionConstrained", False)),
+                 float(item.get("conditional", False)), float(bool(potential))] + ordered)
 
     def _action_semantics(self, obs, candidate):
         outcomes = ("unknown", "new", "repeated", "blocked", "target", "empty")
@@ -1108,7 +1135,7 @@ def restore_checkpoint(path, model, optimizer, encoder, client, mode, rng, card_
                              "87b7fa23046c8a38a0bb06623085ad414353f413fad16c976a56544bb924c8d2")
     if not source_compatible:
         raise ValueError("Checkpoint trainer source differs")
-    if experiment_id in ("A2S1", "A2S1W1", "A2S1C1", "A2S1C2", "A2S1C3", "A2S1C4", "A2AUTOBASE", "A2AUTOCAND", "A2AUTO") and saved.get("update", 0) > 1 and saved.get("samplingConfig") != {
+    if experiment_id in ("A2S1", "A2S1W1", "A2S1C1", "A2S1C2", "A2S1C3", "A2S1C4", "A2AUTOBASE", "A2AUTOCAND", "A2AUTO", "A2AUTO2") and saved.get("update", 0) > 1 and saved.get("samplingConfig") != {
             "version": "chunk-shuffle-epoch-v1", "cacheLimitBytes": 1536 * 1024 ** 2,
             "prefetchLimitBytes": 256 * 1024 ** 2, "gradientMicrobatch": 64,
             "logicalMinibatch": 256, "epochs": 4}:

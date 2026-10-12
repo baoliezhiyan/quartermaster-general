@@ -2,13 +2,22 @@ import unittest
 from unittest.mock import patch
 
 from scripts.ppo_auto_explore import review_routes
+from scripts.ppo_auto_archive import digest
+import time
 
 
 class Archive:
     def __init__(self):
         self.status = None
         self.labels = None
-        self.observation = {"candidates": [{"id": "normal"}, {"id": "explore"}]}
+        self.observation = {"decisionSeat": "germany", "decision": {"decisionId": 10},
+                            "candidates": [{"id": "normal"}, {"id": "explore"}]}
+
+    def phase_deadline(self, phase, seconds):
+        return time.time() + seconds
+
+    def remaining_budget(self, key, ceiling):
+        return ceiling
 
     def routes(self, status=None):
         return ["route"] if status == "candidate" and self.status is None else []
@@ -16,13 +25,15 @@ class Archive:
     def route(self, route_id):
         return {"evidence": {"rootId": "root", "firstActionId": "explore",
             "firstCardId": "germany:special_136", "firstDefinitionId": "special_136",
-            "candidate": {"routeSignature": ["unit:germany:army:ukraine"]},
+            "candidate": {"routeSignature": ["unit:germany:army:ukraine"],
+                          "mechanismSignature": ["attack-then-build"] , "side": "axis"},
             "path": [{"decisionId": 10, "actionId": "explore", "seat": "germany",
                       "cardId": "germany:special_136",
+                      "candidateHash": digest(self.observation["candidates"]),
                       "observation": self.observation}]}}
 
     def read_root(self, _):
-        return {"observation": self.observation}
+        return {"observation": self.observation, "prefix": []}
 
     def set_route_status(self, _, status):
         self.status = status
@@ -62,7 +73,8 @@ class ReviewTests(unittest.TestCase):
             return {"steps": 2, "naturalEnd": True,
                 "reward": {"axis": 1.0 if proposed else 0.0, "allies": 0.0},
                 "side": "axis", "outcome": "useful" if proposed else "completed",
-                "routeSignature": ["unit:germany:army:ukraine"] if proposed else []}
+                "routeSignature": ["unit:germany:army:ukraine"] if proposed else [],
+                "mechanismSignature": ["attack-then-build"] if proposed else []}
 
         with patch("scripts.ppo_auto_explore.run_branch", side_effect=fake_branch):
             report = review_routes([object(), object()], Policy("new"), Policy("old"),
@@ -81,7 +93,8 @@ class ReviewTests(unittest.TestCase):
                 "reward": {"axis": 1.0 if kind == "proposal-review" else 0.0,
                            "allies": 0.0},
                 "side": "axis", "outcome": "useful",
-                "routeSignature": ["unit:germany:army:ukraine"]}
+                "routeSignature": ["unit:germany:army:ukraine"],
+                "mechanismSignature": ["attack-then-build"]}
 
         with patch("scripts.ppo_auto_explore.run_branch", side_effect=fake_branch):
             report = review_routes([object(), object()], Policy("new"), Policy("old"),

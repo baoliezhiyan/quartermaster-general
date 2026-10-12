@@ -13,7 +13,7 @@ import time
 import zlib
 from pathlib import Path
 
-VERSION = "auto-exploration-archive-v1"
+VERSION = "auto-exploration-archive-v3-persistent-heldout"
 MAX_CELLS = 1_000
 MAX_REPRESENTATIVES = 3
 MAX_BYTES = 1 << 30
@@ -107,6 +107,10 @@ class ExplorationArchive:
           CREATE TABLE IF NOT EXISTS demonstrations(
             id TEXT PRIMARY KEY,route_id TEXT NOT NULL,card_family TEXT NOT NULL,
             payload BLOB NOT NULL,created REAL NOT NULL,use_count INTEGER NOT NULL DEFAULT 0);
+          CREATE TABLE IF NOT EXISTS sentinels(
+            id TEXT PRIMARY KEY,source_seed INTEGER NOT NULL,observation BLOB NOT NULL,
+            snapshot BLOB NOT NULL);
+          CREATE TABLE IF NOT EXISTS counters(key TEXT PRIMARY KEY,value INTEGER NOT NULL);
         """)
         existing = self.db.execute("SELECT value FROM metadata WHERE key='identity'").fetchone()
         expected = canonical({"version": VERSION, **identity})
@@ -142,7 +146,8 @@ class ExplorationArchive:
             "SELECT SUM(byte_count) FROM roots",
             "SELECT SUM(length(record)) FROM branches",
             "SELECT SUM(length(evidence)) FROM routes",
-            "SELECT SUM(length(payload)) FROM demonstrations"))
+            "SELECT SUM(length(payload)) FROM demonstrations",
+            "SELECT SUM(length(observation)+length(snapshot)) FROM sentinels"))
 
     def add_root(self, snapshot, observation, prefix, parent_path=None):
         cell, representative = cell_key(observation), representative_key(observation)
@@ -185,11 +190,59 @@ class ExplorationArchive:
                 "observation": self._unpack(row[1]), "prefix": self._unpack(row[2]),
                 "cell": row[3]}
 
+    def add_sentinel(self, seed, observation, snapshot):
+        identifier = digest(observation)
+        payload, saved = self._pack(observation), self._pack(snapshot)
+        if self.payload_bytes() + len(payload) + len(saved) > self.max_bytes:
+            raise OverflowError("Sentinel exceeds exploration archive capacity")
+        with self.db:
+            self.db.execute("INSERT OR IGNORE INTO sentinels VALUES(?,?,?,?)",
+                            (identifier, seed, payload, saved))
+
+    def sentinels(self):
+        return [{"id": identifier, "seed": seed, "observation": self._unpack(payload),
+                 "snapshot": self._unpack(saved)}
+                for identifier, seed, payload, saved in self.db.execute(
+                    "SELECT id,source_seed,observation,snapshot FROM sentinels ORDER BY source_seed,id")]
+
     def coverage_count(self, cell, card_id, family):
         signature = canonical((card_id, family))
         row = self.db.execute("SELECT attempts,completed FROM coverage WHERE cell=? AND signature=?",
                               (cell, signature)).fetchone()
         return (row or (0, 0))
+
+    def counter(self, key):
+        row = self.db.execute("SELECT value FROM counters WHERE key=?", (key,)).fetchone()
+        return row[0] if row else 0
+
+    def consume_budget(self, key, amount, ceiling):
+        if amount < 0 or ceiling < 0:
+            raise ValueError("Budget amounts must be nonnegative")
+        with self.db:
+            current = self.counter(key)
+            if current + amount > ceiling:
+                return False
+            self.db.execute("INSERT INTO counters(key,value) VALUES(?,?) "
+                            "ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+                            (key, current + amount))
+        return True
+
+    def remaining_budget(self, key, ceiling):
+        return max(0, ceiling - self.counter(key))
+
+    def phase_deadline(self, phase, seconds):
+        """First call fixes a wall-clock deadline across restarts and updates."""
+        key = f"{phase}_started_epoch_ms"
+        now = int(time.time() * 1000)
+        with self.db:
+            self.db.execute("INSERT OR IGNORE INTO counters(key,value) VALUES(?,?)", (key, now))
+        return self.counter(key) / 1000 + seconds
+
+    def coverage_cooling(self, cell, card_id, family):
+        signature = canonical((card_id, family))
+        row = self.db.execute("SELECT cooldown_until FROM coverage WHERE cell=? AND signature=?",
+                              (cell, signature)).fetchone()
+        return bool(row and self.branch_pairs() < row[0])
 
     def record_branch(self, root_id, card_id, family, branch, outcome):
         if outcome not in ("completed", "cancelled", "ineffective", "useful", "truncated"):
@@ -213,8 +266,10 @@ class ExplorationArchive:
                 completed = "completed=completed+1," if outcome == "useful" else ""
                 self.db.execute(f"UPDATE coverage SET attempts=attempts+1,{completed}"
                                 f"{outcome}={outcome}+1,"
-                                "last_attempt=? WHERE cell=? AND signature=?",
-                                (time.time(), root["cell"], signature))
+                                "last_attempt=?,cooldown_until=? WHERE cell=? AND signature=?",
+                                (time.time(), self.branch_pairs()+3 if outcome in
+                                 ("ineffective", "truncated", "cancelled") else 0,
+                                 root["cell"], signature))
         return branch_id
 
     def branch_pairs(self):
@@ -246,6 +301,14 @@ class ExplorationArchive:
     def add_demonstrations(self, route_id, card_family, decisions):
         if self.route(route_id)["status"] != "enabled":
             raise ValueError("Only independently reviewed routes can enter the demonstration library")
+        if not decisions:
+            raise ValueError("A reviewed route has no causally supervised decisions")
+        for decision in decisions:
+            choices = decision["observation"]["candidates"]
+            if (digest(choices) != decision.get("candidateHash") or
+                sum(choice["id"] == decision["actionId"] for choice in choices) != 1 or
+                decision["observation"]["decision"]["decisionId"] != decision["decisionId"]):
+                raise ValueError("Demonstration decision or candidate hash is invalid")
         route_count = self.db.execute("SELECT COUNT(DISTINCT route_id) FROM demonstrations").fetchone()[0]
         if route_count >= 200:
             return 0, "route_capacity"
@@ -267,7 +330,8 @@ class ExplorationArchive:
         return len(decisions), "stored"
 
     def demonstrations(self):
-        rows = self.db.execute("SELECT id,route_id,payload FROM demonstrations ORDER BY route_id,id")
+        rows = self.db.execute("SELECT d.id,d.route_id,d.payload FROM demonstrations d "
+            "JOIN routes r ON r.id=d.route_id WHERE r.status='enabled' ORDER BY d.route_id,d.id")
         return [{"id": item[0], "routeId": item[1], **self._unpack(item[2])} for item in rows]
 
     def demonstration_batch(self, limit=64, seed=0):
@@ -275,14 +339,16 @@ class ExplorationArchive:
         if limit < 1 or limit > 64:
             raise ValueError("Demonstration read cache must stay within 64 samples")
         routes = [row[0] for row in self.db.execute(
-            "SELECT DISTINCT route_id FROM demonstrations ORDER BY route_id")]
+            "SELECT DISTINCT d.route_id FROM demonstrations d JOIN routes r ON r.id=d.route_id "
+            "WHERE r.status='enabled' ORDER BY d.route_id")]
         rng = random.Random(seed)
         chosen = []
         while routes and len(chosen) < limit:
             rng.shuffle(routes)
             for route in list(routes):
                 ids = [row[0] for row in self.db.execute(
-                    "SELECT id FROM demonstrations WHERE route_id=? ORDER BY id", (route,))]
+                    "SELECT d.id FROM demonstrations d JOIN routes r ON r.id=d.route_id "
+                    "WHERE d.route_id=? AND r.status='enabled' ORDER BY d.id", (route,))]
                 used = {item[0] for item in chosen}
                 available = [item for item in ids if item not in used]
                 if not available:

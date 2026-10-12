@@ -6,6 +6,7 @@ import {BASIC_COUNTS,BASIC_NAMES,COUNTRY_NAMES,allianceOf,reserve,seatOf} from '
 import {regularCatalog,specialCard} from '../core/cardCatalog';
 import {canExecuteEffects,canPayEffectFees} from '../core/resolution';
 import {statusActionEffects} from '../core/statusActions';
+import {triggerSubscriptions} from '../core/triggerIndex';
 import {coversCost} from '../core/cardCosts';
 import {barbarossaTargets,cardEffects} from '../core/specialCards';
 import {createGame,transition} from '../core/game';
@@ -32,7 +33,7 @@ export const PPO_STATIC_SCHEMA={observationSchemaVersion:PPO_OBSERVATION_SCHEMA_
   bindingKeys:['built-navy','new-china','xiangxi-battle'],maxEffectTokens:32};
 /** Historical A2S1 observations remain identifiable by their schema version. */
 export const PPO_A2S1_STATIC_SCHEMA={...PPO_STATIC_SCHEMA,
-  observationSchemaVersion:'ppo-observation-a2s1-v2',actionSchemaVersion:'ppo-actions-a2s1-v2',
+  observationSchemaVersion:'ppo-observation-a2s1-v3-potential-signals',actionSchemaVersion:'ppo-actions-a2s1-v2',
   courseVersion:TRAINING_A2S1_COURSE_VERSION,overridesVersion:TRAINING_A2S1_OVERRIDES_VERSION,
   eventIds:[...Object.values(TRAINING_EVENT_IDS_BY_SEAT).flat(),
     ...Object.values(TRAINING_SIGNAL_IDS_BY_SEAT).flat()],maxEffectTokens:32,maxActionSlots:12,
@@ -53,6 +54,9 @@ export type PpoCandidate={id:string;kind:'source'|'pass'|'choice'|'targets';labe
   cardId?:string;definitionId?:string;cardType?:string;optionId?:string;statusAction?:boolean;
   randomDiscardCount?:number;
   choiceIds?:string[];targetIds?:string[];effects?:EffectFeature[];
+  /** Describes possible future triggers, never an already-applied effect. */
+  potential?:{subscriptions:string[];futureActions:string[];feeKinds:string[];
+    useLimit:'turn'|'round'|'none';regionConstrained:boolean;conditional:boolean};
   choices?:ChoiceFeature[]};
 export type ChoiceFeature={kind:string;action?:string;nextAction?:string;country?:CountryId;
   regionId?:string;unitType?:Unit['type'];source?:UnitFact;target?:UnitFact;
@@ -236,6 +240,25 @@ const effectSequence=(s:GameState,card:CardInstance,fact:(id:string)=>UnitFact|u
     fee:false,optional:false,min:1,max:3,count:3,precommitTargets:true,regions:[],targetIds:[],targetFacts:[],
     children:[]}];
   return cardEffects(s,card,targets).map(e=>structure(e,fact));
+};
+const potentialSignal=(card:CardInstance)=>{
+  const definition=specialCard(card.definitionId,card.balance);
+  if(definition?.type!=='状态'&&definition?.type!=='响应')return undefined;
+  const text=definition.text??'';
+  const patterns:[string,RegExp][]=[
+    ['build_army',/建设陆军|建设.*陆军/g],['build_navy',/建设海军|建设.*海军/g],
+    ['recruit_army',/征召陆军/g],['recruit_navy',/征召海军/g],
+    ['land_battle',/发起陆战/g],['sea_battle',/发起海战/g],
+    ['destroy',/消灭/g],['score',/获得?\d+分|获得?\d+点分数/g]];
+  const actions=patterns.flatMap(([name,pattern])=>[...text.matchAll(pattern)].map(match=>
+    ({name,index:match.index??0}))).sort((a,b)=>a.index-b.index).map(item=>item.name);
+  return {subscriptions:triggerSubscriptions(card.definitionId).sort(),
+    futureActions:actions.slice(0,8),
+    feeKinds:[...(text.includes('弃置牌库顶')?['deck_top']:[]),
+      ...(text.includes('弃置手牌')?['hand']:[])],
+    useLimit:/每回合限/.test(text)?'turn' as const:/每轮限/.test(text)?'round' as const:'none' as const,
+    regionConstrained:/<[^>]+>|相邻地区|距离/.test(text),
+    conditional:/当|若|如果|位于/.test(text)};
 };
 const combinations=(ids:string[],min:number,max:number,ordered=false):string[][]=>{
   const out:string[][]=[];
@@ -829,7 +852,8 @@ export class PpoTrainingArena {
         definitionId:card.definitionId,cardType:specialCard(card.definitionId,card.balance)?.type,
         label:specialCard(card.definitionId,card.balance)?.name??
           BASIC_NAMES[card.definitionId as keyof typeof BASIC_NAMES]??card.definitionId,
-        effects:effectSequence(s,card,this.unitFact)});
+        effects:effectSequence(s,card,this.unitFact),
+        ...(this.header.cardSet==='signals'?{potential:potentialSignal(card)}:{})});
     }
     candidates.push({id:'pass',kind:'pass',label:'不出牌，扣1分'});
     return candidates;

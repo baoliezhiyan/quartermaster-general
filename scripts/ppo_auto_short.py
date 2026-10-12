@@ -13,14 +13,13 @@ from scripts.ppo_auto_explore import VERSION, FrozenPolicy, capture_roots, explo
 def main():
     clients = [ppo.ArenaClient(card_set="signals") for _ in range(2)]
     try:
-        policy = FrozenPolicy(exp.PARENT, clients[0])
-        archive_path = exp.ROOT / ".state/A2AUTO/short-smoke.sqlite"
-        identity = {"sourceCheckpointSha256": policy.file_hash,
-            "sourceWeightsSha256": policy.weight_hash,
-            "buildFingerprint": clients[0].fingerprint,
+        initial = exp.ROOT / ".state/A2AUTO2/initial.pt"
+        policy = FrozenPolicy(initial, clients[0])
+        archive_path = exp.ROOT / ".state/A2AUTO2/short-smoke-v3.sqlite"
+        identity = {"buildFingerprint": clients[0].fingerprint,
             "encoderVersion": ppo.encoder_version("signals"),
             "rewardConfig": ppo.reward_config("signals"),
-            "explorerVersion": VERSION, "scope": "manual-interface-smoke"}
+            "explorerVersion": VERSION, "scope": "manual-interface-smoke-v3"}
         with ExplorationArchive(archive_path, identity) as archive:
             roots = capture_roots(clients[0], policy, archive, 20261919,
                                   max_roots=4, max_decisions=80)

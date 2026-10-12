@@ -29,7 +29,7 @@ from scripts.ppo_trajectory import TrajectoryStore, ROOT as TRAJECTORY_ROOT, cle
 
 BATCH_EPISODES = 40
 POLICY_SALT = 0x9E3779B97F4A7C15
-AUTO_EXPERIMENTS = ("A2AUTOBASE", "A2AUTOCAND", "A2AUTO")
+AUTO_EXPERIMENTS = ("A2AUTOBASE", "A2AUTOCAND", "A2AUTO", "A2AUTO2")
 
 
 class _MemoryCounters(ctypes.Structure):
@@ -256,27 +256,30 @@ def make_tasks(start_seed: int, count: int, update: int, mode: str,
 
 def discover_off_policy(clients, model, encoder, device, *, update, training_seed,
                         source_hash, archive_root, pairs, review_parent,
-                        review_seconds):
+                        review_seconds, course_pool=None):
     """Separate real-engine exploration; never appends to the PPO trajectory store."""
     from scripts.ppo_auto_archive import ExplorationArchive
     from scripts.ppo_auto_explore import (VERSION, FrozenPolicy, capture_roots,
+        capture_sentinels,
         explore_pairs, review_routes)
-    archive_path = archive_root / f"update-{update:04d}" / "exploration.sqlite"
+    archive_path = archive_root / "experiment.sqlite"
     policy = FrozenPolicy.from_live(model, encoder, device, source_hash=source_hash)
-    identity = {"sourceCheckpointSha256": source_hash,
-        "sourceWeightsSha256": policy.weight_hash,
-        "buildFingerprint": clients[0].fingerprint,
+    identity = {"buildFingerprint": clients[0].fingerprint,
         "encoderVersion": ppo.encoder_version("signals"),
         "rewardConfig": ppo.reward_config("signals"),
-        "explorerVersion": VERSION, "policyVersion": update-1}
+        "explorerVersion": VERSION}
     started = time.perf_counter()
     with ExplorationArchive(archive_path, identity) as archive:
+        p2_deadline = archive.phase_deadline("p2", 1200)
         capture = capture_roots(clients[0], policy, archive,
                                 training_seed+update*100_003+9_000_000,
-                                max_roots=12, max_decisions=240)
-        missing = max(0, pairs - archive.branch_pairs())
+                                max_roots=min(1000, 12*update), max_decisions=240,
+                                deadline=p2_deadline)
+        heldout = capture_sentinels(clients[0], policy, archive,
+            training_seed+82_000_000, deadline=p2_deadline,
+            course_pool=course_pool)
         branching = explore_pairs(clients[:2], policy, archive,
-            max_pairs=missing, max_steps=6000, wall_seconds=1200,
+            max_pairs=pairs, max_steps=6000, wall_seconds=1200,
             seed=training_seed+update*100_003+9_100_000)
         pending = len(archive.routes("candidate"))
         if pending:
@@ -287,16 +290,21 @@ def discover_off_policy(clients, model, encoder, device, *, update, training_see
         else:
             review = {"reviewed": [], "steps": 0, "remainingCandidates": 0}
         demonstrations = archive.demonstration_batch(64, training_seed+update)
-        sentinel = [archive.read_root(root)["observation"]
-                    for root in archive.roots()[:4]]
+        all_sentinels = archive.sentinels()
+        sentinel_cases = (all_sentinels[:4] +
+                          [item for item in all_sentinels[4:] if item["seed"] >= 10**9][:3])
+        sentinel = [item["observation"] for item in sentinel_cases]
         stats = archive.stats()
     return {"version": VERSION, "archive": str(archive_path),
-            "identity": identity, "capture": capture,
+            "identity": identity, "sourceCheckpointSha256": source_hash,
+            "sourceWeightsSha256": policy.weight_hash, "policyVersion": update-1,
+            "capture": capture, "heldout": heldout,
             "branching": {key: value for key, value in branching.items() if key != "branches"},
             "review": review, "archiveStats": stats,
-            "environmentSteps": capture["decisions"]+branching["steps"]+review["steps"],
+            "environmentSteps": capture["decisions"]+heldout["engineSteps"]+
+                branching["steps"]+review["steps"],
             "seconds": time.perf_counter()-started,
-            "demonstrationBatch": len(demonstrations)}, demonstrations, sentinel
+            "demonstrationBatch": len(demonstrations)}, demonstrations, sentinel_cases
 
 
 def policy_rng(seed: int, policy_version: int, training_seed: int) -> random.Random:
@@ -912,7 +920,9 @@ def main():
                     course_config["samplerVersion"] = SAMPLER_VERSION
                     course_config["metricsVersion"] = C4_METRICS_VERSION + "-auto-v1"
                     course_config["automaticExploration"] = {
-                        "version": "auto-exploration-per-complete-batch-v1",
+                        "version": "auto-exploration-experiment-archive-v2" if
+                            args.experiment_id == "A2AUTO2" else
+                            "auto-exploration-per-complete-batch-v1",
                         "pairsPerUpdate": args.auto_exploration_pairs,
                         "reviewMaxSeconds": args.auto_review_seconds,
                         "reviewParentSha256": (hashlib.sha256(
@@ -921,7 +931,9 @@ def main():
                         "frozenLibrarySha256": (hashlib.sha256(
                             args.auto_frozen_library.read_bytes()).hexdigest()
                             if args.auto_frozen_library else None),
-                        "imitation": "reviewed-only-max2x64-lr1e-5-sentinel-kl-0.01"}
+                        "imitation": "reviewed-only-max2x64-independent-holdout-persistent-pause-v2"
+                            if args.experiment_id == "A2AUTO2" else
+                            "reviewed-only-max2x64-lr1e-5-sentinel-kl-0.01"}
                 if args.experiment_id in ("A2S1C3", "A2S1C4", *AUTO_EXPERIMENTS):
                     from scripts.ppo_combo_c3_metrics import VERSION as C3_METRICS_VERSION
                     if args.experiment_id == "A2S1C4" or args.experiment_id in AUTO_EXPERIMENTS:
@@ -946,6 +958,8 @@ def main():
             startup_seconds = time.perf_counter() - startup_started
             print(f"{args.experiment_id or args.mode}：环境就绪，耗时 {startup_seconds:.1f}s。", flush=True)
             next_seed, completed_decisions, completed_episodes, start_update = args.seed, 0, 0, 0
+            auto_imitation_state = {"optimizerState": None,
+                "pauseState": {"paused": False, "consecutiveRollbacks": 0}}
             if args.resume:
                 saved = ppo.restore_checkpoint(args.checkpoint, model, optimizer, encoder,
                                                clients[0], args.mode, rng, args.card_set,
@@ -961,6 +975,10 @@ def main():
                 completed_decisions = saved["completedDecisions"]
                 completed_episodes = saved["completedEpisodes"]
                 start_update = saved["update"]
+                if args.auto_exploration_pairs:
+                    if "autoImitationState" not in saved:
+                        raise ValueError("Resumed exploration checkpoint lacks auxiliary rollback state")
+                    auto_imitation_state = saved["autoImitationState"]
             try:
                 source_commit = subprocess.check_output(
                     ["git", "rev-parse", "HEAD"], cwd=ppo.ROOT, text=True).strip()
@@ -1088,18 +1106,19 @@ def main():
                                 if dict(actual) != course_quota["plannedCounts"]:
                                     raise ValueError(f"C4 course quota mismatch before PPO update: {dict(actual)}")
                             phases["afterCollection"] = phase_resources(clients, store, device)
-                            exploration, reviewed_demonstrations, sentinel = None, [], []
+                            exploration, reviewed_demonstrations, sentinel_cases = None, [], []
                             if args.auto_exploration_pairs:
                                 progress.set_stage("离策略探索中")
                                 source_hash = hashlib.sha256((args.checkpoint if
                                     args.checkpoint.exists() else args.initial_weights).read_bytes()).hexdigest()
-                                exploration, reviewed_demonstrations, sentinel = discover_off_policy(
+                                exploration, reviewed_demonstrations, sentinel_cases = discover_off_policy(
                                     clients, model, encoder, device, update=update,
                                     training_seed=args.seed, source_hash=source_hash,
                                     archive_root=args.auto_exploration_root,
                                     pairs=args.auto_exploration_pairs,
                                     review_parent=args.auto_review_parent,
-                                    review_seconds=args.auto_review_seconds)
+                                    review_seconds=args.auto_review_seconds,
+                                    course_pool=args.combo_pool)
                                 if args.auto_frozen_library:
                                     from scripts.ppo_auto_library import load_batch
                                     frozen = load_batch(args.auto_frozen_library,
@@ -1109,7 +1128,8 @@ def main():
                                         encoder_version=ppo.encoder_version("signals"),
                                         reward_config=ppo.reward_config("signals"),
                                         limit=max(1, 64-len(reviewed_demonstrations)),
-                                        seed=args.seed+update)
+                                        seed=args.seed+update,
+                                        live_archive=exploration["archive"])
                                     reviewed_demonstrations.extend(frozen[:64-len(reviewed_demonstrations)])
                                     exploration["frozenReviewedDemonstrations"] = len(frozen)
                             progress.set_stage("优化中")
@@ -1128,11 +1148,27 @@ def main():
                             auto_auxiliary_metrics = None
                             if args.auto_exploration_pairs:
                                 from scripts.ppo_auto_imitate import auxiliary_update
+                                behavior_check = None
+                                if args.experiment_id == "A2AUTO2":
+                                    from scripts.ppo_auto_archive import ExplorationArchive
+                                    from scripts.ppo_auto_behavior import probe as behavior_probe
+                                    def behavior_check(current_model):
+                                        with ExplorationArchive(Path(exploration["archive"]),
+                                                exploration["identity"]) as live_archive:
+                                            return behavior_probe(clients[0], current_model,
+                                                encoder, device, sentinel_cases, live_archive,
+                                                source_hash=source_hash)
                                 auto_auxiliary_metrics = auxiliary_update(model, encoder,
-                                    reviewed_demonstrations, sentinel, device,
+                                    reviewed_demonstrations,
+                                    [item["observation"] for item in sentinel_cases], device,
+                                    optimizer_state=auto_imitation_state["optimizerState"],
+                                    pause_state=auto_imitation_state["pauseState"],
+                                    behavior_check=behavior_check,
                                     seed=args.seed+update)
-                                auto_auxiliary_metrics.pop("optimizerState", None)
-                                del reviewed_demonstrations, sentinel
+                                auto_imitation_state = {
+                                    "optimizerState": auto_auxiliary_metrics.pop("optimizerState"),
+                                    "pauseState": auto_auxiliary_metrics["pauseState"]}
+                                del reviewed_demonstrations, sentinel_cases
                             optimization_seconds = time.perf_counter() - optimization_started
                             phases["afterUpdate"] = phase_resources(clients, store, device)
                     resource = monitor.report(time.perf_counter() - monitored_started)
@@ -1154,6 +1190,8 @@ def main():
                             "prefetchLimitBytes": 256 * 1024 ** 2,
                             "gradientMicrobatch": 64, "logicalMinibatch": 256,
                             "epochs": 4} if args.experiment_id in ("A2S1", "A2S1W1", "A2S1C1", "A2S1C2", "A2S1C3", "A2S1C4", *AUTO_EXPERIMENTS) else None))
+                    if args.auto_exploration_pairs:
+                        payload["autoImitationState"] = auto_imitation_state
                     args.checkpoint.parent.mkdir(parents=True, exist_ok=True)
                     temporary = args.checkpoint.with_suffix(".tmp")
                     torch.save(payload, temporary)

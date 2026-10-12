@@ -28,6 +28,17 @@ REVIEW_PARENT_SHA = "ed32ba1f9e6927be8a4cec739942533ff5d949137b39239429b53c9855b
 FROZEN_LIBRARY = None
 
 
+def review_source(name):
+    if name == "A2AUTO2":
+        from scripts.ppo_auto_semantic_migrate import REVIEW
+        return REVIEW
+    return REVIEW_PARENT
+
+
+def review_hash(name):
+    return experiment.sha(review_source(name)) if name == "A2AUTO2" else REVIEW_PARENT_SHA
+
+
 def paths(name):
     state = experiment.ROOT / ".state" / name
     return state, state / "latest.pt", state / "training-report.json", \
@@ -41,7 +52,7 @@ def identity(name, pairs=0, review_seconds=120):
         "mix": {"normal": 36, "handWrittenCourse": 4}}
     client = ppo.ArenaClient(card_set="signals")
     try:
-        pool, _, _ = experiment.pool_identity(client)
+        pool, _, _ = experiment.pool_identity(client, name)
         config["poolIdentitySha256"] = pool["identitySha256"]
     finally:
         client.close()
@@ -51,11 +62,13 @@ def identity(name, pairs=0, review_seconds=120):
         "detailMetricsVersion": DETAIL_VERSION,
         "demonstrationAuditSha256": initial["demonstrationAuditSha256"],
         "automaticExploration": {
-            "version": "auto-exploration-per-complete-batch-v1",
+            "version": "auto-exploration-experiment-archive-v2" if name == "A2AUTO2" else
+                "auto-exploration-per-complete-batch-v1",
             "pairsPerUpdate": pairs, "reviewMaxSeconds": review_seconds,
-            "reviewParentSha256": REVIEW_PARENT_SHA if pairs else None,
+            "reviewParentSha256": review_hash(name) if pairs else None,
             "frozenLibrarySha256": frozen_sha,
-            "imitation": "reviewed-only-max2x64-lr1e-5-sentinel-kl-0.01"}})
+            "imitation": "reviewed-only-max2x64-independent-holdout-persistent-pause-v2"
+                if name == "A2AUTO2" else "reviewed-only-max2x64-lr1e-5-sentinel-kl-0.01"}})
     return initial, evidence, config
 
 
@@ -141,7 +154,7 @@ def complete_round(name, number, initial, config, *, pairs=0, review_seconds=120
             "--experiment-id", name, "--architecture", A2S1_ADAPTER,
             "--entropy-coefficient", "0.01", "--initial-weights", str(state/"initial.pt"),
             "--expected-initial-hash", initial["weightsSha256"],
-            "--combo-pool", str(experiment.POOL), "--card-set", "signals",
+            "--combo-pool", str(experiment.pool_path(name)), "--card-set", "signals",
             "--workers", str(experiment.WORKERS), "--updates", str(target-done),
             "--seed", str(experiment.SEED), "--checkpoint", str(checkpoint),
             "--report", str(report_path)]
@@ -150,11 +163,12 @@ def complete_round(name, number, initial, config, *, pairs=0, review_seconds=120
         if background_performance:
             command.append("--background-performance")
         if pairs:
-            if not REVIEW_PARENT.is_file() or experiment.sha(REVIEW_PARENT) != REVIEW_PARENT_SHA:
+            reference = review_source(name)
+            if not reference.is_file() or experiment.sha(reference) != review_hash(name):
                 raise ValueError("Frozen review policy source changed")
             command.extend(["--auto-exploration-pairs", str(pairs),
                 "--auto-exploration-root", str(state/"exploration"),
-                "--auto-review-parent", str(REVIEW_PARENT),
+                "--auto-review-parent", str(reference),
                 "--auto-review-seconds", str(review_seconds)])
         subprocess.run(command, cwd=ppo.ROOT, check=True)
     if progress(name, initial, config) != target:
@@ -227,7 +241,7 @@ def main():
                 "initialWeightsSha256": initial["weightsSha256"],
                 "buildFingerprint": initial["buildFingerprint"],
                 "rewardConfig": initial["rewardConfig"],
-                "poolSha256": experiment.sha(experiment.POOL)}
+                "poolSha256": experiment.sha(experiment.pool_path(args.experiment))}
         if not args.dry_run:
             write_plan(plan_path, plan)
     elif args.command == "add":
@@ -248,7 +262,7 @@ def main():
         ("experimentId", args.experiment), ("initialWeightsSha256", initial["weightsSha256"]),
         ("buildFingerprint", initial["buildFingerprint"]),
         ("rewardConfig", initial["rewardConfig"]),
-        ("poolSha256", experiment.sha(experiment.POOL)))):
+        ("poolSha256", experiment.sha(experiment.pool_path(args.experiment))))):
         raise ValueError("Saved plan identity differs")
     print(f"Plan: update {done}→{plan['targetUpdates']}；remaining "
           f"{max(0,plan['targetUpdates']-done)*40} complete games；"

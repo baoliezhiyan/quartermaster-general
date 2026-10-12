@@ -66,6 +66,30 @@ describe('A2S1 signals course',()=>{
     expect(PPO_A2S1_STATIC_SCHEMA.eventIds).toHaveLength(147);
   });
 
+  it('separates future signal capability from the immediate INSTALL effect',()=>{
+    const saved=new PpoTrainingArena(1,'potential-signal',options).exportSnapshot();
+    const deck=saved.state.decks.germany;
+    for(const id of ['special_137','special_136']){
+      const zone=deck.hand.some(card=>card.definitionId===id)?'hand':'drawPile';
+      const card=deck[zone].find(item=>item.definitionId===id)!;
+      expect(card).toBeDefined();
+      deck[zone]=deck[zone].filter(item=>item.id!==card.id);
+      deck.hand.push(card);
+      saved.state.trainingCourse!.openIds.germany.push(card.id);
+    }
+    const observation=PpoTrainingArena.fromSnapshot(saved,options).observe()!;
+    const rapid=observation.candidates.find(candidate=>candidate.definitionId==='special_137')!;
+    const blitz=observation.candidates.find(candidate=>candidate.definitionId==='special_136')!;
+    expect(rapid.effects?.some(effect=>effect.tag==='INSTALL')).toBe(true);
+    expect(rapid.potential?.subscriptions).toContain('After:action:build_army');
+    expect(rapid.potential?.futureActions).toContain('land_battle');
+    expect(rapid.potential?.feeKinds).toContain('deck_top');
+    expect(rapid.potential?.useLimit).toBe('turn');
+    expect(blitz.potential?.subscriptions).toContain('After:action:land_battle');
+    expect(blitz.potential?.futureActions).toContain('build_army');
+    expect(rapid.potential).not.toEqual(blitz.potential);
+  });
+
   it('shows face-up statuses but conceals another seat’s face-down response identity',()=>{
     const original=new PpoTrainingArena(1,'signals-hidden',options).exportSnapshot();
     const state=original.state;

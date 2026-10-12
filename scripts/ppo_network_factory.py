@@ -16,7 +16,7 @@ ACTIVE_EXPERIMENTS = {"A1S2": ADAPTED_MAP, "A2S1": A2S1_ADAPTER,
                       "A2S1C4": A2S1_ADAPTER,
                       "A2AUTOBASE": A2S1_ADAPTER,
                       "A2AUTOCAND": A2S1_ADAPTER,
-                      "A2AUTO": A2S1_ADAPTER}
+                      "A2AUTO": A2S1_ADAPTER, "A2AUTO2": A2S1_ADAPTER}
 
 
 def make_network(architecture, encoder):
@@ -58,3 +58,35 @@ def migrate_flat_state(saved, encoder):
 def map_from_flat(flat, encoder):
     from scripts.ppo_map_network import migrate_flat
     return migrate_flat(flat, make_network(MAP, encoder))
+
+
+def migrate_signal_potential(saved, encoder):
+    """Explicitly append potential-signal inputs without changing initial logits.
+
+    The old candidate features remain a prefix. New input weights are zero,
+    and the opening prototype gets the same zero suffix. This is a new model
+    identity; callers must save it as a separate initial checkpoint.
+    """
+    old = saved.get("network", {})
+    if (saved.get("networkArchitecture") != A2S1_ADAPTER or
+            saved.get("mode") != "A" or saved.get("cardSet") != "signals" or
+            old.get("stateDim") != encoder.state_dim or
+            not isinstance(old.get("candidateDim"), int) or
+            old["candidateDim"] >= encoder.candidate_dim):
+        raise ValueError("Source cannot migrate to potential-signal encoder")
+    model = make_network(A2S1_ADAPTER, encoder)
+    target = model.state_dict()
+    candidate_weight = "map.base.candidate_net.0.weight"
+    prototype = "prototype_candidate"
+    for name, value in saved["modelState"].items():
+        if name in (candidate_weight, prototype):
+            if value.shape[:-1] != target[name].shape[:-1] or value.shape[-1] != old["candidateDim"]:
+                raise ValueError(f"Unexpected migrated tensor shape: {name}")
+            target[name][..., :old["candidateDim"]] = value
+            target[name][..., old["candidateDim"]:] = 0
+        elif name in target and target[name].shape == value.shape:
+            target[name] = value
+        else:
+            raise ValueError(f"Source tensor cannot migrate: {name}")
+    model.load_state_dict(target, strict=True)
+    return model

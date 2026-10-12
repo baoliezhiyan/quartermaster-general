@@ -27,7 +27,7 @@ PARENT_SHA = "165152a554bc68ee2a97bdbd4ab338537e21037190c6c091aec61288ebdc2e70"
 PARENT_WEIGHTS = "c42540437629886d33d83449ad2ced090a02bba2eed13036f73a05bf75aa5752"
 POOL = ROOT / ".state/A2自动探索试验01/course-pool-replayed-final.json.gz"
 SOURCE_POOL_SHA = "13ae0b722bf03bd2e0fedd613a51fc4e8ff2578e303d98b6dff32f97275f5cd6"
-EXPERIMENTS = ("A2AUTOBASE", "A2AUTOCAND", "A2AUTO")
+EXPERIMENTS = ("A2AUTOBASE", "A2AUTOCAND", "A2AUTO", "A2AUTO2")
 SEED = 20261011
 WORKERS = 8
 
@@ -38,6 +38,13 @@ def sha(path):
         for chunk in iter(lambda: stream.read(1 << 20), b""):
             digest.update(chunk)
     return digest.hexdigest()
+
+
+def pool_path(experiment):
+    if experiment == "A2AUTO2":
+        from scripts.ppo_auto_semantic_migrate import POOL as potential_pool
+        return potential_pool
+    return POOL
 
 
 def _parent_model(client):
@@ -63,24 +70,29 @@ def _parent_model(client):
     return parent, encoder, model
 
 
-def pool_identity(client):
-    if not POOL.is_file():
+def pool_identity(client, experiment=None):
+    selected = pool_path(experiment)
+    if not selected.is_file():
         raise FileNotFoundError("Replayed course pool is missing; run explicit pool migration")
-    with __import__("gzip").open(POOL, "rt", encoding="utf-8") as stream:
+    with __import__("gzip").open(selected, "rt", encoding="utf-8") as stream:
         payload = json.load(stream)
     migration = payload.get("migration", {})
-    if migration.get("sourcePoolSha256") != SOURCE_POOL_SHA:
+    source_sha = sha(POOL) if experiment == "A2AUTO2" else SOURCE_POOL_SHA
+    if migration.get("sourcePoolSha256") != source_sha:
         raise ValueError("Course pool was not legally replayed from the reviewed source")
     old = migration["sourceIdentity"]
     expected = course.pool_identity(client, old["parentCheckpointSha256"],
                                     old["generatorWeightsSha256"])
-    course.read_pool(POOL, expected)
-    return expected, sha(POOL), len(payload["entries"])
+    course.read_pool(selected, expected)
+    return expected, sha(selected), len(payload["entries"])
 
 
 def initialize(experiment):
     if experiment not in EXPERIMENTS:
         raise ValueError(experiment)
+    if experiment == "A2AUTO2":
+        from scripts.ppo_auto_semantic_migrate import initialize as migrate
+        return migrate()
     state = ROOT / ".state" / experiment
     initial = state / "initial.pt"
     if initial.exists() or (state / "latest.pt").exists():
@@ -133,6 +145,42 @@ def initialize(experiment):
 
 
 def validate(experiment):
+    if experiment == "A2AUTO2":
+        state = ROOT / ".state" / experiment
+        initial_file = state / "initial.pt"
+        if not initial_file.is_file():
+            raise FileNotFoundError("A2AUTO2 has no explicit potential-signal initializer")
+        initial = torch.load(initial_file, map_location="cpu", weights_only=False)
+        client = ppo.ArenaClient(card_set="signals")
+        try:
+            encoder = ppo.Encoder(client.schema)
+            pool_file = pool_path(experiment)
+            with __import__("gzip").open(pool_file, "rt", encoding="utf-8") as stream:
+                pool = json.load(stream)
+            old = pool["migration"]["sourceIdentity"]
+            expected = course.pool_identity(client, old["parentCheckpointSha256"],
+                                            old["generatorWeightsSha256"])
+            course.read_pool(pool_file, expected)
+            if (initial.get("experimentId") != experiment or
+                initial.get("sourceC4CheckpointSha256") != PARENT_SHA or
+                initial.get("encoderVersion") != ppo.encoder_version("signals") or
+                initial.get("buildFingerprint") != client.fingerprint or
+                initial.get("network") != {"stateDim": encoder.state_dim,
+                                           "candidateDim": encoder.candidate_dim} or
+                initial.get("coursePoolSha256") != sha(pool_file) or
+                initial.get("rewardConfig") != ppo.reward_config("signals") or
+                initial.get("optimizerMigration") != "new-Adam-no-old-momentum"):
+                raise ValueError("A2AUTO2 migrated initializer identity differs")
+            model = make_network(A2S1_ADAPTER, encoder)
+            model.load_state_dict(initial["modelState"], strict=True)
+            if ppo.model_weights_sha256(model) != initial["weightsSha256"]:
+                raise ValueError("A2AUTO2 migrated weights changed")
+            return initial, {"fileSha256": sha(initial_file),
+                             "weightsSha256": initial["weightsSha256"],
+                             "buildFingerprint": client.fingerprint,
+                             "poolSha256": sha(pool_file)}
+        finally:
+            client.close()
     state = ROOT / ".state" / experiment
     initial_file = state / "initial.pt"
     if not initial_file.is_file():

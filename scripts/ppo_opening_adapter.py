@@ -46,3 +46,19 @@ class PpoOpeningAdapter(nn.Module):
 class A2S1MapAdapter(PpoOpeningAdapter):
     """The new observation/action schema requires an explicit architecture ID."""
     architecture = "map-contextual-opening-adapter-a2s1-v1"
+
+    def __init__(self, encoder):
+        super().__init__(encoder)
+        self.potential_suffix_width = (len(encoder._potential_vector(None))
+            if encoder.schema["observationSchemaVersion"] ==
+            "ppo-observation-a2s1-v3-potential-signals" else 0)
+
+    def forward(self, states, candidates, mask):
+        logits, value = self.map(states, candidates, mask)
+        state_distance = (states - self.prototype_state).square().sum(-1)
+        legacy = candidates.shape[-1] - self.potential_suffix_width
+        candidate_distance = (candidates[..., :legacy] -
+            self.prototype_candidate[:legacy]).square().sum(-1)
+        gate = torch.exp(-state_distance[:, None] / self.state_scale -
+                         candidate_distance / self.candidate_scale)
+        return (logits + self.opening_logit * gate).masked_fill(~mask, -1e9), value

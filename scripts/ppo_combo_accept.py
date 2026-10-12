@@ -80,7 +80,8 @@ def _already_resolved(goal, record):
     return False
 
 
-def probe(client, entry, max_steps=25, combo_telemetry=False):
+def probe(client, entry, max_steps=25, combo_telemetry=False,
+          include_observations=False):
     template = entry["template"]
     response = client.request(op="restore", snapshot=entry["snapshot"], trace="full",
                               comboTelemetry=combo_telemetry)
@@ -116,7 +117,8 @@ def probe(client, entry, max_steps=25, combo_telemetry=False):
                       "source": observation.get("currentSourceDefinition"),
                       "chosen": chosen, "events": (result.get("record") or {}).get("events", []),
                       "telemetry": result.get("comboTelemetry"),
-                      "resolved": result["info"].get("resolvedCardDefinitions")})
+                      "resolved": result["info"].get("resolvedCardDefinitions"),
+                      **({"observation": observation} if include_observations else {})})
         if matched:
             cursor += 1
         record = result.get("record") or {}
