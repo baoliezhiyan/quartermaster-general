@@ -15,7 +15,10 @@ export type MapPanel = typeof MAP_PANELS[number][0];
 /** Reserved adapter view field; standard game recordings contain six empty lists. */
 export function replayPoolCards(state:ReadState):readonly CardInstance[]{return (state as ReadState&{resourcePool?:Partial<Record<SeatId,CardInstance[]>>}).resourcePool?.[state.viewSeat]??[];}
 export function visibleMapPanels(state:ReadState,isPublic=false,replay=false) {
- return MAP_PANELS.filter(([id])=>(!isPublic||id==='record'||id==='resource-pool'&&replay)&&(id!=='resource-pool'||replay)&&(!id.startsWith('prelude-')||!!state.prelude?.active||replay));
+ const realHand=(state as ReadState&{trainingReplay?:{mode?:string}}).trainingReplay?.mode==='real_hand';
+ return MAP_PANELS.filter(([id])=>(!isPublic||id==='record'||id==='resource-pool'&&replay&&!realHand)&&
+   (id!=='resource-pool'||replay&&!realHand)&&
+   (!id.startsWith('prelude-')||!!state.prelude?.active||replay&&!realHand));
 }
 export function panelCount(state:ReadState,panel:MapPanel):number|undefined {
  const d=state.decks[state.viewSeat],p=state.prelude?.decks[state.viewSeat];

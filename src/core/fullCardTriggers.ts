@@ -42,7 +42,7 @@ export function fullTrigger(s:GameState,card:CardInstance,e:Effect,timing:'Befor
     if(id===246&&phase('PLAY'))return extra([top(2),a('land_battle',['western_europe'])]);
     if(id===145&&phase('DISCARD')&&count('navy',['sea_baltic']))return extra([a('build_navy',['sea_north_sea'])],1,['build_navy']);
     if(id===248&&phase('TURN_START_WINDOW')){const regions=[...(count('army',['eastern_china'])?['vladivostok']:[]),...(count('army',['vladivostok'])?['eastern_china']:[])];return regions.length?extra([a('build_army',regions)]):undefined;}
-    if(id===249&&phase('TURN_START_WINDOW'))return extra([a('destroy',['hawaii']),balanceEffect('united_states','end-neutrality')]);
+    if(id===249&&phase('TURN_START_WINDOW'))return extra([a('destroy',['hawaii']),{...balanceEffect('united_states','end-neutrality'),fee:true,optional:false}]);
   }
   if(timing==='Before') {
     const sourceCard=frame?.cardId?Object.values(s.decks).flatMap(d=>d.resolving).find(c=>c.id===frame.cardId):undefined;

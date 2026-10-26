@@ -8,6 +8,9 @@ const integer=(v:any)=>Number.isSafeInteger(v)&&v>=0;
 const text=(v:any)=>typeof v==='string'&&v.length<20000;
 const fields:Record<string,string[]>={KEEP_OPENING:['cardIds'],DISCARD_HAND:['cardIds'],DISCARD_PRELUDE_TOP:[],PLAY_PRELUDE:['cardId'],PLAY_BASIC:['cardId','optionId'],MOVE_AIR:['cardId','optionId'],PLAY_CARD:['cardId','effectIndices','targetIds','guided'],STATUS_ACTION:['cardId','guided'],RESOLVE_ENGINE_CHOICE:['ids','guided'],REDISTRIBUTE:['cardIds','takeCardId'],SELECT_AIR_ACTION:['action'],ADVANCE_PHASE:[],ARMAMENT_WINDOW:[],RELOCATE_AIR:['regionId'],RESOLVE_FORCED_DISCARD:['cardIds'],SET_INTERRUPTS:['enabled'],SET_CARD_RESPONSE:['cardId','enabled'],CONTINUE_BOUNDARY:['boundary']};
 export function validateInput(v:any){
+ if(object(v)&&v.type==='EDITOR_STATE'){
+  require(Object.keys(v).every(k=>['type','beforeHash','state'].includes(k))&&/^[a-f0-9]{64}$/.test(v.beforeHash),'场景编辑控制参数非法');snap(v.state);return;
+ }
  require(object(v)&&typeof v.type==='string'&&!!fields[v.type],'不支持的动作命令');
  require(Object.keys(v).every(k=>k==='type'||fields[v.type].includes(k)),'动作含多余字段或快照');
  const required:Record<string,string[]>={KEEP_OPENING:['cardIds'],DISCARD_HAND:['cardIds'],PLAY_PRELUDE:['cardId'],PLAY_BASIC:['cardId','optionId'],MOVE_AIR:['cardId','optionId'],PLAY_CARD:['cardId','effectIndices','targetIds'],STATUS_ACTION:['cardId'],RESOLVE_ENGINE_CHOICE:['ids'],REDISTRIBUTE:['cardIds','takeCardId'],SELECT_AIR_ACTION:['action'],RELOCATE_AIR:['regionId'],RESOLVE_FORCED_DISCARD:['cardIds'],SET_INTERRUPTS:['enabled'],SET_CARD_RESPONSE:['cardId','enabled']};
@@ -19,10 +22,10 @@ function anchor(v:Anchor){require(object(v)&&text(v.actionId)&&Array.isArray(v.e
 function safe(v:any,depth=0){require(depth<90,'JSON 嵌套过深');if(v===null||typeof v==='boolean'||typeof v==='string')return;if(typeof v==='number'){require(Number.isFinite(v),'数字无效');return;}if(Array.isArray(v)){require(v.length<=200000,'数组过大');v.forEach(x=>safe(x,depth+1));return;}require(object(v),'不是 JSON 数据');for(const [k,x]of Object.entries(v)){require(!['__proto__','constructor','prototype'].includes(k),'禁止的对象字段');safe(x,depth+1);}}
 function action(a:Action,ids:Set<string>,orders:Set<number>,parent?:string,depth=0){
  require(depth<32&&object(a)&&text(a.actionId)&&!ids.has(a.actionId),'动作 ID 重复或嵌套过深');ids.add(a.actionId);
- require(['play_card','activate','response','opening_keep','discard','resource_reorganize','phase_advance','editor_change'].includes(a.kind)&&SEATS.includes(a.decisionSeat),'动作类型/国家无效');validateInput(a.input);
+ require(['play_card','activate','response','opening_keep','discard','resource_reorganize','phase_advance','editor_change'].includes(a.kind)&&SEATS.includes(a.decisionSeat),'动作类型/国家无效');validateInput(a.input);require(a.kind==='editor_change'?!parent&&a.input.type==='EDITOR_STATE':a.input.type!=='EDITOR_STATE','场景编辑只能作为独立根动作');
  require(Array.isArray(a.choices)&&Array.isArray(a.interventions),'缺少动作选择');
  const order=(n:number)=>{require(integer(n)&&n>0&&!orders.has(n),'动作顺序重复');orders.add(n);};
- for(const c of a.choices){anchor(c.at);require(c.at.actionId===a.actionId&&SEATS.includes(c.decisionSeat)&&text(c.kind),'选择归属无效');order(c.order);validateInput(c.answer);}
+ for(const c of a.choices){anchor(c.at);require(c.at.actionId===a.actionId&&SEATS.includes(c.decisionSeat)&&text(c.kind),'选择归属无效');order(c.order);validateInput(c.answer);require((c.answer as any).type!=='EDITOR_STATE','选择不得包含场景快照');}
  for(const i of a.interventions){anchor(i.at);require(i.at.actionId===a.actionId&&i.action.actionId!==parent,'响应父动作无效');order(i.order);action(i.action,ids,orders,a.actionId,depth+1);}
 }
 function snap(s:Snapshot){require(object(s)&&object(s.ruleState),'缺少规则检查点');const v=s.ruleState as any;require(!v.publicLog?.length&&!v.responseNotices?.length&&!v.session&&!v.recovery&&!v.matchRecording&&!v.actionRecording,'检查点包含累计日志或旧档案');require(!v.events?.some((e:any)=>e.type!=='UNIT_PLACED'),'检查点包含展示日志');require(!v.resolution?.frames?.some((f:any)=>f.rollback||f.extraRollback),'检查点嵌套历史快照');const state=restore(s);require(!state.trainingCourse,'暂不支持训练回放适配器');require(SEATS.every(seat=>v.resourcePool[seat].length===0),'正式对局资源池必须为空');}

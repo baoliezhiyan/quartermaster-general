@@ -64,7 +64,7 @@ function validateEffects(value:unknown,depth=0):void {
   }
 }
 
-export function validateState(value:unknown,depth=0):asserts value is GameState {
+export function validateState(value:unknown,depth=0,archivedPartialDeck=false):asserts value is GameState {
   demand(depth<=16,'结算快照嵌套过深。');
   demand(object(value)); const s=value;
   demand(s.resolutionVersion===undefined||s.resolutionVersion===2||s.resolutionVersion===3);
@@ -78,6 +78,13 @@ export function validateState(value:unknown,depth=0):asserts value is GameState 
   demand(object(s.scores)&&SEATS.every(k=>typeof s.scores==='object'&&Number.isFinite((s.scores as Record<string,unknown>)[k])));
   demand(Array.isArray(s.events)&&s.events.every(e=>object(e)&&['GAME_CREATED','UNIT_PLACED','VIEW_CHANGED','RULE_EVENT'].includes(String(e.type))&&integer(e.revision)));
   if(s.publicCardIds!==undefined)demand(Array.isArray(s.publicCardIds)&&s.publicCardIds.every((id:unknown)=>typeof id==='string'));
+  if(s.publicDiscardHistory!==undefined){
+    demand(object(s.publicDiscardHistory));
+    for(const [owner,cards] of Object.entries(s.publicDiscardHistory)){
+      demand(seat(owner)&&Array.isArray(cards));const seen=new Set<string>();
+      for(const c of cards as any[]){demand(object(c)&&typeof c.id==='string'&&!seen.has(c.id)&&typeof c.definitionId==='string'&&c.deckOwner===owner&&Object.hasOwn(COUNTRY_NAMES,String(c.country)));seen.add(c.id);}
+    }
+  }
   if(s.faceUpResponseIds!==undefined)demand(strings(s.faceUpResponseIds)&&new Set(s.faceUpResponseIds).size===s.faceUpResponseIds.length);
   if(s.balanceResolutionSerial!==undefined)demand(integer(s.balanceResolutionSerial)&&Number(s.balanceResolutionSerial)>=0);
   if(s.unitSerial!==undefined)demand(integer(s.unitSerial)&&Number(s.unitSerial)>=0);
@@ -155,7 +162,7 @@ export function validateState(value:unknown,depth=0):asserts value is GameState 
       }
     }
   }
-  demand([...expected.keys()].every(id=>ids.has(id)),'存档缺少卡牌实例。');
+  if(!archivedPartialDeck)demand([...expected.keys()].every(id=>ids.has(id)),'存档缺少卡牌实例。');
   if(s.turnFlags!==undefined) {demand(object(s.turnFlags));for(const k of ['protected','battleProtected','supplied','supplyCountries','supplyRegions','suppressed'])demand(strings(s.turnFlags[k]));demand(typeof s.turnFlags.noAirDefense==='boolean');}
   if(s.resolution!==null) {
     const r=s.resolution;demand(object(r)&&seat(r.owner)&&typeof r.running==='boolean'&&integer(r.serial)&&typeof r.scenario==='string');

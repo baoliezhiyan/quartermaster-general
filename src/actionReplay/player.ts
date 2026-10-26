@@ -17,6 +17,14 @@ export function entries(a:Archive):Entry[]{return a.groups.flatMap(g=>actions(g.
 interface Step {at:Anchor;order:number;seat:SeatId;input:ObjectData;action?:Action;}
 function steps(root:Action):Step[]{return [...root.choices.map(c=>({at:c.at,order:c.order,seat:c.decisionSeat,input:c.answer as ObjectData})),...root.interventions.flatMap(i=>[{at:i.at,order:i.order,seat:i.action.decisionSeat,input:i.action.input,action:i.action},...steps(i.action)])].sort((a,b)=>a.order-b.order);}
 export async function playGroup(initial:GameState,g:ActionGroup,shuffles:Shuffle[],target?:{id:string;after:boolean},details:Detail[]=[],narrative?:Narrative,onState?:(state:GameState,order:number)=>void):Promise<{state:GameState;selected?:GameState}> {
+ if(g.root.kind==='editor_change'){
+  if(g.status!=='complete')throw Error('GM 编辑必须包含完整后状态');
+  if(g.root.input.beforeHash!==await stateHash(initial)||g.root.choices.length||g.root.interventions.length||shuffles.length)throw Error('GM 场景编辑前状态或结构不匹配');
+  const state=restore(g.root.input.state as unknown as import('./contract').Snapshot);
+  if(state.gameId!==initial.gameId||await stateHash(state)!==g.afterHash)throw Error('GM 场景编辑后状态不匹配');
+  onState?.(state,0);
+  return {state,selected:target?.after?structuredClone(state):structuredClone(initial)};
+ }
  let s=structuredClone(initial),selected:GameState|undefined,randomIndex=0,boundaryState:GameState|undefined;
  const scheduled=steps(g.root);let currentAction=g.root,consumedOrder=0;
  const automaticAck=()=>{const reveal=s.resolution?.revealGroup;if(!reveal)return false;for(const item of reveal.items){for(const id of [item.requestId,item.resultId]){const notice=s.responseNotices?.find(n=>n.id===id);if(notice&&!notice.readBy.includes(item.seat)){execute({type:'ACK_RESPONSE_NOTICE',noticeId:id},item.seat);return true;}}}throw Error('缺少必要翻牌确认上下文');};

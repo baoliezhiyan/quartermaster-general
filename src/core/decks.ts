@@ -1,7 +1,7 @@
 import {fact} from './factObserver';
 import {neutralityDiscardPenalty} from './neutrality';
 import {hasStatus} from './modifiers';
-import {publicRecord} from './publicHistory';
+import {publicRecord,rememberPublicDiscards} from './publicHistory';
 import {concealPublic,revealDiscardedCards} from './publicHistory';
 import { addResponseNotice } from './responseNotices';
 import { COUNTRY_NAMES, cardName } from './basic';
@@ -17,6 +17,7 @@ export function canPayDiscardCost(state: ReadState, seat: SeatId, count: number)
 /** Vichy is permanently removed whenever it would enter a discard pile. */
 export function putDiscardedCards(state:GameState,seat:SeatId,cards:CardInstance[]) {
   for(const card of cards)state.decks[seat][state.rules?.balanceEnabled&&card.definitionId==='special_251'?'removed':'discardPile'].push(card);
+  rememberPublicDiscards(state);
 }
 export function discardHandCards(state: GameState, seat: SeatId, ids: string[], publicIds:readonly string[] = []) {
   const deck = state.decks[seat];

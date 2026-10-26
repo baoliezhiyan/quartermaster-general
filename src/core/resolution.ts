@@ -1,3 +1,4 @@
+import {rememberPublicDiscards} from './publicHistory';
 import {sortCardChoices} from './cardChoiceOrder';
 import {fact} from './factObserver';
 import {publicCostIds} from './cardCosts';
@@ -69,7 +70,7 @@ function validEffect(s:ReadState,e:Effect,f?:ResolutionFrame):boolean {
   if(e.kind==='randomPlay'||e.kind==='randomReturn')return s.decks[e.seat].discardPile.length>0;
   if(e.kind==='frameChange')return !!s.resolution?.frames.some(f=>f.id===e.frameId&&f.status!=='COMPLETE');
   if(e.kind==='countChange')return !!s.resolution?.events.some(v=>v.id===e.eventId&&!v.applied&&v.effect?.kind==='deckTop');
-  if(e.kind==='remove')return s.units.some(u=>u.id===e.unit.id)&&!s.turnFlags?.protected.includes(e.unit.id)&&!s.turnFlags?.battleProtected.includes(`${f?.parentEventId}:${e.unit.id}`);
+  if(e.kind==='remove')return !(e.cause==='supply'&&e.unit.type==='air'&&suppliedUnits(s).has(e.unit.id))&&s.units.some(u=>u.id===e.unit.id)&&!s.turnFlags?.protected.includes(e.unit.id)&&!s.turnFlags?.battleProtected.includes(`${f?.parentEventId}:${e.unit.id}`);
   if(e.kind==='choose')return e.options.filter(o=>canExecuteEffects(s,o.effects)).length>=Math.max(1,e.min);
   if(e.kind==='cards') {
     const cards=s.decks[e.seat][e.from].filter(c=>(!e.allowedIds||e.allowedIds.includes(c.id))&&(!e.filter||matchesCard(c,e.filter)));return cards.length>=e.min&&(!e.requirements||coversCost(cards,e.requirements));
@@ -259,6 +260,7 @@ function finishFrame(s:GameState,f:ResolutionFrame) {
       else deck[f.finalZone].push(...cards);
     }
   }
+  rememberPublicDiscards(s);
   f.status='COMPLETE'; engine(s).stack.pop();
   if(f.cardId&&s.trainingCourse){const events=engine(s).events.filter(event=>event.frameId===f.id&&event.effect?.kind!=='signal');
     const appliedEffects=events.filter(event=>event.applied).length;

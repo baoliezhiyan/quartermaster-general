@@ -31,4 +31,4 @@ export function liveCommand(s:GameState,input:ObjectData,seat:SeatId):Command {
  }
  return c;
 }
-export const omitted=(s:GameState,c:Command)=>c.type==='SET_VIEW'||c.type==='ACK_RESPONSE_NOTICE'||c.type==='RESOLVE_ENGINE_CHOICE'&&s.resolution?.choice?.kind==='TRIGGER'&&!c.ids.length;
+export const omitted=(_s:GameState,c:Command)=>c.type==='SET_VIEW'||c.type==='ACK_RESPONSE_NOTICE';

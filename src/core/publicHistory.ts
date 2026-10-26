@@ -5,13 +5,18 @@ import {specialCard} from './cardCatalog';
 import {REGION_BY_ID} from './map';
 import {ACTION_NAMES} from './effectNames';
 export function publicRecord(s:GameState,seat:SeatId,text:string){(s.publicLog??=[]).push({round:s.round,seat,text});}
-export function revealPublic(s:GameState,cards:CardInstance[]){s.publicCardIds=[...new Set([...(s.publicCardIds??[]),...cards.map(c=>c.id)])];}
-export function concealPublic(s:GameState,ids:string[]){s.faceUpResponseIds=s.faceUpResponseIds?.filter(id=>!ids.includes(id));s.publicCardIds=s.publicCardIds?.filter(id=>!ids.includes(id));}
+export function revealPublic(s:GameState,cards:CardInstance[]){s.publicCardIds=[...new Set([...(s.publicCardIds??[]),...cards.map(c=>c.id)])];rememberPublicDiscards(s);}
+export function concealPublic(s:GameState,ids:string[]){rememberPublicDiscards(s);s.faceUpResponseIds=s.faceUpResponseIds?.filter(id=>!ids.includes(id));s.publicCardIds=s.publicCardIds?.filter(id=>!ids.includes(id));}
 export function revealDiscardedCards(s:GameState,seat:SeatId,cards:CardInstance[]){
  const fresh=cards.filter(c=>!s.publicCardIds?.includes(c.id));
  if(fresh.length){revealPublic(s,fresh);publicRecord(s,seat,COUNTRY_NAMES[seat]+'公开弃置：'+fresh.map(c=>'【'+cardName(c)+'】').join('、')+'。');}
 }
-export function publicDiscard(s:ReadState,seat:SeatId){return s.decks[seat].discardPile.filter(c=>s.publicCardIds?.includes(c.id));}
+export function publicDiscard(s:ReadState,seat:SeatId){
+ return [...new Map([...(s.publicDiscardHistory?.[seat]??[]),...s.decks[seat].discardPile.filter(c=>s.publicCardIds?.includes(c.id))].map(c=>[c.id,c])).values()];
+}
+export function rememberPublicDiscards(s:GameState){
+ for(const seat of Object.keys(s.decks) as SeatId[]){const cards=publicDiscard(s,seat);if(cards.length)(s.publicDiscardHistory??={})[seat]=cards.map(c=>({...c}));}
+}
 export function declarePublicCard(s:GameState,f:ResolutionFrame){
  if(!f.cardId||f.publicDeclared)return;
  const c=s.decks[f.owner].resolving.find(c=>c.id===f.cardId);if(!c)return;

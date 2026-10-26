@@ -18,6 +18,8 @@ await writeFile(join(folder,'加入联机版游戏.cmd'),'@echo off\r\nchcp 6500
 await mkdir(join(folder,'对局记录'));
 await mkdir(join(folder,'回放接口'));
 await cp('src/actionReplay/contract.ts',join(folder,'回放接口/contract.ts'));
+await cp('docs/client-v1.8.3.md',join(folder,'回放接口/v1.8.3兼容与修订.md'));
+await cp('src/actionReplay/realHandTrainingReplay.ts',join(folder,'回放接口/real-hand-readonly-adapter.ts'));
 await cp('src/actionReplay/trainingContract.ts',join(folder,'回放接口/training-contract-v1.ts'));
 await cp('docs/training-replay-output-v1.md',join(folder,'回放接口/训练端输出规范-v1.md'));
 await cp('docs/action-replay-adapter.md',join(folder,'回放接口/adapter.md'));
