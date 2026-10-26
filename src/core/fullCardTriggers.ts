@@ -32,6 +32,7 @@ export function fullTrigger(s:GameState,card:CardInstance,e:Effect,timing:'Befor
   if(s.rules?.balanceEnabled&&timing==='After'){
 
     if(id===247&&phase('SUPPLY'))return extra(kamikazeEffects(s,card));
+    if(id===258&&phase('PLAY'))return extra([balanceEffect(owner,'advanced-technology')]);
     if(id===259&&phase('SCORE'))return extra([top(1),{kind:'extraPlay',seat:owner,from:'hand',filter:'状态',label:'快速生产：打出一张手牌中的状态卡'}]);
     if(id===79&&phase('SCORE'))return score(new Set(s.units.filter(u=>u.type==='army'&&allianceOf(u.country)==='allies'&&['eastern_europe','south_africa','latin_america','western_china'].includes(u.regionId)).map(u=>u.regionId)).size);
     if(id===85&&phase('DISCARD'))return extra([{kind:'cards',seat:owner,from:'hand',to:'drawPile',min:1,max:2,bottom:true,remember:'bottomed',label:'将一至两张手牌放到牌库底'},balanceEffect(owner,'draw-bottomed')],0,undefined,true);
@@ -41,7 +42,7 @@ export function fullTrigger(s:GameState,card:CardInstance,e:Effect,timing:'Befor
     if(id===246&&phase('PLAY'))return extra([top(2),a('land_battle',['western_europe'])]);
     if(id===145&&phase('DISCARD')&&count('navy',['sea_baltic']))return extra([a('build_navy',['sea_north_sea'])],1,['build_navy']);
     if(id===248&&phase('TURN_START_WINDOW')){const regions=[...(count('army',['eastern_china'])?['vladivostok']:[]),...(count('army',['vladivostok'])?['eastern_china']:[])];return regions.length?extra([a('build_army',regions)]):undefined;}
-    if(id===249&&phase('TURN_START_WINDOW'))return extra([a('destroy',['hawaii']),balanceEffect('united_states','end-neutrality')]);
+    if(id===249&&phase('TURN_START_WINDOW'))return extra([a('destroy',['hawaii']),{...balanceEffect('united_states','end-neutrality'),fee:true,optional:false}]);
   }
   if(timing==='Before') {
     const sourceCard=frame?.cardId?Object.values(s.decks).flatMap(d=>d.resolving).find(c=>c.id===frame.cardId):undefined;

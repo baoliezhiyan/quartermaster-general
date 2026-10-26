@@ -31,7 +31,7 @@ it('industry extra state is summarized once by its armament without false respon
 });
 it('entry status extra play produces an entry notification to everyone, not a response result',()=>{
  const s=game(),state=move(s,'special_47','hand');s.neutrality!.soviet_union.neutral=false;s.neutralityStatusPending=true;
- startResolution(s,'参战','germany',[{kind:'trace',label:'继续原攻击'}],[]);reply(s,[state.id]);finish(s);
+ startResolution(s,'参战','germany',[{kind:'trace',label:'继续原攻击'}],[]);reply(s,['hand']);reply(s,[state.id]);finish(s);
  const notices=s.responseNotices!.filter(n=>n.title==='结束中立结算');expect(notices).toHaveLength(1);expect(notices[0].recipients).toEqual([...SEATS]);expect(notices[0].text).toContain('苏联结束了中立，弃置了【混乱的政局】');expect(notices[0].text).toContain('打出了状态');expect(notices[0].text).not.toContain('响应');expect(notices[0].text).not.toContain('未生效');
 });
 it('guided recruitment and construction prompts preserve the actual action',()=>{

@@ -12,6 +12,7 @@ add([15,37,39],'Before','CARD_EFFECT');
 add([87,121,128,133,144,149,220,226,230],'Before','deckTop');
 add([55],'Before','remove');
 phase([259],'SCORE');
+phase([258],'PLAY');
 phase([247],'SUPPLY');
 phase([256,'SU-06'],'TURN_START_WINDOW');
 add([11,14,16,18,54,56,60,58,195,200,222],'Before','remove');

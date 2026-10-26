@@ -87,7 +87,7 @@
     "country": "germany",
     "type": "军备",
     "name": "88毫米防空炮",
-    "text": "在你的陆军被攻击时触发：攻击方可弃置3张手牌；否则，本次战斗中该陆军不会被移除。"
+    "text": "在你的陆军被攻击时触发：攻击方须弃置3张手牌；手牌不足的数量改为弃置其牌库顶的牌。"
   },
   {
     "id": "prelude_DE-03",
@@ -931,9 +931,9 @@
     "sourceIndex": 258,
     "deckOwner": "united_states",
     "country": "united_states",
-    "type": "事件",
+    "type": "增强",
     "name": "先进技术迭代",
-    "text": "从你的牌库或弃牌堆任选1张状态卡打出。"
+    "text": "在你的出牌阶段开始时触发：从你的摸牌堆或弃牌堆任选1张【状态卡】置入你的手牌。重洗摸牌堆。"
   },
   {
     "id": "special_259",
@@ -961,7 +961,7 @@
     "country": "united_kingdom",
     "type": "军备",
     "name": "Z 舰队",
-    "text": "轴心国在<南海>、<阿拉伯海>或<南太平洋>建设海军时触发：消灭此海军。",
+    "text": "轴心国在<南海>或<阿拉伯海>建设海军时触发：消灭此海军。",
     "tension": 0
   },
   {
@@ -982,5 +982,23 @@
     "type": "事件",
     "name": "罗斯福成立生产管理部",
     "text": "从你的牌库或弃牌堆任选1张状态卡打出。"
+  },
+  {
+    "id": "special_110",
+    "sourceIndex": 110,
+    "deckOwner": "united_states",
+    "country": "united_states",
+    "type": "事件",
+    "name": "战区移动",
+    "text": "收回版图上的任意数量美国陆军及最多1支美国海军，然后以任意顺序重新建设这些部队。"
+  },
+  {
+    "id": "neutrality_soviet_union_status",
+    "sourceIndex": -1,
+    "deckOwner": "soviet_union",
+    "country": "soviet_union",
+    "type": "历史",
+    "name": "混乱的政局",
+    "text": "开局正面朝上放置在场上。苏联无法执行【资源重整】。结束【中立】时，弃置此【历史牌】，你可以打出1张手牌中的状态卡，或查看最接近你牌库顶的1张状态卡并选择是否打出。查看后不能改选手牌；若不打出，将该牌放回牌库并洗混牌库。"
   }
 ]

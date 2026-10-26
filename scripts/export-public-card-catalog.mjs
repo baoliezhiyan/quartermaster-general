@@ -21,7 +21,7 @@ for(const balance of [false,true]){
     const nums=counts.map((n,i)=>n+(balance&&seat==='italy'&&[2,3].includes(i)?1:0));
     lines.push(`| ${basic.COUNTRY_NAMES[seat]} | ${nums.join(' | ')} |`);
   }
-  for(const [title,cards] of [['常规特殊牌',catalog.regularCatalog(balance,false)],['序章牌',catalog.preludeCatalog(balance)],['中立初始牌（仅启用中立时）',catalog.NEUTRALITY_CARDS]]){
+  for(const [title,cards] of [['常规特殊牌',catalog.regularCatalog(balance,false)],['序章牌',catalog.preludeCatalog(balance)],['中立初始牌（仅启用中立时）',catalog.NEUTRALITY_CARDS.map(c=>catalog.specialCard(c.id,balance))]]){
     if(new Set(cards.map(c=>c.id)).size!==cards.length)throw Error(`Duplicate card ID in ${title}`);
     lines.push('',`## ${title}`,'','| 编号 | 内部稳定ID | 所属牌库 | 牌面国家 | 类别 | 名称 | 紧张度 | 卡面文本 |','| --- | --- | --- | --- | --- | --- | --- | --- |');
     for(const c of [...cards].sort((a,b)=>numbering.numberedCatalog(balance).findIndex(n=>n.id===a.id)-numbering.numberedCatalog(balance).findIndex(n=>n.id===b.id)))lines.push('| '+[numbering.catalogCardNumber(c.deckOwner,c.id,balance),c.id,basic.COUNTRY_NAMES[c.deckOwner],basic.COUNTRY_NAMES[c.country],c.type,c.name,c.type==='历史'?c.tension??'—':'—',c.text].map(escape).join(' | ')+' |');

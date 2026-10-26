@@ -18,7 +18,10 @@ it('industry is not triggered by an attack on Ukraine',()=>{
  s.units=[{id:'de-home',country:'germany',type:'army',regionId:'germany'},{id:'de',country:'germany',type:'army',regionId:'eastern_europe'},{id:'su',country:'soviet_union',type:'army',regionId:'ukraine'}];
  const battle:Extract<Effect,{kind:'action'}>={kind:'action',country:'germany',action:'land_battle',label:'攻击乌克兰'};battle.option=boardOptions(s,battle).find(o=>o.defenderId==='su');expect(battle.option).toBeTruthy();
  startResolution(s,'攻击','germany',[battle],[]);
- expect(s.neutrality!.soviet_union.neutral).toBe(false);expect(s.units.some(u=>u.id==='su')).toBe(false);
+ expect(s.neutrality!.soviet_union.neutral).toBe(false);
+ // The new neutrality reward now pauses even without a state in hand.
+ if(s.resolution?.choice?.prompt.startsWith('混乱的政局'))reply(s,[]);
+ expect(s.units.some(u=>u.id==='su')).toBe(false);
  expect(s.resolution?.choice?.options.some(o=>o.label.includes('战时工业东迁'))??false).toBe(false);skip(s);validateState(s);
 });
 it('revealed response remains visible through real command projection and save',()=>{

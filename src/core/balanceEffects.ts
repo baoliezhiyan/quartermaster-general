@@ -8,7 +8,7 @@ import {shuffle} from './basic';
 import {specialCard} from './cardCatalog';
 import {endNeutrality} from './neutrality';
 import {revealPublic,revealDiscardedCards} from './publicHistory';
-const labels:Record<string,string>={'shuffle-deck':'洗混牌库','armament-rebuild':'按军备费用执行陆军建设','italian-ambition':'意大利雄心：选择打出手牌状态，或从牌库打出得分状态','italian-ambition-deck':'从牌库打出最靠顶的得分状态','discard-to-seven':'弃置手牌直至不超过7张','draw-to-seven':'抽牌直至手牌达到7张','draw-bottomed':'抽回等量手牌','end-neutrality':'结束中立','return-source':'将本牌洗入牌库','scry':'检视并排列牌库顶四张牌','scry-top':'排列剩余顶牌','exile-government':'打出流亡政府','relocate-industry':'战时工业东迁','inspect-response':'检视牌库顶十张并暗置响应','inspect-take':'选择剩余检视牌','reveal-response':'公开并选择弃置响应','build-battle-region':'在刚才战斗的地区建设陆军','two-basic-plays':'本回合可标准打出至多两张基本牌','bomber-economy':'选择额外打出的经济战并支付费用'};
+const labels:Record<string,string>={'soviet-neutrality':'混乱的政局：选择状态牌来源','soviet-neutrality-deck':'查看最接近牌库顶的状态牌','advanced-technology':'先进技术迭代：选择一张状态牌加入手牌','shuffle-deck':'洗混牌库','armament-rebuild':'按军备费用执行陆军建设','italian-ambition':'意大利雄心：选择打出手牌状态，或从牌库打出得分状态','italian-ambition-deck':'从牌库打出最靠顶的得分状态','discard-to-seven':'弃置手牌直至不超过7张','draw-to-seven':'抽牌直至手牌达到7张','draw-bottomed':'抽回等量手牌','end-neutrality':'结束中立','return-source':'将本牌洗入牌库','scry':'检视并排列牌库顶四张牌','scry-top':'排列剩余顶牌','exile-government':'打出流亡政府','relocate-industry':'战时工业东迁','inspect-response':'检视牌库顶十张并暗置响应','inspect-take':'选择剩余检视牌','reveal-response':'公开并选择弃置响应','build-battle-region':'在刚才战斗的地区建设陆军','two-basic-plays':'本回合可标准打出至多两张基本牌','bomber-economy':'选择额外打出的经济战并支付费用'};
 export const balanceEffect=(seat:SeatId,op:string,cardId?:string):Effect=>({kind:'balance',seat,op,cardId,label:labels[op]??op});
 /** Dynamic choices expand into the ordinary effect queue; they never bypass response windows. */
 export function applyBalanceEffect(s:GameState,f:ResolutionFrame,e:Extract<Effect,{kind:'balance'}>){
@@ -23,6 +23,18 @@ export function applyBalanceEffect(s:GameState,f:ResolutionFrame,e:Extract<Effec
   else insert([{kind:'choose',seat:e.seat,min:1,max:1,label:'选择移除另一支苏联陆军，再在战斗地区建设陆军',options:s.units.filter(u=>u.country===e.seat&&u.type==='army'&&u.regionId!==e.cardId).map(u=>({id:u.id,label:REGIONS.find(r=>r.id===u.regionId)?.name??u.regionId,effects:[{kind:'remove',unit:{...u},supplied:suppliedUnits(s).has(u.id),cause:'card',label:'移除另一支苏联陆军'},build]}))}]);
   break;
  }
+ case 'soviet-neutrality':insert([{kind:'choose',seat:e.seat,min:0,max:1,label:'混乱的政局：打出手牌状态，或查看牌库中最靠顶的状态；查看后不能改选手牌',options:[
+  {id:'hand',label:'打出手牌中的一张状态牌',effects:[{kind:'extraPlay',seat:e.seat,from:'hand',filter:'状态',allowSkip:true,label:'选择一张手牌状态打出'}]},
+  ...(deck.drawPile.some(c=>specialCard(c.definitionId,c.balance)?.type==='状态')?[{id:'deck',label:'查看最接近牌库顶的状态牌',effects:[next('soviet-neutrality-deck')]}]:[])
+ ]}]);break;
+ case 'soviet-neutrality-deck':{
+  const card=deck.drawPile.find(c=>specialCard(c.definitionId,c.balance)?.type==='状态');
+  // Viewing commits the source choice. A later decline only shuffles the deck.
+  f.committed=true;f.rollback=undefined;f.extraRollback=undefined;
+  if(card)insert([{kind:'extraPlay',seat:e.seat,from:'drawPile',filter:'状态',onlyCardIds:[card.id],allowSkip:true,returnOnSkip:true,shuffleOnSkip:true,label:'混乱的政局：是否打出查看的状态牌？不打出则放回并洗混牌库'}]);
+  break;
+ }
+ case 'advanced-technology':insert([{kind:'choose',seat:e.seat,min:1,max:1,label:'先进技术迭代：选择一张状态牌加入手牌',options:(['drawPile','discardPile'] as const).flatMap(from=>deck[from].filter(c=>specialCard(c.definitionId,c.balance)?.type==='状态').map(c=>({id:c.id,label:c.definitionId,effects:[{kind:'cards' as const,seat:e.seat,from,to:'hand' as const,allowedIds:[c.id],min:1,max:1,selectedIds:[c.id],label:'将所选状态牌加入手牌'},next('shuffle-deck')]})))}]);break;
  case 'shuffle-deck':shuffle(deck.drawPile,s);break;
  case 'italian-ambition':insert([{kind:'choose',seat:e.seat,min:1,max:1,label:'意大利雄心：选择打出状态的方式',options:[
   {id:'hand',label:'打出手牌中的一张状态牌',effects:[{kind:'extraPlay',seat:e.seat,from:'hand',filter:'状态',label:'意大利雄心：选择并打出一张手牌中的状态牌'}]},

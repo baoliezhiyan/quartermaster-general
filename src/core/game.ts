@@ -1,3 +1,4 @@
+import {rememberPublicDiscards,publicDiscard} from './publicHistory';
 import {fact} from './factObserver';
 import {nextUnitId,replayBoundary} from './replayHooks';
 import {airActionOptions,hasStandardPlay} from './phaseAvailability';
@@ -66,7 +67,7 @@ function applyPhase(state: GameState, phase: Phase) {
     const removed = unsuppliedForPhase(state,state.activeSeat);
     const details = state.units.filter(u => removed.includes(u.id)).map(u => `${COUNTRY_NAMES[u.country]}（${REGION_BY_ID[u.regionId].name}）`);
     if(state.mode!=='BASIC_DEBUG'&&removed.length) {
-      startResolution(state,'补给清除',state.activeSeat,state.units.filter(u=>removed.includes(u.id)).map(unit=>({kind:'remove',unit:{...unit},supplied:false,cause:'supply',label:`补给清除：${COUNTRY_NAMES[unit.country]} · ${REGION_BY_ID[unit.regionId].name}`})),[]);
+      startResolution(state,'补给清除',state.activeSeat,state.units.filter(u=>removed.includes(u.id)).sort((a,b)=>Number(a.type==='air')-Number(b.type==='air')).map(unit=>({kind:'remove',unit:{...unit},supplied:false,cause:'supply',label:`补给清除：${COUNTRY_NAMES[unit.country]} · ${REGION_BY_ID[unit.regionId].name}`})),[]);
     }else state.units = state.units.filter(u => !removed.includes(u.id));
     log(state,'SUPPLY_CLEARED',`${phaseCountries(state.activeSeat).map(c => COUNTRY_NAMES[c]).join('、')}统一补给检查：${removed.length ? `移除 ${details.join('、')}` : '全部部队有补给'}。`);
   }
@@ -228,7 +229,7 @@ export function transition(state: GameState | null, command: Command): Transitio
   const result=transitionInternal(state,command);
   if(result.ok&&result.state!==state&&!['SET_VIEW','ACK_RESPONSE_NOTICE','SET_CARD_RESPONSE'].includes(command.type))checkNeutralitySupply(result.state);
   if(result.ok&&result.state.neutralityStatusPending&&!result.state.resolution?.running)startResolution(result.state,'中立规则参战结算',result.state.activeSeat,[{kind:'trace',label:'参战状态牌结算完成'}],[]);
-  if(result.ok&&result.state!==state){const s=result.state;concealPublic(s,Object.values(s.decks).flatMap(d=>[...d.hand,...d.drawPile,...d.faceDown.filter(c=>!s.faceUpResponseIds?.includes(c.id)),...d.removed]).map(c=>c.id));}
+  if(result.ok&&result.state!==state){const s=result.state;for(const seat of Object.keys(state?.decks??{}) as SeatId[]){const cards=publicDiscard(state!,seat);if(cards.length)(s.publicDiscardHistory??={})[seat]=[...new Map([...cards,...(s.publicDiscardHistory?.[seat]??[])].map(c=>[c.id,c])).values()];}rememberPublicDiscards(s);concealPublic(s,Object.values(s.decks).flatMap(d=>[...d.hand,...d.drawPile,...d.faceDown.filter(c=>!s.faceUpResponseIds?.includes(c.id)),...d.removed]).map(c=>c.id));}
   return result;
 }
 function transitionInternal(state: GameState | null, command: Command): Transition {

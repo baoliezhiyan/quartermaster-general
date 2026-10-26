@@ -108,3 +108,15 @@ export function recordingPrefix(old:Recording,digest:string):Recording {
  records.forEach((r,i)=>{records[i]={...r,seq:i} as any;});records[0]={...records[0],recordingRevision:(records[0] as Header).recordingRevision+1} as Header;
  return {records,groupStarts:old.groupStarts,cursors:Object.fromEntries(Object.entries(old.cursors).filter(([,c])=>{const n=c.groupId?old.records.findIndex(r=>r.type==='action_group'&&r.groupId===c.groupId):c.seq;return n<targetIndex||n===targetIndex&&c.order<=cursor.order;}).map(([key,c])=>[key,{...c,seq:c.groupId?records.findIndex(r=>r.type==='action_group'&&r.groupId===c.groupId):c.seq}]))};
 }
+
+/** Preserve the prior prefix even when GM edits during a suspended choice. */
+export async function recordSceneEdit(old:Recording|undefined,base:GameState,next:GameState):Promise<Recording>{
+ const r=old?{...old,records:[...old.records],cursors:{...old.cursors}}:await createRecording(base);
+ const beforeHash=await stateHash(base),last=r.records.at(-1);
+ if(last?.type==='action_group'&&last.status==='pending'){
+  const {frontier,...prior}=last;r.records[r.records.length-1]={...prior,status:'complete',afterHash:beforeHash};
+ }
+ const g:ActionGroup={type:'action_group',seq:r.records.length,groupId:id(),stage:base.prelude?.active?'prelude':base.phase==='SETUP'?'opening':'formal',round:base.round,
+ root:{actionId:id(),kind:'editor_change',decisionSeat:base.activeSeat,input:{type:'EDITOR_STATE',beforeHash,state:snapshot(next) as unknown as import('./contract').ObjectData},choices:[],interventions:[],summary:'GM 修改场景'},status:'complete',afterHash:await stateHash(next)};
+ r.records.push(g);r.cursors[g.afterHash!]={seq:g.seq,groupId:g.groupId,order:0};return r;
+}

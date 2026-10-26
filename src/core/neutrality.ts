@@ -47,7 +47,7 @@ export function endNeutrality(s:GameState,seat:NeutralSeat,reason:string){
  // The rule effect belongs to the first entry into the war, never to recycling the card.
  for(const zone of ['active','resolving'] as const){const index=d[zone].findIndex(c=>c.id===cardId);if(index>=0){const cards=d[zone].splice(index,1);d.discardPile.push(...cards);revealPublic(s,cards);}}
  if(seat==='united_states'){s.scores[seat]+=4;publicRecord(s,seat,`美国弃置【孤立主义】，获得 4 分。`);}
- else {s.neutralityStatusPending=true;publicRecord(s,seat,'苏联弃置【混乱的政局】，可以打出一张手牌中的状态牌。');}
+ else {s.neutralityStatusPending=true;publicRecord(s,seat,s.rules?.balanceEnabled?'苏联弃置【混乱的政局】，可以打出手牌状态，或查看最靠近牌库顶的状态并决定是否打出。':'苏联弃置【混乱的政局】，可以打出一张手牌中的状态牌。');}
  fact(s,'neutrality_ended','结束中立',{seat,reason});
  return true;
 }

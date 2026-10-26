@@ -63,7 +63,7 @@ export function GuidedPrompt({state,selected,toggle,focusCard,playCardId,playTar
  }
  if(c.kind==='EXTRA_CARD'&&feeEffect?.kind==='extraPlay'&&feeEffect.returnOnSkip&&c.options.length===1){
   const option=c.options[0],card=choiceCard(state,option);
-  return <DraggableWindow className="guided-sort-window" role="dialog" aria-label="是否打出翻出的卡牌"><p>是否打出这张牌？</p>{card&&<div className="hand-card"><CardFace card={card}/></div>}<div><button disabled={busy} onClick={()=>choose([option.id])}>确认打出</button><button disabled={busy} onClick={()=>choose([])}>放回牌库顶</button></div></DraggableWindow>;
+  return <DraggableWindow className="guided-sort-window" role="dialog" aria-label="是否打出翻出的卡牌"><p>是否打出这张牌？</p>{card&&<div className="hand-card"><CardFace card={card}/></div>}<div><button disabled={busy} onClick={()=>choose([option.id])}>确认打出</button><button disabled={busy} onClick={()=>choose([])}>{feeEffect.shuffleOnSkip?'不打出，放回并洗混牌库':'放回牌库顶'}</button></div></DraggableWindow>;
  }
 
  return <>

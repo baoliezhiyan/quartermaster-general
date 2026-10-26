@@ -658,7 +658,7 @@
     "country": "germany",
     "type": "军备",
     "name": "88毫米防空炮",
-    "text": "在你的陆军被攻击时触发：攻击方可弃置3张手牌；否则，本次战斗中该陆军不会被移除。",
+    "text": "在你的陆军被攻击时触发：攻击方须弃置3张手牌；手牌不足的数量改为弃置其牌库顶的牌。",
     "prelude": true,
     "catalogId": "DE-P009"
   },
@@ -1265,7 +1265,7 @@
     "country": "united_kingdom",
     "type": "军备",
     "name": "Z 舰队",
-    "text": "轴心国在<南海>、<阿拉伯海>或<南太平洋>建设海军时触发：消灭此海军。",
+    "text": "轴心国在<南海>或<阿拉伯海>建设海军时触发：消灭此海军。",
     "tension": 0,
     "prelude": true,
     "catalogId": "UK-P011"
@@ -2707,7 +2707,7 @@
     "country": "soviet_union",
     "type": "历史",
     "name": "混乱的政局",
-    "text": "开局正面朝上放置在场上。苏联无法执行【资源重整】。结束【中立】时，弃置此【历史牌】，你可以打出1张状态卡。",
+    "text": "开局正面朝上放置在场上。苏联无法执行【资源重整】。结束【中立】时，弃置此【历史牌】，你可以打出1张手牌中的状态卡，或查看最接近你牌库顶的1张状态卡并选择是否打出。查看后不能改选手牌；若不打出，将该牌放回牌库并洗混牌库。",
     "prelude": true,
     "catalogId": "SU-P001"
   },
@@ -3938,7 +3938,7 @@
     "country": "united_states",
     "type": "事件",
     "name": "战区移动",
-    "text": "收回版图上的所有美国陆军，然后依次重新建设这些陆军。",
+    "text": "收回版图上的任意数量美国陆军及最多1支美国海军，然后以任意顺序重新建设这些部队。",
     "prelude": false,
     "catalogId": "US-R028"
   },
@@ -3954,17 +3954,6 @@
     "catalogId": "US-R029"
   },
   {
-    "id": "special_258",
-    "sourceIndex": 258,
-    "deckOwner": "united_states",
-    "country": "united_states",
-    "type": "事件",
-    "name": "先进技术迭代",
-    "text": "从你的牌库或弃牌堆任选1张状态卡打出。",
-    "prelude": false,
-    "catalogId": "US-R030"
-  },
-  {
     "id": "special_260",
     "sourceIndex": 260,
     "deckOwner": "united_states",
@@ -3973,7 +3962,7 @@
     "name": "罗斯福成立生产管理部",
     "text": "从你的牌库或弃牌堆任选1张状态卡打出。",
     "prelude": false,
-    "catalogId": "US-R031"
+    "catalogId": "US-R030"
   },
   {
     "id": "special_99",
@@ -3984,7 +3973,7 @@
     "name": "SBD 无畏式俯冲轰炸机",
     "text": "若距离<日本>两个地区以内存在美国海军，日本须弃置牌库顶的4张牌。",
     "prelude": false,
-    "catalogId": "US-R032"
+    "catalogId": "US-R031"
   },
   {
     "id": "special_100",
@@ -3995,7 +3984,7 @@
     "name": "燃烧弹轰炸",
     "text": "若距离某轴心国的大本营一个地区以内存在美国陆军或海军，该轴心国须弃置牌库顶的7张牌。",
     "prelude": false,
-    "catalogId": "US-R033"
+    "catalogId": "US-R032"
   },
   {
     "id": "special_101",
@@ -4006,7 +3995,7 @@
     "name": "B-29 超级堡垒",
     "text": "若距离<日耳曼>三个地区以内存在美国陆军，德国须弃置牌库顶的5张牌。",
     "prelude": false,
-    "catalogId": "US-R034"
+    "catalogId": "US-R033"
   },
   {
     "id": "special_102",
@@ -4017,7 +4006,7 @@
     "name": "B-26 掠夺者",
     "text": "若距离某轴心国的大本营三个地区以内存在美国陆军，该轴心国须弃置牌库顶的4张牌。",
     "prelude": false,
-    "catalogId": "US-R035"
+    "catalogId": "US-R034"
   },
   {
     "id": "special_103",
@@ -4028,7 +4017,7 @@
     "name": "B-24 解放者",
     "text": "若距离<意大利>两个地区以内存在美国陆军，意大利须弃置牌库顶的4张牌。",
     "prelude": false,
-    "catalogId": "US-R036"
+    "catalogId": "US-R035"
   },
   {
     "id": "special_104",
@@ -4039,7 +4028,7 @@
     "name": "轰炸东京",
     "text": "若距离<日本>3 个区域内有处于补给状态的美国海军，日本须弃置其牌库顶的1张牌。美国获得3分。",
     "prelude": false,
-    "catalogId": "US-R037"
+    "catalogId": "US-R036"
   },
   {
     "id": "special_105",
@@ -4050,7 +4039,7 @@
     "name": "石油禁运",
     "text": "德国、意大利、日本须各自移除1支部队，或弃置其牌库顶的2张牌。",
     "prelude": false,
-    "catalogId": "US-R038"
+    "catalogId": "US-R037"
   },
   {
     "id": "special_106",
@@ -4061,7 +4050,7 @@
     "name": "潜艇切断日本运输线",
     "text": "距离<日本>2个区域内每有1支美国海军，日本须弃置其牌库顶的2张牌。",
     "prelude": false,
-    "catalogId": "US-R039"
+    "catalogId": "US-R038"
   },
   {
     "id": "special_116",
@@ -4072,7 +4061,7 @@
     "name": "伦敦上空的鹰",
     "text": "在你的空军阶段开始时打出：英国部署1支空军。",
     "prelude": false,
-    "catalogId": "US-R040"
+    "catalogId": "US-R039"
   },
   {
     "id": "special_117",
@@ -4083,7 +4072,7 @@
     "name": "王牌飞行员帕皮·博因顿",
     "text": "在你的计分阶段开始时打出：弃置牌库顶的1张牌，在<中太平洋>或其相邻地区部署1支空军。",
     "prelude": false,
-    "catalogId": "US-R041"
+    "catalogId": "US-R040"
   },
   {
     "id": "special_118",
@@ -4094,7 +4083,7 @@
     "name": "地毯式轰炸",
     "text": "当你发起战斗时打出：可弃置1张【经济战卡】，在相同的区域再次发起战斗。",
     "prelude": false,
-    "catalogId": "US-R042"
+    "catalogId": "US-R041"
   },
   {
     "id": "special_119",
@@ -4105,7 +4094,7 @@
     "name": "美国陆军游骑兵",
     "text": "当你部署或调度空军时打出：弃置牌库顶的1张牌，消灭1支邻接于该空军的敌方陆军。",
     "prelude": false,
-    "catalogId": "US-R043"
+    "catalogId": "US-R042"
   },
   {
     "id": "special_120",
@@ -4116,7 +4105,7 @@
     "name": "太平洋基地",
     "text": "在你的计分阶段开始时打出：弃置牌库顶的1张牌，在<中太平洋>的相邻地区征召陆军。",
     "prelude": false,
-    "catalogId": "US-R044"
+    "catalogId": "US-R043"
   },
   {
     "id": "special_121",
@@ -4127,7 +4116,7 @@
     "name": "P-51 野马式战斗机",
     "text": "当你打出【经济战卡】时打出：距离目标国家的大本营2地区内，每有1支美国空军，目标须弃置的卡牌数加1。",
     "prelude": false,
-    "catalogId": "US-R045"
+    "catalogId": "US-R044"
   },
   {
     "id": "special_122",
@@ -4138,7 +4127,7 @@
     "name": "我们的政治哲学",
     "text": "在你的弃牌阶段开始时打出：弃置牌库顶的2张牌，英国从其弃牌堆选取1张【响应卡】并暗置。",
     "prelude": false,
-    "catalogId": "US-R046"
+    "catalogId": "US-R045"
   },
   {
     "id": "special_123",
@@ -4149,7 +4138,7 @@
     "name": "纳瓦霍族加密通讯员",
     "text": "在你的出牌阶段开始时打出：将1张【增强卡】暗置于桌面上，此【增强卡】可如同【响应卡】一般触发（需满足卡面打出条件）",
     "prelude": false,
-    "catalogId": "US-R047"
+    "catalogId": "US-R046"
   },
   {
     "id": "special_124",
@@ -4159,6 +4148,17 @@
     "type": "增强",
     "name": "沉睡的巨人",
     "text": "当你在任意<太平洋>海域建设海军时打出：弃置牌库顶的1张牌，在该海军的相邻地区建设1支海军或陆军。",
+    "prelude": false,
+    "catalogId": "US-R047"
+  },
+  {
+    "id": "special_258",
+    "sourceIndex": 258,
+    "deckOwner": "united_states",
+    "country": "united_states",
+    "type": "增强",
+    "name": "先进技术迭代",
+    "text": "在你的出牌阶段开始时触发：从你的摸牌堆或弃牌堆任选1张【状态卡】置入你的手牌。重洗摸牌堆。",
     "prelude": false,
     "catalogId": "US-R048"
   },
@@ -4175,12 +4175,12 @@
   },
   {
     "id": "neutrality_united_states_status",
-    "sourceIndex": -2,
-    "deckOwner": "united_states",
+    "sourceIndex": -100,
     "country": "united_states",
+    "deckOwner": "united_states",
     "type": "历史",
     "name": "孤立主义",
-    "text": "若美国在弃牌阶段不弃牌，扣1分。结束【中立】时，弃置此【历史牌】，获得4分。",
+    "text": "开局正面朝上放置在场上。美国不能在<莫斯科>及其相邻地区、<西欧>、<不列颠群岛>建设或征召部队。若美国在弃牌阶段不弃牌，扣1分。结束中立时，弃置此历史牌，获得4分。",
     "prelude": true,
     "catalogId": "US-P001"
   },

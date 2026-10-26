@@ -7,12 +7,12 @@ export type Effect = { label: string; selectedIds?:readonly string[]; attackNoti
   | { kind:'copyStatus'; seat:SeatId; eventId:string; timing:'Before'|'After'; cardId?:string }
   | { kind:'trace' }
   | { kind:'score'; seat:SeatId; amount:number }
-  | { kind:'draw' | 'deckTop' | 'forceHand'; seat:SeatId; count:number }
+  | { kind:'draw' | 'deckTop' | 'forceHand'; seat:SeatId; count:number; deckShortfall?:boolean }
   | { kind:'cancel' }
   | { kind:'signal'; tag:string; completedFrameId?:string }
   | { kind:'reallocate'; seat:SeatId }
   | { kind:'choose'; autoSingle?:boolean; seat:SeatId; min:number; max:number; options:{id:string;label:string;effects:Effect[]}[] }
-  | { kind:'rebuild'; country:CountryId; withdrawnIds?:string[] }
+  | { kind:'rebuild'; country:CountryId; withdrawnIds?:string[]; selective?:boolean; withdrawnUnits?:Unit[]; remaining?:{army:number;navy:number} }
   | { kind:'remove'; unit:Unit; supplied:boolean; cause:string }
   | { kind:'flag'; flag:'protected'|'battleProtected'|'supplied'|'supplyCountries'|'supplyRegions'|'suppressed'|'noAirDefense'; ids:string[] }
   | { kind:'frameChange'; frameId:string; finalZone?:FinalZone; cancel?:boolean }
@@ -20,7 +20,7 @@ export type Effect = { label: string; selectedIds?:readonly string[]; attackNoti
   | { kind:'randomReturn'; seat:SeatId; countFrom:string }
   | { kind:'randomPlay'; seat:SeatId; group?:SeatId[] }
   | { kind:'cards'; publicDiscard?:boolean; allowedIds?:string[]; requirements?:string[]; strictFee?:boolean; random?:boolean; remember?:string; seat:SeatId; from:'hand'|'drawPile'|'discardPile'|'faceDown'|'active'; to:FinalZone; min:number; max:number; filter?:string; shuffle?:boolean; bottom?:boolean; topCount?:number; order?:boolean }
-  | { kind:'extraPlay'; allowSkip?:boolean; returnOnSkip?:boolean; onlyCardIds?:string[]; onlyRemember?:string; seat:SeatId; from:'hand'|'drawPile'|'discardPile'; filter?:string; mention?:string; selectedCardId?:string; targets?:string[]; indices?:number[]; shuffle?:boolean }
+  | { kind:'extraPlay'; shuffleOnSkip?:boolean; allowSkip?:boolean; returnOnSkip?:boolean; onlyCardIds?:string[]; onlyRemember?:string; seat:SeatId; from:'hand'|'drawPile'|'discardPile'; filter?:string; mention?:string; selectedCardId?:string; targets?:string[]; indices?:number[]; shuffle?:boolean }
   | { kind:'action'; destroyedType?:Unit['type']; airMode?:'deploy'|'supremacy'; decisionSeat?:SeatId; destroyTypes?:readonly ('army'|'navy'|'air')[]; recycledId?:string; trainingRecycleId?:string; bindAs?:string; fromBinding?:string;bindAttacker?:boolean;boundAttackerId?:string; resultUnitId?:string; country:CountryId; action:'build_army'|'build_navy'|'recruit_army'|'recruit_navy'|'land_battle'|'sea_battle'|'air_power'|'air_deploy'|'air_move'|'destroy'; regions?:string[]; newOnly?:boolean; targetIds?:string[]; option?:BasicOption; selection?:{regionId?:string;defenderId?:string;attackerId?:string}; }
 );
 export type FinalZone = 'discardPile' | 'active' | 'hand' | 'drawPile' | 'removed' | 'faceDown';
@@ -83,7 +83,7 @@ export interface ChoiceRequest {
   /** A merged entry retains all original event/rule bindings. */
   mergedTriggers?:Record<string,{windowId:string;ruleId:string}[]>;
   triggerTargets?:Record<string,{windowId:string;ruleId:string}>;
-  id:string; kind:'BUILD_ORDER' | 'EFFECT_DECISION' | 'AIR_DEFENSE' | 'AIR_INTERCEPT' | 'TRIGGER' | 'ORDER_MANDATORY_TRIGGERS' | 'FORCE_HAND' | 'PAY_COST' | 'ACTION' | 'RELOCATE' | 'REALLOCATE' | 'EFFECTS' | 'SELECT' | 'CARDS' | 'EXTRA_CARD' | 'EXTRA_TARGET' | 'EXTRA_EFFECTS';
+  id:string; kind:'WITHDRAW' | 'BUILD_ORDER' | 'EFFECT_DECISION' | 'AIR_DEFENSE' | 'AIR_INTERCEPT' | 'TRIGGER' | 'ORDER_MANDATORY_TRIGGERS' | 'FORCE_HAND' | 'PAY_COST' | 'ACTION' | 'RELOCATE' | 'REALLOCATE' | 'EFFECTS' | 'SELECT' | 'CARDS' | 'EXTRA_CARD' | 'EXTRA_TARGET' | 'EXTRA_EFFECTS';
   canSkip?:boolean;
   preselect?:boolean;
   requirements?:string[];

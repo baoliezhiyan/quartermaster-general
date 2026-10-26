@@ -1,3 +1,5 @@
+import {recordSceneEdit} from '../actionReplay/recorder';
+import {rememberPublicDiscards} from '../core/publicHistory';
 import {readHistorySave,restoreHistoryTail,turnPoint} from '../actionReplay/historySave';
 import {stateHash} from '../actionReplay/state';
 import {captureTransition,recordCommand,restoreRecording,recordingPrefix} from '../actionReplay/recorder';
@@ -255,7 +257,7 @@ export class LocalGameController implements GameController {
       validateState(value);
       if(value.gameId!==this.state.gameId||value.revision!==this.state.revision)throw new Error('局面已更新，请重新编辑。');
       // The editor exposes scores, unit positions and card zones only; timing stays authoritative.
-      const next=structuredClone(this.state);next.scores=value.scores;next.units=value.units;next.decks=value.decks;next.randomState=value.randomState;next.pendingAir=next.pendingAir.filter(id=>next.units.some(u=>u.id===id&&u.type==='air'));
+      const next=structuredClone(this.state);rememberPublicDiscards(next);next.scores=value.scores;next.units=value.units;next.decks=value.decks;next.randomState=value.randomState;next.pendingAir=next.pendingAir.filter(id=>next.units.some(u=>u.id===id&&u.type==='air'));
       if(next.prelude&&value.prelude){next.prelude.tension=value.prelude.tension;next.prelude.decks=value.prelude.decks;}
       for(const seat of Object.keys(next.decks) as (keyof typeof next.decks)[]){
         if(JSON.stringify(next.decks[seat].resolving)!==JSON.stringify(this.state.decks[seat].resolving))throw new Error('正在结算的卡牌不能直接移动。');
@@ -276,7 +278,7 @@ export class LocalGameController implements GameController {
       if(options?.endPrelude)finishPrelude(next);
       validateState(next);
       const session=measure('clone_session',()=>copySession(this.session!));session.undo.push(structuredClone(this.state));
-      this.preserveSlotHistories(session);session.historyPoints=[];session.actionRecording=await restoreRecording(session.actionRecording,next,true);delete session.matchRecording;
+      this.preserveSlotHistories(session);session.actionRecording=await recordSceneEdit(session.actionRecording,this.state,next);delete session.matchRecording;
       this.restore(session,next,'GM 编辑局面');await this.commit(session);
     });
   };

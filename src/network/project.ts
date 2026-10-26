@@ -1,3 +1,4 @@
+import {publicDiscard} from '../core/publicHistory';
 import {specialCard} from '../core/cardCatalog';
 import {waitingResponseSeats} from '../core/resolution';
 import {SEATS} from '../core';
@@ -18,7 +19,7 @@ export function publicDeckViews(source:ReadState):GameState['decks'] {
  return structuredClone(Object.fromEntries(SEATS.map(seat=>{const d=source.decks[seat];return [seat,{...d,
   hand:hiddenCards(d.hand.length,seat,'hand'),drawPile:hiddenCards(d.drawPile.length,seat,'deck'),
   faceDown:d.faceDown.map((c,i)=>faceUp.has(c.id)?c:hiddenCards(1,seat,'response:'+i)[0]),
-  discardPile:d.discardPile.filter(c=>known.has(c.id)),removed:[],resolving:d.resolving.filter(c=>known.has(c.id))}];}))) as unknown as GameState['decks'];
+  discardPile:publicDiscard(source,seat),removed:[],resolving:d.resolving.filter(c=>known.has(c.id))}];}))) as unknown as GameState['decks'];
 }
 export type PublicViewParts=Pick<GameState,'units'|'scores'|'publicLog'|'rules'|'setupCompleted'|'publicDiscardCounts'|'publicArmamentCounts'>;
 export function publicViewParts(source:ReadState):PublicViewParts {
@@ -49,7 +50,7 @@ export function projectState(source:ReadState|null,access:RoomAccess,view:SeatId
  for(const seat of SEATS){
   const d=s.decks[seat];
   if(seat!==own&&publicDecks){s.decks[seat]=publicDecks[seat];continue;}
-  if(seat!==own){d.hand=hidden(d.hand.length,seat,'hand');d.drawPile=hidden(d.drawPile.length,seat,'deck');d.faceDown=d.faceDown.map((c,i)=>source.faceUpResponseIds?.includes(c.id)?c:hidden(1,seat,'response:'+i)[0]);d.discardPile=d.discardPile.filter(c=>known.has(c.id));d.removed=[];d.resolving=d.resolving.filter(c=>known.has(c.id));}
+  if(seat!==own){d.hand=hidden(d.hand.length,seat,'hand');d.drawPile=hidden(d.drawPile.length,seat,'deck');d.faceDown=d.faceDown.map((c,i)=>source.faceUpResponseIds?.includes(c.id)?c:hidden(1,seat,'response:'+i)[0]);d.discardPile=publicDiscard(source,seat);d.removed=[];d.resolving=d.resolving.filter(c=>known.has(c.id));}
   else d.drawPile.sort((a,b)=>a.definitionId.localeCompare(b.definitionId)||a.id.localeCompare(b.id));
  }
  if(s.prelude){

@@ -1,0 +1,118 @@
+import {createRequire} from 'node:module';
+import {spawn} from 'node:child_process';
+import {mkdir,stat} from 'node:fs/promises';
+import {resolve} from 'node:path';
+const require=createRequire(import.meta.url);
+const {chromium}=require('C:/Users/1/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright');
+const port=4338,root=resolve('.');
+const server=spawn(process.execPath,['scripts/multiplayer-server.mjs'],{cwd:root,windowsHide:true,env:{...process.env,QM_PORT:String(port),QM_DATA_DIR:resolve('outputs/history-browser-'+Date.now())},stdio:'pipe'});
+let output='',browser;server.stdout.on('data',s=>output+=s);server.stderr.on('data',s=>output+=s);
+const assert=(v,m)=>{if(!v)throw Error(m);};
+try{
+ for(let i=0;i<100;i++){try{if((await fetch(`http://127.0.0.1:${port}/`)).ok)break;}catch{}if(server.exitCode!==null)throw Error(output);await new Promise(r=>setTimeout(r,100));}
+ browser=await chromium.launch({executablePath:'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe',headless:true});
+ const page=await browser.newPage({viewport:{width:1500,height:1000},acceptDownloads:true,hasTouch:true,isMobile:true}),errors=[];page.on('pageerror',e=>errors.push(e.message));
+ await page.goto(`http://127.0.0.1:${port}/`);await page.getByRole('textbox').first().fill('存档验收');await page.getByRole('button',{name:'创建用户并进入',exact:true}).click();
+ await page.locator('button.seat').filter({hasText:'GM'}).click();
+ await page.getByText('存档、读档与备份',{exact:true}).click();
+ assert(await page.getByText('回放查看',{exact:true}).count()===0,'Old replay tab still exists');
+ let largeUploadHeader=false;page.on('request',r=>{if(r.headers()['x-qm-history-import']==='1')largeUploadHeader=true;});
+ await page.getByLabel('导入完整存档',{exact:true}).setInputFiles('outputs/match-log-samples/client-prelude-round1.jsonl');
+ await page.getByText('已导入历史文件。',{exact:true}).first().waitFor({timeout:60000});
+ assert(largeUploadHeader,'Missing authenticated history upload route');
+ assert((await page.getByLabel('存档回合').locator('option').count())>0,'Missing rebuilt slots');
+ const portrait=await browser.newContext({viewport:{width:390,height:844},hasTouch:true,isMobile:true});const entry=await portrait.newPage();await entry.goto(`http://127.0.0.1:${port}/`);await entry.getByRole('textbox').first().fill('方向检查');assert(await entry.locator('.rotate-device').count()===0,'Entry blocked by orientation');await portrait.close();
+ const source=page.url();
+ const mobile=await browser.newContext({viewport:{width:844,height:390},hasTouch:true,isMobile:true,acceptDownloads:true});
+ const phone=await mobile.newPage();phone.on('pageerror',e=>errors.push(e.message));await phone.goto(source);await phone.locator('.map-viewport').waitFor();
+ assert(await phone.locator('.record-dock').isHidden(),'Phone sidebar must start closed');
+ for(const size of [{width:667,height:375},{width:844,height:390},{width:915,height:412},{width:1024,height:768}]){
+  await phone.setViewportSize(size);await phone.waitForTimeout(150);
+  const boxes=await phone.evaluate(()=>Object.fromEntries(['.map-toolbar','.map-viewport','.map-footer'].map(s=>{const r=document.querySelector(s).getBoundingClientRect();return [s,{x:r.x,y:r.y,w:r.width,h:r.height,b:r.bottom}]})));
+  assert(boxes['.map-footer'].b<=size.height+1,'Footer clipped '+JSON.stringify({size,boxes}));
+  assert(boxes['.map-viewport'].h>=80,'No map space');
+  assert(boxes['.map-toolbar'].h<=52,'Toolbar wrapped');
+ }
+ await phone.setViewportSize({width:844,height:390});await phone.waitForTimeout(100);
+ // Dismiss actual historical result notices before operating the map.
+ for(let i=0;i<20;i++){const ack=phone.locator('button:enabled').filter({hasText:/^知道了$/});if(!await ack.count()){await phone.waitForTimeout(150);continue;}await ack.first().click({timeout:2000}).catch(()=>{});await phone.waitForTimeout(150);}
+ await phone.getByRole('button',{name:'对局记录',exact:true}).click();const logWidth=await phone.locator('.record-dock .public-game-log').evaluate(el=>el.clientWidth);assert(logWidth>=145&&logWidth<=180,'Record text column not halved: '+logWidth);await phone.getByLabel('关闭记录侧栏').click();assert(await phone.locator('.record-dock').isHidden(),'Record close failed');
+ await phone.getByRole('button',{name:'对局记录',exact:true}).click();await phone.getByRole('button',{name:'房间聊天',exact:true}).click();await phone.getByLabel('聊天消息').fill('保留草稿');await phone.getByLabel('关闭记录侧栏').click();
+ await page.goto(`http://127.0.0.1:${port}/`);await page.getByRole('textbox').first().fill('聊天发送方');await page.getByRole('button',{name:'创建用户并进入',exact:true}).click();await page.locator('.map-viewport').waitFor();
+ if(await page.locator('.record-dock').isHidden())await page.locator('.record-toggle').click();
+ await page.getByRole('button',{name:'房间聊天',exact:true}).click();await page.getByLabel('聊天消息').fill('手机未读验收');await page.getByRole('button',{name:'发送',exact:true}).click();await phone.locator('.record-toggle .chat-unread').waitFor();
+ await phone.locator('.record-toggle').click();assert(await phone.getByLabel('聊天消息').inputValue()==='保留草稿','Closing drawer lost chat draft');await phone.getByLabel('关闭记录侧栏').click();
+ await phone.getByRole('button',{name:'全卡图鉴',exact:true}).click();const atlas=phone.getByRole('region',{name:'全卡图鉴',exact:true});await atlas.waitFor();assert(await atlas.locator('[data-card-id="build_army"]').count()===1,'Missing atlas');const atlasBox=await atlas.locator('.card-face').first().boundingBox();assert(Math.abs(atlasBox.width-123.2)<.1&&atlasBox.height===180,'Atlas card size differs');await phone.getByRole('button',{name:'全卡图鉴',exact:true}).click();
+ await phone.locator('.record-toggle').click();await phone.locator('.chat-switch').click();
+ await phone.locator('.public-game-log .card-index-link').first().click();
+ const indexBox=await phone.locator('.log-card-dialog .hand-card').boundingBox();assert(Math.abs(indexBox.width-123.2)<.1&&indexBox.height===180,'Log index card size differs');await phone.getByLabel('关闭卡牌索引').click();
+ let checkedPublic=false;
+ for(const country of ['germany','united_kingdom','japan','soviet_union','italy','united_states']){
+  await phone.locator(`.country-record-summary button[data-country="${country}"]`).click();
+  const cards=phone.locator('.public-country-window .hand-card');
+  if(await cards.count()){await phone.locator('.public-country-window').evaluate(el=>el.scrollTop=el.scrollHeight);const closeBox=await phone.getByLabel('关闭公开信息').boundingBox(),panelBox=await phone.locator('.public-country-window').boundingBox();assert(closeBox.y>=panelBox.y&&closeBox.y+closeBox.height<=panelBox.y+panelBox.height,'Close scrolled away');const b=await cards.first().boundingBox();assert(Math.abs(b.width-123.2)<.1&&b.height===180,'Public card size differs');checkedPublic=true;}
+  await phone.getByLabel('关闭公开信息').click();if(checkedPublic)break;
+ }
+ assert(checkedPublic,'Sample lacks public cards');await phone.getByLabel('关闭记录侧栏').click();
+ await phone.getByRole('button',{name:'设置',exact:true}).click();await phone.getByRole('button',{name:'关闭卡图显示',exact:true}).click();
+ assert(await phone.locator('.card-art').count()===0,'Card art remains after toggle');
+ await phone.getByRole('button',{name:'全卡图鉴',exact:true}).click();
+ const textFace=phone.locator('.encyclopedia-grid .card-face').first();
+ assert((await textFace.locator('.card-type-header').innerText()).trim().length>0,'Card type missing');assert(await textFace.locator('.card-type-header').evaluate(el=>getComputedStyle(el).color)!=='rgba(0, 0, 0, 0)','Type invisible');
+ await phone.getByRole('button',{name:'全卡图鉴',exact:true}).click();
+ await phone.getByRole('button',{name:'开启卡图显示',exact:true}).click();
+ assert(await phone.locator('.card-art').count()>0,'Art did not return');await phone.getByRole('button',{name:'设置',exact:true}).click();
+ const center=await phone.evaluate(()=>{const a=document.querySelector('.map-toolbar').getBoundingClientRect(),b=document.querySelector('.map-scoreboard').getBoundingClientRect();return (a.left+a.right-b.left-b.right)/2;});assert(Math.abs(center)<1,'Score not centered');
+ // Collapse the hand so the touch test addresses only the map.
+ const handToggle=phone.locator('.map-panel-buttons button[aria-pressed="true"]').filter({hasText:/手牌/});if(await handToggle.count())await handToggle.first().click();
+ const point=await phone.evaluate(()=>{const r=document.querySelector('.map-viewport').getBoundingClientRect();for(let y=r.top+30;y<r.bottom-20;y+=30)for(let x=r.left+50;x<r.right-40;x+=40){const el=document.elementFromPoint(x,y)?.closest('[data-region-id]');if(el)return {x,y,id:el.getAttribute('data-region-id')};}return null;});
+ assert(point,'No exposed region for tap');await phone.touchscreen.tap(point.x,point.y);await phone.waitForTimeout(100);assert(await phone.locator(`[data-region-id="${point.id}"]`).first().getAttribute('aria-pressed')==='true','Touch tap failed to select region');
+ await phone.getByRole('button',{name:/^查看.*详情$/}).click();await phone.getByRole('dialog',{name:'地区详情',exact:true}).waitFor();await phone.getByLabel('关闭地区详情').click();
+ let mutations=0;phone.on('request',r=>{if(r.url().endsWith('/api/request')&&/"method":"(?:dispatch|undo|editScene|importSave|seekReplay)"/.test(r.postData()??''))mutations++;});
+ const cdp=await mobile.newCDPSession(phone),box=await phone.locator('.map-viewport').boundingBox();
+ const tx=box.x+box.width*.6,ty=box.y+box.height*.55;
+ const before=await phone.locator('.map-viewport').getAttribute('data-zoom');
+ await cdp.send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[{x:tx-25,y:ty,id:1},{x:tx+25,y:ty,id:2}]});
+ await cdp.send('Input.dispatchTouchEvent',{type:'touchMove',touchPoints:[{x:tx-60,y:ty,id:1},{x:tx+60,y:ty,id:2}]});
+ await cdp.send('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});await phone.waitForTimeout(100);
+ assert(Number(await phone.locator('.map-viewport').getAttribute('data-zoom'))>Number(before),'Pinch did not zoom');
+ assert(await phone.locator(`[data-region-id="${point.id}"]`).first().getAttribute('aria-pressed')==='true','Pinch accidentally changed selection');
+ await phone.getByRole('button',{name:'手牌',exact:true}).click();
+ const dock=phone.locator('.table-hand-dock'),handBox=await dock.boundingBox();
+ const sx=handBox.x+handBox.width-80,sy=handBox.y+70;
+ await cdp.send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[{x:sx,y:sy,id:1}]});
+ for(let i=1;i<=5;i++)await cdp.send('Input.dispatchTouchEvent',{type:'touchMove',touchPoints:[{x:sx-i*65,y:sy,id:1}]});
+ await cdp.send('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});await phone.waitForTimeout(200);assert(await dock.evaluate(el=>el.scrollLeft)>0,'Hand swipe did not scroll');
+ const first=phone.locator('.table-hand .card-shell').first(),original=await first.locator('.hand-card').getAttribute('aria-label');
+ assert(await first.locator('.touch-card-detail').count()===0,'Redundant card details button still present');
+ const art=await first.locator('.card-art').evaluate(el=>({fit:getComputedStyle(el).objectFit,max:getComputedStyle(el).maxHeight}));assert(art.fit==='contain'&&art.max==='none','Card art is cropped');
+ await phone.getByRole('button',{name:'整理手牌',exact:true}).click();await first.getByRole('button',{name:'向后移动',exact:true}).click();assert(await phone.locator('.table-hand .card-shell').first().locator('.hand-card').getAttribute('aria-label')!==original,'Touch reorder did not move card');await phone.getByRole('button',{name:'完成整理',exact:true}).click();
+ assert(mutations===0,'Display gestures sent a game mutation');
+ await phone.screenshot({path:'outputs/mobile-hand-v182.png'});
+ await phone.getByRole('button',{name:'手牌',exact:true}).click();
+ for(const label of [/^牌库\(/,/^弃牌堆\(/]){await phone.locator('.map-panel-buttons button').filter({hasText:label}).click();const pane=phone.locator('.catalog-dock:visible');const paneWidth=(await pane.boundingBox()).width;assert(Math.abs(paneWidth-(123.2*5+24+42))<1,'Pile panel width not five cards');const columns=await pane.locator('.card-grid:visible').first().evaluate(el=>getComputedStyle(el).gridTemplateColumns.split(' ').length);assert(columns===5,'Pile column count wrong');const card=phone.locator('.catalog-dock .hand-card:visible').first();const dim=await card.boundingBox();assert(Math.abs(dim.width-123.2)<.1&&dim.height===180,'Pile size differs from hand');await phone.locator('.map-panel-buttons button').filter({hasText:label}).click();}
+ assert(await phone.locator('.world-map').evaluate(el=>getComputedStyle(el).webkitTapHighlightColor)==='rgba(0, 0, 0, 0)','Tap highlight still enabled');
+ await phone.setViewportSize({width:390,height:844});assert(await phone.locator('.rotate-device').count()===0,'Orientation must not block the UI');await phone.locator('.record-toggle').click();await phone.getByLabel('关闭记录侧栏').click();
+ assert(await phone.getByRole('button',{name:'切换横竖屏',exact:true}).count()===0,'Manual rotation remains');
+ await phone.setViewportSize({width:844,height:390});
+ for(const behavior of ['missing','reject']){
+  await phone.evaluate(mode=>{Element.prototype.requestFullscreen=mode==='missing'?undefined:()=>Promise.reject(new Error('Not allowed'));},behavior);
+  await phone.getByRole('button',{name:'设置',exact:true}).click();
+  await phone.getByRole('button',{name:'全屏',exact:true}).click();
+  await phone.locator('.map-page-expanded').waitFor();
+  assert(await phone.getByText('已在页面内展开，浏览器工具栏由系统控制',{exact:true}).count()===0,'Unwanted expansion notice');
+  await phone.getByRole('button',{name:'居中视图',exact:true}).click();
+  const centers=await phone.evaluate(()=>{const v=document.querySelector('.map-viewport').getBoundingClientRect(),m=document.querySelector('.map-sheet').getBoundingClientRect();return {dx:(v.left+v.right-m.left-m.right)/2,dy:(v.top+v.bottom-m.top-m.bottom)/2};});assert(Math.abs(centers.dx)<1&&Math.abs(centers.dy)<1,'Map is not centered');
+  await phone.setViewportSize({width:915,height:412});await phone.waitForTimeout(100);
+  const expanded=await phone.locator('.map-page-expanded').boundingBox();assert(expanded.x===0&&expanded.y===0&&Math.abs(expanded.width-915)<2&&Math.abs(expanded.height-412)<2,'Expanded viewport wrong');
+  await phone.getByRole('button',{name:'退出展开',exact:true}).click();
+  assert(await phone.locator('.map-page-expanded').count()===0,'Cannot exit fallback');
+  await phone.getByRole('button',{name:'设置',exact:true}).click();
+  await phone.setViewportSize({width:844,height:390});
+ }
+ await phone.screenshot({path:'outputs/mobile-v182.png'});
+ console.log('PASS: phone default sidebar, four viewport layouts, visible footer, record drawer, atlas, region tap/details, actual two-touch pinch without selecting, hand swipe, uncropped art and reorder without game mutations; chat unread/draft, portrait viewport remains interactive; fullscreen unavailable/rejected fallback, viewport resize and exit; no manual rotation');
+ await mobile.close();
+ assert((await page.title()).includes('1.8.2'),'Wrong version');
+ assert(errors.length===0,errors.join('\n'));
+}finally{await browser?.close();server.kill();}

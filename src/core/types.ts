@@ -36,6 +36,10 @@ export interface PreludeState {
 }
 export interface GameState {
   unitSerial?:number;
+  /** Read-only archived training metadata; production rules never enable this. */
+  trainingHand?: {version:'ppo-real-hand-v1';captureReplay?:boolean;cardOutcomes?:{id:string;outcome:'resolved'|'cancelled';appliedEffects:number}[]};
+  /** Historical public discards, independent of current private card location. */
+  publicDiscardHistory?: Partial<Record<SeatId,CardInstance[]>>;
   /** Isolated PPO curriculum data; absent in ordinary games. */
   trainingCourse?: {
     version: 'ppo-events-v1' | 'ppo-signals-a2s1-v2'; mode: 'A' | 'B';
