@@ -67,8 +67,11 @@ function applyPhase(state: GameState, phase: Phase) {
     const removed = unsuppliedForPhase(state,state.activeSeat);
     const details = state.units.filter(u => removed.includes(u.id)).map(u => `${COUNTRY_NAMES[u.country]}（${REGION_BY_ID[u.regionId].name}）`);
     if(state.mode!=='BASIC_DEBUG'&&removed.length) {
-      startResolution(state,'补给清除',state.activeSeat,state.units.filter(u=>removed.includes(u.id)).sort((a,b)=>Number(a.type==='air')-Number(b.type==='air')).map(unit=>({kind:'remove',unit:{...unit},supplied:false,cause:'supply',label:`补给清除：${COUNTRY_NAMES[unit.country]} · ${REGION_BY_ID[unit.regionId].name}`})),[]);
-    }else state.units = state.units.filter(u => !removed.includes(u.id));
+      startResolution(state,'补给清除',state.activeSeat,state.units.filter(u=>removed.includes(u.id)).map(unit=>({kind:'remove',unit:{...unit},supplied:false,cause:'supply',label:`补给清除：${COUNTRY_NAMES[unit.country]} · ${REGION_BY_ID[unit.regionId].name}`})),[]);
+    }else {
+      for(const id of removed)removeUnit(state,id);
+      prepareAirChoice(state);
+    }
     log(state,'SUPPLY_CLEARED',`${phaseCountries(state.activeSeat).map(c => COUNTRY_NAMES[c]).join('、')}统一补给检查：${removed.length ? `移除 ${details.join('、')}` : '全部部队有补给'}。`);
   }
   if (phase === 'SCORE') {

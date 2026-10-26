@@ -72,8 +72,9 @@ function calculateSupply(state: ModifierState,linkedRegions:(country:CountryId,a
 }
 export function unsuppliedForPhase(state: ReadState, seat: SeatId): string[] {
   const countries = phaseCountries(seat), supplied = suppliedUnits(state);
+  // Aircraft only relocate after losing their base; they never suffer supply removal.
   // One snapshot for every country in this phase, before any removals.
-  return state.units.filter(u => countries.includes(u.country) && !supplied.has(u.id)).map(u => u.id);
+  return state.units.filter(u => u.type !== 'air' && countries.includes(u.country) && !supplied.has(u.id)).map(u => u.id);
 }
 export function countryScore(state:ReadState,country:CountryId):number{return facts(state).scores[country];}
 function calculateScore(state: ModifierState, country: CountryId): number {

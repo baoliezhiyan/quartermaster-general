@@ -8,6 +8,7 @@ import {publicDiscard,revealPublic,concealPublic,rememberPublicDiscards} from '.
 import {putDiscardedCards} from '../src/core/decks';
 import {projectState,publicDeckViews} from '../src/network/project';
 import {balanceEffect} from '../src/core/balanceEffects';
+import {unsuppliedForPhase} from '../src/core/supply';
 import {fullTrigger} from '../src/core/fullCardTriggers';
 import {LocalGameController} from '../src/controller/LocalGameController';
 import {parseReplay,seal} from '../src/actionReplay/codec';
@@ -31,9 +32,9 @@ for(const selected of ['shown','hidden'])it('reveal response discards '+selected
  const shown=s.faceUpResponseIds![0];answer(s,[selected==='shown'?shown:'hidden']);
  expect(d.discardPile).toHaveLength(1);expect(publicDiscard(s,'japan').map(c=>c.id)).toEqual(selected==='shown'?[shown]:[]);
 });
-for(const reverse of [false,true])it('supply relocation survives a stale queued aircraft removal; reversed='+reverse,()=>{
+for(const reverse of [false,true])it('supply removes only the base and allows aircraft relocation; reversed='+reverse,()=>{
  const s=game();s.units=[{id:'home',country:'germany',type:'army',regionId:'germany'},{id:'lost',country:'germany',type:'army',regionId:'siberia'},{id:'air',country:'germany',type:'air',regionId:'siberia'}];
- // Production supply cleanup must always process bases before their aircraft.
+ expect(unsuppliedForPhase(s,'germany')).toEqual(['lost']);
  if(reverse)s.units.reverse();s.phase='AIR';
  const result=transition(s,{type:'ADVANCE_PHASE',seat:'germany',expectedRevision:s.revision});expect(result.ok).toBe(true);if(!result.ok)return;
  const n=result.state;expect(n.resolution?.choice?.kind).toBe('RELOCATE');answer(n,['germany']);
@@ -67,4 +68,19 @@ it('GM edits preserve history, support before/after and can continue, undo and r
  await mkdir('outputs/match-log-samples',{recursive:true});await writeFile('outputs/match-log-samples/client-gm-edit.jsonl',await c.exportReplay());
  const saved=await c.exportSave(),other=new LocalGameController();await other.importSave(saved);expect(other.getSnapshot()!.scores.italy).toBe(4);
  await c.undo();a=await parseReplay(await c.exportReplay());expect(a.groups.filter(g=>g.root.kind==='editor_change')).toHaveLength(1);
+});
+
+for(const protectedBase of [false,true])it('aircraft survives with a protected base, otherwise returns to reserve without destinations: '+protectedBase,()=>{
+ const s=game();s.units=[{id:'lost',country:'germany',type:'army',regionId:'siberia'},{id:'air',country:'germany',type:'air',regionId:'siberia'}];
+ if(protectedBase)s.turnFlags={protected:['lost'],battleProtected:[],supplied:[],supplyCountries:[],supplyRegions:[],suppressed:[],noAirDefense:false};s.phase='AIR';
+ const r=transition(s,{type:'ADVANCE_PHASE',seat:'germany',expectedRevision:s.revision});expect(r.ok).toBe(true);if(!r.ok)return;
+ expect(r.state.units.some(u=>u.id==='air')).toBe(protectedBase);
+ expect(r.state.units.some(u=>u.id==='lost')).toBe(protectedBase);
+ expect(r.state.events.some(e=>'code' in e&&e.code==='AIR_REMOVED')).toBe(!protectedBase);
+ expect(r.state.pendingAir).toEqual([]);
+});
+it('rejects a direct supply removal of aircraft even when its base is unsupplied',()=>{
+ const s=game();s.units=[{id:'air',country:'germany',type:'air',regionId:'siberia'}];
+ startResolution(s,'obsolete supply removal','germany',[{kind:'remove',unit:{...s.units[0]},supplied:false,cause:'supply',label:'obsolete'}],[]);
+ expect(s.units.map(u=>u.id)).toEqual(['air']);
 });
