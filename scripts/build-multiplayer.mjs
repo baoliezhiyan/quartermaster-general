@@ -1,9 +1,9 @@
 import {mkdir,cp,readFile,writeFile,readdir,stat,rename} from 'node:fs/promises';
-import {join,resolve,dirname} from 'node:path';
+import {join,resolve,dirname,win32} from 'node:path';
 import {createRequire} from 'node:module';
 import {createHash} from 'node:crypto';
 const require=createRequire(import.meta.url),root=resolve('.');
-let previousFolder;try{const previous=JSON.parse(await readFile('releases/multiplayer-latest.json','utf8'));previousFolder=previous.folder;if(previous.previousFolder&&!await stat(join(previous.folder,'data')).catch(()=>null))previousFolder=previous.previousFolder;}catch(e){if(e.code!=='ENOENT')throw e;}
+let previousFolder;try{const previous=JSON.parse(await readFile('releases/multiplayer-latest.json','utf8'));previousFolder=win32.basename(previous.folder);if(previous.previousFolder&&!await stat(join(root,'releases',previousFolder,'data')).catch(()=>null))previousFolder=win32.basename(previous.previousFolder);}catch(e){if(e.code!=='ENOENT')throw e;}
 const version=(JSON.parse(await readFile('package.json','utf8')).displayVersion??JSON.parse(await readFile('package.json','utf8')).version).replace(/^1\.0\.0$/, '1.0').replace(/^1\.0\.1$/, '1.01').replace(/^1\.1\.0$/, '1.1').replace(/^1\.2\.0$/, '1.2').replace(/^1\.3\.0$/, '1.3');
 const name=`战场军需官-v${version}`;
 // Refuse to merge into an existing release (it may contain player saves).
@@ -51,4 +51,4 @@ await mkdir(join(folder,'licenses'));for(const dep of ['react','react-dom','ws']
 await cp('scripts/release/licenses/NODE-LICENSE.txt',join(folder,'licenses/NODE-LICENSE.txt'));
 const hashes={};async function scan(dir,prefix=''){for(const e of await readdir(dir,{withFileTypes:true})){const key=prefix+e.name;if(e.isDirectory())await scan(join(dir,e.name),key+'/');else hashes[key]=createHash('sha256').update(await readFile(join(dir,e.name))).digest('hex');}}
 await scan(folder);await writeFile(join(folder,'version/SHA256.json'),JSON.stringify(hashes,null,2));
-await writeFile('releases/multiplayer-latest.json',JSON.stringify({folder,previousFolder,version,url:'http://127.0.0.1:4183/'},null,2));console.log(folder);
+await writeFile('releases/multiplayer-latest.json',JSON.stringify({folder:name,previousFolder,version,url:'http://127.0.0.1:4183/'},null,2));console.log(folder);
