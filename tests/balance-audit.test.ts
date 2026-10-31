@@ -33,8 +33,8 @@ it('Tientsin victims receive only their own discard information',()=>{
  startResolution(s,'天津事变','japan',preludeCardEffects(s,c).effects,[],c.id,'discardPile');expect(s.resolution?.running).toBe(false);
  for(const seat of ['united_states','united_kingdom'] as const){const notices=projectState(s,{kind:'player',seat},seat)!.responseNotices!;expect(notices).toHaveLength(1);expect(notices[0].cards.map(c=>c.id)).toEqual(lost[seat]);expect(notices[0].text).not.toContain(seat==='united_states'?'英国':'美国');}
 });
-it('Commonwealth air training retains the anytime window and scores plus deployment',()=>{
- const s=game();s.activeSeat='united_kingdom';const c=add(s,'prelude_UK-07','faceDown');const e:Effect={kind:'signal',tag:'ARMAMENT_ANYTIME',label:'任意时机'};
+it('Commonwealth air training uses the scoring window and scores plus deployment',()=>{
+ const s=game();s.activeSeat='united_kingdom';const c=add(s,'prelude_UK-07','faceDown');const e:Effect={kind:'signal',tag:'PHASE:SCORE',label:'计分阶段开始'};
  const rule=preludeTriggers(s,{id:'frame',currentEventId:'event'} as ResolutionFrame,e,'After').find(r=>r.sourceInstanceId===c.id)!;expect(rule).toBeTruthy();expect(rule.effects).toEqual(expect.arrayContaining([expect.objectContaining({kind:'score',amount:1}),expect.objectContaining({kind:'action',action:'air_deploy',regions:['australia','india','canada','south_africa']})]));
 });
 

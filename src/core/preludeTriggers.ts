@@ -52,9 +52,10 @@ export function preludeTriggers(s:GameState,frame:ResolutionFrame,e:Effect,timin
   case 'DE-12':if(mine('land_battle'))effects=[a('build_army',[region!])];break;
   case 'UK-03':if(phase('SCORE'))effects=[a(b?'recruit_army':'build_army',['canada'])];break;
   case 'UK-04':if(timing==='Before'&&e.kind==='signal'&&e.tag==='ARMAMENT'&&allianceOf(frame.owner)==='axis')effects=[{kind:'frameChange',frameId:frame.id,cancel:true,finalZone:'removed',label:'秘密情报机构：取消军备，免除费用'}];break;
-  case 'UK-05':if(phase('SCORE'))effects=[a('destroy',['british_isles'])];break;
+  case 'UK-05':if(phase('DISCARD'))effects=[a('destroy',['british_isles'])];break;
   case 'UK-06':if(phase('SCORE'))effects=[{kind:'cards',seat,from:'hand',to:'discardPile',min:1,max:1,filter:'build_army',fee:true,label:'额外支付一张建设陆军'},a('recruit_army',['australia','india','south_africa'])];break;
-  case 'UK-07':case 'US-04':if(own&&timing==='After'&&e.kind==='signal'&&(e.tag==='ARMAMENT_ANYTIME'||e.tag.startsWith('PHASE:')))effects=[choose([score(1),a('air_deploy',id==='UK-07'?['australia','new_zealand','canada','south_africa']:undefined)])];break;
+  case 'UK-07':if(phase('SCORE'))effects=[choose([score(1),a('air_deploy',['australia','new_zealand','canada','south_africa'])])];break;
+  case 'US-04':if(own&&timing==='After'&&e.kind==='signal'&&(e.tag==='ARMAMENT_ANYTIME'||e.tag.startsWith('PHASE:')))effects=[choose([score(1),a('air_deploy',undefined)])];break;
   case 'UK-10':if(phase('SUPPLY'))effects=[{kind:'flag',flag:'supplyCountries',ids:['united_kingdom','france'],label:d.name}];break;
   case 'JP-01':if(phase('SCORE')&&s.units.some(u=>u.country===seat&&u.type==='navy'&&u.regionId==='sea_north_pacific'))effects=[score(4)];break;
   case 'JP-02':if(phase('SCORE')&&s.units.some(u=>u.country===seat&&u.type==='army'&&u.regionId==='hawaii'))effects=[...(b?[score(2),{kind:'cards' as const,seat,from:'hand' as const,to:'faceDown' as const,filter:'响应',min:1,max:1,label:'暗置一张响应'}]:[score(4)])];break;

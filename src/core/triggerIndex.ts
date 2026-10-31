@@ -39,11 +39,12 @@ act([78,80,84,124,141,183,184,193,196,208],'After','build_navy');
 act([70,119,146,205],'After','air_deploy','air_move','air_power');
 add([203],'After','action:*');
 // Prelude armaments and treaties.
-phase(['DE-02','DE-08','DE-11','UK-03','UK-05','UK-06','JP-01','JP-02','JP-03','JP-06','JP-09','SU-04','IT-02','IT-03','IT-04','IT-05','IT-06','IT-07','IT-12','US-02','US-16'],'SCORE');
+phase(['DE-02','DE-08','DE-11','UK-03','UK-07','UK-06','JP-01','JP-02','JP-03','JP-06','JP-09','SU-04','IT-02','IT-03','IT-04','IT-05','IT-06','IT-07','IT-12','US-02','US-16'],'SCORE');
 phase(['DE-03','DE-04','DE-06','DE-10','UK-10','US-01','US-05'],'TURN_START_WINDOW');
 phase(['UK-10'],'SUPPLY');
 phase(['IT-15'],'TURN_START_WINDOW');
-add(['UK-07','US-04','SU-06'],'After','PHASE:*','ARMAMENT_ANYTIME');
+phase(['UK-05'],'DISCARD');
+add(['US-04','SU-06'],'After','PHASE:*','ARMAMENT_ANYTIME');
 add(['DE-09'],'Before','*');add(['DE-09'],'After','*');
 add(['UK-04'],'Before','ARMAMENT');
 act(['DE-01','DE-07','JP-04','JP-14','SU-08','SU-10','UK-17'],'Before','land_battle','sea_battle');

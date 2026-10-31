@@ -94,7 +94,7 @@ describe('A2S1 independent acceptance regressions',()=>{
     expect(visible.visibleCards?.ownFaceDown).toContain('special_57');
   });
 
-  it('preserves a committed card’s legitimate one-or-two quantity choice',()=>{
+  it('offers the second Conscription only after the first placement',()=>{
     const saved=new PpoTrainingArena(110,'a2s1-one-or-two',options).exportSnapshot();
     saved.state.phase='PLAY';
     saved.state.activeSeat=saved.state.operatorSeat=saved.state.viewSeat='germany';
@@ -102,10 +102,17 @@ describe('A2S1 independent acceptance regressions',()=>{
     const source=arena.observe()!;
     const next=act(arena,source,find(source,c=>c.definitionId==='special_161')).observation!;
     expect(next.choiceMin).toBe(1);
-    expect(next.choiceMax).toBe(2);
+    expect(next.choiceMax).toBe(1);
     expect(next.candidates.some(c=>c.choiceIds?.length===1)).toBe(true);
-    expect(next.candidates.some(c=>c.choiceIds?.length===2)).toBe(true);
+    expect(next.candidates.some(c=>c.choiceIds?.length===2)).toBe(false);
     expect(next.candidates.some(c=>c.choiceIds?.length===0)).toBe(false);
+    let current=act(arena,next,find(next,c=>c.choiceIds?.length===1)).observation!;
+    for(let i=0;i<12&&current.choiceKind!=='SELECT';i++)current=act(arena,current,current.candidates[0]).observation!;
+    expect(current.choiceKind).toBe('SELECT');
+    expect(current.choiceMin).toBe(0);
+    expect(current.choiceMax).toBe(1);
+    expect(current.candidates.some(c=>c.choiceIds?.length===0)).toBe(true);
+    expect(current.candidates.some(c=>c.choiceIds?.includes('continue'))).toBe(true);
   });
 
   it('requires the committed special_166 extra play when a legal matching card remains',()=>{

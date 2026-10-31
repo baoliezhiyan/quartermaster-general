@@ -19,12 +19,15 @@ await mkdir(join(folder,'对局记录'));
 await mkdir(join(folder,'回放接口'));
 await cp('src/actionReplay/contract.ts',join(folder,'回放接口/contract.ts'));
 await cp('docs/client-v1.8.3.md',join(folder,'回放接口/v1.8.3兼容与修订.md'));
+await cp('docs/client-v1.8.4.md',join(folder,'回放接口/v1.8.4修订.md'));
 await cp('src/actionReplay/realHandTrainingReplay.ts',join(folder,'回放接口/real-hand-readonly-adapter.ts'));
 await cp('src/actionReplay/trainingContract.ts',join(folder,'回放接口/training-contract-v1.ts'));
 await cp('docs/training-replay-output-v1.md',join(folder,'回放接口/训练端输出规范-v1.md'));
 await cp('docs/action-replay-adapter.md',join(folder,'回放接口/adapter.md'));
 await cp('docs/match-log-spec-v2.0.md',join(folder,'回放接口/spec-v2.0.md'));
-await cp('outputs/match-log-samples',join(folder,'回放样例'),{recursive:true});
+await mkdir(join(folder,'回放样例'));
+// Only freshly generated contract samples; never package stale/user archives.
+for(const sample of ['client-standard.jsonl','client-gm-edit.jsonl','constructed-training-resources.jsonl'])await cp(join('outputs/match-log-samples',sample),join(folder,'回放样例',sample));
 
 
 await mkdir(join(folder,'cloudflare'));

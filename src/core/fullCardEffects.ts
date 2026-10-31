@@ -25,6 +25,8 @@ export function fullCardEffects(s:ReadState,card:CardInstance,targets:string[]):
   const alliedNavy=(region:string)=>s.units.some(u=>u.type==='navy'&&allianceOf(u.country)==='allies'&&u.regionId===region);
   const range=(home:string,n:number,type='army')=>own.some(u=>(type==='base'?u.type!=='air':u.type===type)&&distanceWithin(s,c,home,u.regionId,n));
   const choose=(effects:Effect[],max=1):Effect=>({kind:'choose',seat,min:1,max,options:effects.map((e,i)=>({id:String(i),label:e.label,effects:[e]})),label:`选择 1 至 ${max} 项行动`});
+  // Each action opens and finishes its own response windows before the next selection.
+  const twice=(effect:Effect):Effect[]=>[effect,{kind:'choose',seat,min:0,max:1,label:'可执行第二次行动，或跳过',options:[{id:'continue',label:'执行第二次行动',effects:[{...effect}]}]}];
   const removeChoice=(target:SeatId,units:ReadState['units']):Effect=>({kind:'choose',seat:target,min:1,max:1,autoSingle:true,label:units.length?'选择移除自己的部队，或弃牌库顶两张':'没有可移除的部队，必须弃置牌库顶两张',options:[{id:'discard',label:'弃牌库顶两张',effects:[top(target,2)]},...units.map(unit=>({id:unit.id,label:`移除${REGIONS.find(r=>r.id===unit.regionId)?.name}的部队`,effects:[{kind:'remove' as const,unit:{...unit},supplied:suppliedUnits(s).has(unit.id),cause:'economic',label:'经济战：移除部队'}]}))]});
   if(s.rules?.balanceEnabled){
     const choose=(effects:Effect[][]):Effect=>({kind:'choose',seat,min:1,max:1,label:'选择卡牌效果',options:effects.map((effects,i)=>({id:String(i),label:effects.map(e=>e.label).join('；'),effects}))});
@@ -64,14 +66,14 @@ export function fullCardEffects(s:ReadState,card:CardInstance,targets:string[]):
     case 26:return (['germany','italy'] as const).map(target=>removeChoice(target,s.units.filter(u=>u.country===target&&u.type==='navy'&&u.regionId==='sea_mediterranean')));
     case 27:case 28:return [a('build_navy')];
     case 29:case 113:return [a('land_battle')];
-    case 30:return [choose(['western_europe','south_africa','north_africa'].map(r=>a('recruit_army',[r])),2)];
+    case 30:return twice(a('recruit_army',['western_europe','south_africa','north_africa']));
     case 31:return [a('recruit_army',['indonesia']),a('recruit_army',['new_guinea']),a('recruit_navy',['sea_south_china'])];
     case 33:case 35:return [a('build_army')];
     case 32:return [choose([a('recruit_army',['western_europe']),a('land_battle',['western_europe'])])];
     case 34:return [a('recruit_army',['south_africa','north_africa','madagascar','southeast_asia','new_guinea','middle_east'])];
     case 61:return [a('recruit_army',['mongolia']),a('land_battle',['vladivostok','eastern_china'])];
     case 64:return [a('recruit_army',near(s,c,'siberia'))];
-    case 62:return [choose(s.units.filter(u=>u.type==='army'&&allianceOf(u.country)==='axis'&&near(s,c,'moscow').includes(u.regionId)).map(u=>({...a('destroy',[u.regionId]),targetIds:[u.id]} as Effect)),2)];
+    case 62:return twice({...a('destroy',near(s,c,'moscow')),destroyTypes:['army']});
     case 63:case 110:case 156:return [{kind:'rebuild',country:c,label:'收回全部陆军，然后依次重新建设全部被收回的陆军'}];
     case 66:return [a('destroy',['balkans']),choose([a('recruit_army',['balkans']),act('united_kingdom','recruit_army',['balkans'])])];
     case 67:return [a('recruit_army',['vladivostok']),a('land_battle',['eastern_china'])];
@@ -105,7 +107,7 @@ export function fullCardEffects(s:ReadState,card:CardInstance,targets:string[]):
     case 157:case 237:return [points(seat,own.filter(u=>u.type!=='air'&&u.regionId!==(id===157?'germany':'italy')).length)];
     case 159:return [act('italy','recruit_army',['balkans']),a('destroy',['ukraine'])];
     case 160:return [choose(['build_army','build_navy','land_battle','sea_battle'].map(action=>a(action as 'build_army')))];
-    case 161:return [choose(near(s,c,'germany').filter(r=>REGIONS.find(x=>x.id===r)?.type==='LAND').map(r=>a('recruit_army',[r])),2)];
+    case 161:return twice(a('recruit_army',near(s,c,'germany').filter(r=>REGIONS.find(x=>x.id===r)?.type==='LAND')));
     case 163:return axisArmy(['scandinavia'])&&axisArmy(['ross_region'])?[top('soviet_union',5),points(seat,1)]:s.resolutionVersion===3?[points(seat,1)]:[];
     case 165:return ['united_kingdom','soviet_union','united_states'].includes(targets[0])?[top(targets[0] as SeatId,2),points(seat,2)]:[];
     case 166:return count('army',['western_europe'])?[points(seat,3),top('united_kingdom',1)]:[];
