@@ -169,7 +169,7 @@ export function fullTrigger(s:GameState,card:CardInstance,e:Effect,timing:'Befor
     case 176:if(phase('SCORE'))return score(count('army',['indonesia','new_guinea','southeast_asia']));break;
     case 177:if(phase('SCORE'))return score(count('army',['hawaii','canada','new_zealand'])?2:0);break;
     case 179:if(e.kind==='signal'&&e.tag==='CARD_PLAYED'&&frame?.cardId===card.id)return {...extra([{kind:'frameChange',frameId:frame.id,finalZone:'hand',label:'气球炸弹返回手牌'}],s.rules?.balanceEnabled?4:3),source:'system'};break;
-    case 183:case 184:case 193:case 198:if(is(id===198?'sea_battle':'build_navy')){const act=id===183?'land_battle':id===184?'sea_battle':'build_army';return extra([a(act,adj()),a(act,adj())]);}break;
+    case 183:case 184:case 193:case 198:if(is(id===198?'sea_battle':'build_navy')){const act=id===183?'land_battle':id===184?'sea_battle':'build_army';return extra([a(act,adj()),{kind:'choose',seat:owner,min:0,max:1,label:'可执行第二次行动，或跳过',options:[{id:'continue',label:'执行第二次行动',effects:[a(act,adj())]}]}]);}break;
     case 185:if(is('land_battle')&&region==='india')return extra([a('build_army',['india'])]);break;
     case 186:if(phase('PLAY'))return extra([a('sea_battle')]);break;
     case 187:if(phase('PLAY'))return extra([a('land_battle',near(s,c,'eastern_china'))]);break;

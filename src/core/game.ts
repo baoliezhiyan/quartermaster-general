@@ -232,7 +232,7 @@ export function transition(state: GameState | null, command: Command): Transitio
   const result=transitionInternal(state,command);
   if(result.ok&&result.state!==state&&!['SET_VIEW','ACK_RESPONSE_NOTICE','SET_CARD_RESPONSE'].includes(command.type))checkNeutralitySupply(result.state);
   if(result.ok&&result.state.neutralityStatusPending&&!result.state.resolution?.running)startResolution(result.state,'中立规则参战结算',result.state.activeSeat,[{kind:'trace',label:'参战状态牌结算完成'}],[]);
-  if(result.ok&&result.state!==state){const s=result.state;for(const seat of Object.keys(state?.decks??{}) as SeatId[]){const cards=publicDiscard(state!,seat);if(cards.length)(s.publicDiscardHistory??={})[seat]=[...new Map([...cards,...(s.publicDiscardHistory?.[seat]??[])].map(c=>[c.id,c])).values()];}rememberPublicDiscards(s);concealPublic(s,Object.values(s.decks).flatMap(d=>[...d.hand,...d.drawPile,...d.faceDown.filter(c=>!s.faceUpResponseIds?.includes(c.id)),...d.removed]).map(c=>c.id));}
+  if(result.ok&&result.state!==state){const s=result.state;s.publicDiscardHistory={...s.publicDiscardHistory};for(const seat of Object.keys(state?.decks??{}) as SeatId[]){const cards=publicDiscard(state!,seat);if(cards.length)(s.publicDiscardHistory??={})[seat]=[...new Map([...cards,...(s.publicDiscardHistory?.[seat]??[])].map(c=>[c.id,c])).values()];}rememberPublicDiscards(s);concealPublic(s,Object.values(s.decks).flatMap(d=>[...d.hand,...d.drawPile,...d.faceDown.filter(c=>!s.faceUpResponseIds?.includes(c.id)),...d.removed]).map(c=>c.id));}
   return result;
 }
 function transitionInternal(state: GameState | null, command: Command): Transition {

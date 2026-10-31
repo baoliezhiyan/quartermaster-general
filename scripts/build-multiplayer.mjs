@@ -1,9 +1,9 @@
 import {mkdir,cp,readFile,writeFile,readdir,stat,rename} from 'node:fs/promises';
-import {join,resolve,dirname} from 'node:path';
+import {join,resolve,dirname,win32} from 'node:path';
 import {createRequire} from 'node:module';
 import {createHash} from 'node:crypto';
 const require=createRequire(import.meta.url),root=resolve('.');
-let previousFolder;try{const previous=JSON.parse(await readFile('releases/multiplayer-latest.json','utf8'));previousFolder=previous.folder;if(previous.previousFolder&&!await stat(join(previous.folder,'data')).catch(()=>null))previousFolder=previous.previousFolder;}catch(e){if(e.code!=='ENOENT')throw e;}
+let previousFolder;try{const previous=JSON.parse(await readFile('releases/multiplayer-latest.json','utf8'));previousFolder=win32.basename(previous.folder);if(previous.previousFolder&&!await stat(join(root,'releases',previousFolder,'data')).catch(()=>null))previousFolder=win32.basename(previous.previousFolder);}catch(e){if(e.code!=='ENOENT')throw e;}
 const version=(JSON.parse(await readFile('package.json','utf8')).displayVersion??JSON.parse(await readFile('package.json','utf8')).version).replace(/^1\.0\.0$/, '1.0').replace(/^1\.0\.1$/, '1.01').replace(/^1\.1\.0$/, '1.1').replace(/^1\.2\.0$/, '1.2').replace(/^1\.3\.0$/, '1.3');
 const name=`战场军需官-v${version}`;
 // Refuse to merge into an existing release (it may contain player saves).
@@ -19,12 +19,15 @@ await mkdir(join(folder,'对局记录'));
 await mkdir(join(folder,'回放接口'));
 await cp('src/actionReplay/contract.ts',join(folder,'回放接口/contract.ts'));
 await cp('docs/client-v1.8.3.md',join(folder,'回放接口/v1.8.3兼容与修订.md'));
+await cp('docs/client-v1.8.4.md',join(folder,'回放接口/v1.8.4修订.md'));
 await cp('src/actionReplay/realHandTrainingReplay.ts',join(folder,'回放接口/real-hand-readonly-adapter.ts'));
 await cp('src/actionReplay/trainingContract.ts',join(folder,'回放接口/training-contract-v1.ts'));
 await cp('docs/training-replay-output-v1.md',join(folder,'回放接口/训练端输出规范-v1.md'));
 await cp('docs/action-replay-adapter.md',join(folder,'回放接口/adapter.md'));
 await cp('docs/match-log-spec-v2.0.md',join(folder,'回放接口/spec-v2.0.md'));
-await cp('outputs/match-log-samples',join(folder,'回放样例'),{recursive:true});
+await mkdir(join(folder,'回放样例'));
+// Only freshly generated contract samples; never package stale/user archives.
+for(const sample of ['client-standard.jsonl','client-gm-edit.jsonl','constructed-training-resources.jsonl'])await cp(join('outputs/match-log-samples',sample),join(folder,'回放样例',sample));
 
 
 await mkdir(join(folder,'cloudflare'));
@@ -51,4 +54,4 @@ await mkdir(join(folder,'licenses'));for(const dep of ['react','react-dom','ws']
 await cp('scripts/release/licenses/NODE-LICENSE.txt',join(folder,'licenses/NODE-LICENSE.txt'));
 const hashes={};async function scan(dir,prefix=''){for(const e of await readdir(dir,{withFileTypes:true})){const key=prefix+e.name;if(e.isDirectory())await scan(join(dir,e.name),key+'/');else hashes[key]=createHash('sha256').update(await readFile(join(dir,e.name))).digest('hex');}}
 await scan(folder);await writeFile(join(folder,'version/SHA256.json'),JSON.stringify(hashes,null,2));
-await writeFile('releases/multiplayer-latest.json',JSON.stringify({folder,previousFolder,version,url:'http://127.0.0.1:4183/'},null,2));console.log(folder);
+await writeFile('releases/multiplayer-latest.json',JSON.stringify({folder:name,previousFolder,version,url:'http://127.0.0.1:4183/'},null,2));console.log(folder);

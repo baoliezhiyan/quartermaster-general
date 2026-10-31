@@ -15,6 +15,8 @@ export function publicDiscard(s:ReadState,seat:SeatId){
  return [...new Map([...(s.publicDiscardHistory?.[seat]??[]),...s.decks[seat].discardPile.filter(c=>s.publicCardIds?.includes(c.id))].map(c=>[c.id,c])).values()];
 }
 export function rememberPublicDiscards(s:GameState){
+ // View/settings transitions share immutable snapshots; never write through that map.
+ s.publicDiscardHistory={...s.publicDiscardHistory};
  for(const seat of Object.keys(s.decks) as SeatId[]){const cards=publicDiscard(s,seat);if(cards.length)(s.publicDiscardHistory??={})[seat]=cards.map(c=>({...c}));}
 }
 export function declarePublicCard(s:GameState,f:ResolutionFrame){
