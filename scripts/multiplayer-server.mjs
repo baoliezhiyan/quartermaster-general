@@ -1,3 +1,5 @@
+import {localAiHttp} from './local-ai-http.mjs';
+import {LocalAiAdapter} from '../dist-server/Room.js';
 import {sendText} from './http-response.mjs';
 import {MATCH_LOG_GAME_VERSION} from '../dist-server/Room.js';
 import {withMatchLogs} from './match-log-store.mjs';
@@ -37,6 +39,10 @@ const store=withMatchLogs(createJournalStore(data,{diff:diffValue,apply:applyPat
 const room=new Room(store,JSON.parse(await read('identities.json')||'[]'),ids=>atomic('identities.json',JSON.stringify(ids)),async()=>{const session=await store.read();return session?JSON.stringify(session):null;},{read:async()=>JSON.parse(await read('chat.json')||'[]'),write:messages=>atomic('chat.json',JSON.stringify(messages))});
 const assets=await loadStaticAssets(join(root,'dist'));
 const roomId=await read('room-id.txt')||randomUUID();await atomic('room-id.txt',roomId);
+const aiHandler=process.env.QM_LOCAL_AI==='1'?localAiHttp(new LocalAiAdapter(room),join(root,'local-ai-private/audit')):null;
+const aiServer=aiHandler?http.createServer(async(req,res)=>{try{const handled=await aiHandler(req,res,new URL(req.url,'http://127.0.0.1'));if(!handled)res.writeHead(404).end();}catch{res.writeHead(500).end();}}):null;
+aiServer?.listen(Number(process.env.QM_AI_PORT||4185),'127.0.0.1');
+aiServer?.on('error',e=>{console.error('本机 AI 接口启动失败：'+e.message);void stop();process.exitCode=1;});
 const server=http.createServer(async(req,res)=>{
  try{
   if(!policy.hostAllowed(req.headers)){res.writeHead(403).end();return;}
@@ -86,7 +92,7 @@ sockets.on('connection',ws=>{
  ws.on('error',()=>{});
 });
 const heartbeat=setInterval(()=>{for(const ws of sockets.clients){if(!ws.alive){ws.terminate();continue;}ws.alive=false;ws.ping();}},15000);
-let stopping=false;async function stop(){if(stopping)return;stopping=true;clearInterval(heartbeat);for(const ws of sockets.clients)ws.terminate();sockets.close();server.closeAllConnections();server.close();await lock.close();await unlink(lockPath).catch(()=>{});}
+let stopping=false;async function stop(){if(stopping)return;stopping=true;aiServer?.closeAllConnections();aiServer?.close();clearInterval(heartbeat);for(const ws of sockets.clients)ws.terminate();sockets.close();server.closeAllConnections();server.close();await lock.close();await unlink(lockPath).catch(()=>{});}
 process.on('SIGINT',()=>void stop());process.on('SIGTERM',()=>void stop());
 server.on('error',async e=>{console.error(e.message);await stop();process.exitCode=1;});
 server.listen(port,host,()=>{
