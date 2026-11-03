@@ -22,6 +22,7 @@ const root=resolve(fileURLToPath(new URL('..',import.meta.url)));
 const port=Number(process.env.QM_PORT||4183),host='127.0.0.1';
 const policy=connectionPolicy(port,process.env.QM_PUBLIC_ORIGIN||'');
 const data=resolve(process.env.QM_DATA_DIR||join(root,'data'));
+const aiPrivate=resolve(process.env.QM_AI_PRIVATE_DIR||join(root,'local-ai-private'));
 await mkdir(data,{recursive:true});
 const lockPath=join(data,'server.lock');let lock;
 try{lock=await open(lockPath,'wx');}catch(e){
@@ -35,11 +36,11 @@ await lock.writeFile(String(process.pid));
 async function read(name){try{return await readFile(join(data,name),'utf8');}catch(e){if(e.code==='ENOENT')return null;throw e;}}
 async function atomic(name,text){const temp=join(data,name+'.tmp');const f=await open(temp,'w');try{await f.writeFile(text);await f.sync();}finally{await f.close();}await rename(temp,join(data,name));}
 const diagnostics=createNetworkDiagnostics();setPerformanceSink(diagnostics.sample);
-const store=withMatchLogs(createJournalStore(data,{diff:diffValue,apply:applyPatch,onMetric:diagnostics.sample,onWarning:message=>console.warn(message)}),join(root,'对局记录'));
+const store=withMatchLogs(createJournalStore(data,{diff:diffValue,apply:applyPatch,onMetric:diagnostics.sample,onWarning:message=>console.warn(message)}),resolve(process.env.QM_MATCH_LOG_DIR||join(root,'对局记录')));
 const room=new Room(store,JSON.parse(await read('identities.json')||'[]'),ids=>atomic('identities.json',JSON.stringify(ids)),async()=>{const session=await store.read();return session?JSON.stringify(session):null;},{read:async()=>JSON.parse(await read('chat.json')||'[]'),write:messages=>atomic('chat.json',JSON.stringify(messages))});
 const assets=await loadStaticAssets(join(root,'dist'));
 const roomId=await read('room-id.txt')||randomUUID();await atomic('room-id.txt',roomId);
-const aiHandler=process.env.QM_LOCAL_AI==='1'?localAiHttp(new LocalAiAdapter(room,localAiReceiptStore(join(root,'local-ai-private/requests'))),join(root,'local-ai-private/audit')):null;
+const aiHandler=process.env.QM_LOCAL_AI==='1'?localAiHttp(new LocalAiAdapter(room,localAiReceiptStore(join(aiPrivate,'requests'))),join(aiPrivate,'audit')):null;
 const aiServer=aiHandler?http.createServer(async(req,res)=>{try{const handled=await aiHandler(req,res,new URL(req.url,'http://127.0.0.1'));if(!handled)res.writeHead(404).end();}catch{res.writeHead(500).end();}}):null;
 aiServer?.listen(Number(process.env.QM_AI_PORT||4185),'127.0.0.1');
 aiServer?.on('error',e=>{console.error('本机 AI 接口启动失败：'+e.message);void stop();process.exitCode=1;});

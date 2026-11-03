@@ -1,6 +1,6 @@
-# AI 单行动合并与持续等待（接口 1.2.0）
+# AI 单行动合并与持续等待（接口 1.2.1）
 
-基线为 74e158a（正式规则仍为 ac94499 的 v1.8.4），独立客户端工作目录 `D:/Codex/QuartermasterGeneral/worktrees/client-v183/战场军需官`，分支 `codex/client-ai-actions`，开工时工作区干净。本次不制作包，不开始用户对局、不加载模型、不训练。保留旧 submit/observe/wait 及其默认输出；不改 src/core、src/data、游戏版本、正式玩家请求和回放协议。
+本轮基线为3831dec，沿用独立客户端工作目录 `D:/Codex/QuartermasterGeneral/worktrees/client-v183/战场军需官`，分支 `codex/client-ai-finalize`，开工工作区干净。游戏版本仍为1.8.4，AI接口1.2.1，保留旧单步接口。本轮额外获准修复已选行动失效循环与恢复键序依赖，详见 [核心修复及训练影响](ai-core-fixes-20261104.md)。不修改卡牌、玩法、优先级、存档/回放协议或玩家权限，不制作包、不开始用户对局、不训练。
 
 ## 支持范围
 
@@ -84,7 +84,7 @@ node scripts/local-ai-cli.mjs wait-decision --wait-id 本次等待唯一编号
 node scripts/local-ai-cli.mjs cancel-wait --wait-id 本次等待唯一编号
 ```
 
-新命令默认紧凑输出，可加 --full；旧命令保持原默认，可加 --compact。完整观察和静态资料仍用 observe/reference。每次返回记录完整玩家观察缓存；紧凑输出不反复打印地图和静态卡表。合并回执保留本次变化。--wait 默认如果已有己方决定就直接返回，否则内部持续等待。
+新命令默认紧凑输出，可加 --full；旧命令保持原默认，可加 --compact。完整观察和静态资料仍用 observe/reference。每次返回仍缓存完整合法观察；紧凑输出传送必要动态变化，静态地图和卡表用 reference 缓存。合并回执保留本次变化。--wait 默认如果已有己方决定就直接返回，否则内部持续等待。
 
 wait-decision 在服务内按 Room 通知订阅。普通聊天/日志、非己方操作等只唤醒内部检查；没有新己方决定时不向模型输出。当前 offer/选择和依法可见上下文生成摘要游标去重，不以轮次为唯一条件。--fresh 明确重新呈现当前决定；默认使用上次返回的 .decision.json 游标。
 
@@ -98,25 +98,51 @@ wait-decision 在服务内按 Room 通知订阅。普通聊天/日志、非己�
 
 旧 /submit、/observe、/wait 保留。新增 POST /submit-action、/submit-action-wait、/submit-wait、/result、/wait-decision、/cancel-wait（均为 /api/local-ai/ 下路径）。需要原普通玩家身份，仍限本机，不能提交任意引擎命令。wait-decision body 为 `{waitId,after?,expected?:{gameId,epoch,bindings},leaseMs?}`；直接HTTP客户端必须内部续租 leaseExpired，不把它交给模型。相同 waitId 的最初 scope 由服务保持，防止租约间漏掉世代变化。
 
-## 验收与既有边界
+## 紧凑变化契约（CLI）
 
-单元/集成场景覆盖建设、陆海战、多个发起部队、空军部署/夺取/调度、显式/缺省回收、重复建设事实、状态及响应支付、对方防御中断、闪电战新窗口、缺失/错误/过期/重复、费用烧牌后新信息、回执中断、普通更新静默、租约续订、换局/绑定变化、终局、身份接管，以及单步与合并的局面/窗口/正式记录输入等价（档案随机actionId除外）。
+`wait-decision`、`submit-action` 和 `submit --wait`/`submit-action --wait` 默认紧凑输出；`--full` 仍给完整观察。普通 submit/observe/connect 的默认输出保持原样，`--compact` 可显式启用。原HTTP接口仍返回完整合法观察，新增压缩只在桥接端基于两次合法投影计算，不接触主机真值。
 
-真实HTTP测试 `node scripts/verify-ai-actions.mjs` 使用隔离19583/19585/19586端口、构造对局、后台进程；模拟一次HTTP断开，确认CLI内部重试，普通更新和续租无输出，回合外/回归及提交等待不占桌面，不训练。
+`changes.format=local-ai-observation-change`、`version=1`。有两种显式模式：
 
-两个未改动的既有问题必须区分：
-1. 等待 AIR_INTERCEPT 时删除已选发起部队，并且还存在另一支可攻击部队，正式 refreshSceneResolution 可循环。独立核心子进程复现脚本 `node scripts/probe-ai-core-boundary.mjs` 在2.5秒终止测试。合并请求已在对方防御处返回，不自动恢复；该核心失效路径停止本次验收，建议另行修复“原选择失效而其他方案仍合法”的验证/刷新。
-2. 主机 restoreHostSession 的恢复校验使用 JSON.stringify 严格比较；本轮长流程持久化重建状态逐字段一致（diffValue=[]）但键序不同，被原校验拒绝。没有改校验或伪装通过。HTTP测试明确标记 restoreMode=existing_order_check_blocked，并由测试GM通过既有完整历史导入入口恢复后验证回执查询/防重放；直接恢复按钮不计为通过。
+- `mode=snapshot`：`changes.snapshot` 以及 result 中的观察包含全部必要动态信息（仅省略 reference 已有的静态 regions）。首次连接、没有已交付基线、基线不完整、身份/世代/规则资料变化、修订号倒退、日志不是原日志的完整前缀等，采用此模式，并返回 reason。不是残缺增量。
+- `mode=delta`：`updates` 是 set/remove/append 结构更新，附 fromHash/toHash 与序列。必须应用到匹配基线。`newPublicLog` 给出新增公开行动；`units` 给出新增/移除/移动/更新；`scores` 给出最新六国分数及差值；`privateAreas` 给出有变化的己方牌区和合法上下文当前值。result.observation 为带 `representation=decision_summary, changesRequired=true` 的当前决策摘要，不能当全局快照。合并回执、实际执行步骤及停止原因仍完整保留。
 
-尚未逐张覆盖所有卡牌、所有费用/强制插入组合或完整人工长局。没有新增发布包。此前1.8.4-ai增强包仍是接口1.1.0，本轮需源码构建运行1.2.0后再安排试打。
+接收方可直接读取这些变化作决定；需要构建完整状态时，使用公共无副作用帮助函数：
 
-## 本轮最终验证记录（2026-11-03）
+```javascript
+import {applyObservationChange,decisionObservation} from './scripts/local-ai-compact.mjs';
+let view = decisionObservation(fullObserveResult);
+view = applyObservationChange(view, cliResult.changes);
+// snapshot 可用 null 为基线；delta 基线/哈希不匹配时明确抛出 FULL_SYNC_REQUIRED。
+```
 
-- `pnpm build`（含 TypeScript 检查）通过；Vite 仍提示既有大分块警告。
-- `pnpm exec vitest run tests/local-ai-actions.test.ts tests/local-ai.test.ts tests/local-ai-completeness.test.ts tests/multiplayer.test.ts tests/room-access.test.ts`：5文件67项通过。
-- `node scripts/verify-local-ai.mjs`：原单步 HTTP/独立 CLI、重连、防重复、来源拒绝和日志脱敏通过。
-- `node scripts/verify-ai-actions.mjs`：正式主机 HTTP + 独立 CLI 通过；建设由2次提交变1次，正式引擎仍2步；持续等待1次CLI调用内部4次HTTP、2次续租、忽略4次更新，约2318ms后只返回一次。该数字是构造场景测量，不是长局吞吐或模型推理加速。
-- `node scripts/probe-ai-core-boundary.mjs`：独立核心失效案例在2.5秒被测试进程终止，确认上述阻塞仍存在，不计为核心通过。
-- 规则指纹保持 `6f4cfa732581884ab38ab3a8463e6461a88e30b58825e480bd0938da9d511481`；受测构建身份 `44318da26ff2748fd33b28ab7a962ca63ecbc907a01dd40b29c04cb4af3f99af`。
-- 未改正式规则、地图、随机过程、玩家协议、存档/回放契约；对训练执行无变更。AI接口从1.1增为向后兼容1.2，额外增加观察元数据。
-- 后台构造测试服务已退出；未进行用户实机长局、未自动开始试打、未更新压缩包。
+恢复全量：`node scripts/local-ai-cli.mjs observe --full`。新增 `.delivered.json` 保存最后真正输出给调用者的必要观察，status/reference 等没有输出观察的命令不更新它；不能把只写进内部 `.observation.json` 而未交付的数据当模型基线。CLI同会话同时调用可能导致观察返回顺序变化，接收方须校验 fromHash；不匹配就全量同步，不猜测。静态资料变更会使基线失效。
+
+首次公开日志原本不存在、随后出现，支持显式设置；回退、日志截短或替换会发快照，保留日志变化，不只比较长度。对手未知手牌、暗置内容、未知牌序和随机状态始终不进入变化。模块与观察接口分离，不依赖模型或新的引擎副本。
+
+测试可设置 `QM_AI_PRIVATE_DIR` 和 `QM_MATCH_LOG_DIR` 隔离私有审计/回执、记录目录；默认仍在程序目录 local-ai-private 与对局记录。配置文件、日志、缓存及真实记录不提交。构建脚本已补入新的桥接模块，但本轮未制作压缩包，旧AI增强包仍是原接口。
+
+## 当前验收范围
+
+`special_236` 通过真实牌效、Room、正式确认命令和两个阵营适配器测试：轴心确认被唤醒，同盟始终 waiting_other；部分确认、全部确认、后续 Germany/Japan 决策和结算结束均按实际归属处理；真正无 choice、无有效 revealGroup 的运行态仍 unsupported。未输出他人翻牌或私有菜单。
+
+原单行动范围继续覆盖建设、陆海战、发起部队、空军部署/夺取/调度、回收、重复建设、状态/响应支付、新信息和新触发中断、权限与重试。紧凑接收方基线加变化还原测试覆盖公开记录、单位、分数、己方手牌/状态/暗置、日志首次出现、回退/日志缩短、缺失或错误基线；实际 HTTP/独立 CLI 也校验还原。
+
+两处原核心阻塞已修复，详见 ai-core-fixes-20261104.md；不再以超时或完整历史导入替代通过。多轮正式持久化测试只调用恢复主机对局入口，随后核对局面、查询旧回执、防重放、重新观察并继续行动。一般卡牌与全部强制插入组合未逐张穷尽，尚无用户人工长局验收。
+
+游戏/协议 schema 不变；规则指纹正常更新。旧 JSON 状态须满足原结构及重演一致性；旧指纹动作回放、带旧指纹记录的主机档案仍按原身份校验拒绝，不提供跨指纹迁移、不伪装兼容。训练端需按训练同步记录重新冻结/验收。本轮没有模型、真实玩家对局、训练或发布包。
+
+## 最终构建与测试记录
+
+2026-11-04 最终验收：
+
+- 核心修复单独提交 `49a9108`；接口收尾另行提交，最终源码 SHA 见本分支提交记录。
+- `pnpm build`（包含 TypeScript 检查）通过。Vite 仍有既有大分块提示，本轮未做无关打包优化。
+- `pnpm exec vitest run --maxWorkers 2 --testTimeout 20000`：99文件、1004项全部通过（37.50秒）。覆盖接口、房间/权限、完整规则、结算、存档、回放及相关训练单元回归；没有运行模型训练。
+- `node scripts/probe-ai-core-boundary.mjs`：timedOut=false；原结算明确结束、记录invalid、原守军保留。
+- `node scripts/verify-local-ai.mjs`：原单步实际HTTP/独立CLI、身份连接、防重复、来源限制及脱敏通过。
+- `node scripts/verify-ai-actions.mjs`：direct_restore_passed；构造第5轮、修订号100持久化后关闭并重启服务，通过正式 restore 入口成功；局面字段一致，旧回执查询和重试不重放，新观察后新行动完成。没有使用完整历史导入替代。
+- 同一HTTP验收校验 submit-action、wait-decision、submit-action --wait 的紧凑结果加基线可还原必要观察。建设2次提交变1次，引擎仍2步；持续等待内部经历3次HTTP、1次续租、4次普通更新，约1979ms后只输出一次。
+- 规则指纹：`994ca2cfa372a35ac8b1fb382aafb158ff3410c357f3ccb33441c5279cd5a8a7`。
+- 构建指纹：`6b4c9df4383b99849d710ffc2eb29210ec602d8b4d77598d8381a4c9bea12c38`。
+- 测试使用隔离端口/数据/私有回执日志/记录目录及后台进程，测试服务已退出；没有操作真实用户存档或旧发布包，没有用户人工长局验收。

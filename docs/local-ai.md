@@ -1,8 +1,8 @@
-# 本机 AI 玩家接口 1.2.0（客户端 v1.8.4）
+# 本机 AI 玩家接口 1.2.1（客户端 v1.8.4）
 
 ## 基线与边界
 
-稳定基线 ac94499（codex/client-v184-fixes，v1.8.4 实际交付提交），开发目录 D:/Codex/QuartermasterGeneral/worktrees/client-v183/战场军需官，分支 codex/client-local-ai。开始时工作区干净。未修改 src/core、src/data、版本号、依赖、原玩家请求协议、存档或回放格式。新接口只调用现有 Room / LocalGameController；规则指纹不变，构建身份按正常构建生成。没有安装模型或执行训练。
+初始稳定基线 ac94499（v1.8.4）；本轮基于3831dec，工作目录 D:/Codex/QuartermasterGeneral/worktrees/client-v183/战场军需官，分支 codex/client-ai-finalize。接口仍通过正式 Room / LocalGameController 执行。1.2.1同时包含用户授权的两处核心缺陷修复，规则指纹正常更新，游戏版本、卡牌、玩家权限及存档/回放协议不变；细节、兼容边界与最终验收见 [local-ai-actions.md](local-ai-actions.md) 和 [核心修复说明](ai-core-fixes-20261104.md)。不安装模型、不训练。
 
 新增 src/localAi/{contract,observation,adapter}.ts；脚本 local-ai-http、local-ai-cli、start-local-ai、verify-local-ai；启动 CMD、接口测试和本文。少量接线位于 Room.ts、multiplayer-server.mjs，私有目录加入 gitignore。未启用 QM_LOCAL_AI=1 时，不监听 AI 端口。
 
@@ -74,7 +74,7 @@ observe/submit/wait 返回完整当前玩家观察和 changes。changes 是与�
 
 主机审计 `local-ai-private/audit/interface.jsonl` 记录时间、耗时、接口结果、规则配置、观察/候选和提交。CLI 缓存为配置文件旁 `.observation.json`，桥接摘要在 `local-ai-private/bridge.jsonl`。这些可含己方私有牌面，属于本地资料，全目录忽略提交；不要将自己的配置移到会提交的目录。日志不会自动截断，长期使用可在停机后自行归档。不记录模型链式思考，模型适配将来只需消费该协议，不改正式引擎。
 
-## 本次验收结果（2026-11-03）
+## 最初接口验收历史（2026-11-03，非本轮最终构建）
 
 针对性测试 4 文件 43 项通过；类型检查和源码生产构建通过。实际后台 HTTP + 多次独立 CLI 调用通过；关闭开关时原服务可访问且 AI 端口不监听。规则指纹与 ac94499 相同，游戏版本仍为 1.8.4；构建指纹正常更新。未打发布包，测试服务已关闭，未创建用户真实试打局。
 

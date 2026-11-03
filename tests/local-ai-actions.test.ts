@@ -1,6 +1,7 @@
 import {it,expect} from 'vitest';
 import {Room} from '../src/network/Room';
 import {LocalAiAdapter} from '../src/localAi/adapter';
+import {observePlayer} from '../src/localAi/observation';
 import {continuation} from '../src/localAi/action';
 import {startResolution} from '../src/core/resolution';
 import {SEATS,type GameState,type Unit} from '../src/core';
@@ -40,7 +41,7 @@ it('enemy air defense remains open; no auto-resume after human changes the targe
  const f=await fixture();let id='';await f.scene(s=>{id=give(s,'land_battle').id;s.units.push(unit('ua','united_kingdom','air','western_europe'),unit('ga','germany','air','germany'));});
  const r=await action(f,'PLAY_CARD',{regionId:'western_europe',defenderId:'uk',attackerId:'g',airIntercept:true},id),out=await f.adapter.submitAction(f.token,r);expect(out.receipt.status).toBe('waiting_other');expect(f.state.resolution!.choice!.kind).toBe('AIR_DEFENSE');
  const q=f.state.resolution!.choice!;await f.admin('dispatch',{type:'RESOLVE_ENGINE_CHOICE',seat:q.seat,expectedRevision:f.state.revision,choiceId:q.id,ids:['yes'],guided:true});expect(f.state.resolution!.choice!.kind).toBe('AIR_INTERCEPT');
- const edited=structuredClone(f.state);edited.scores.germany+=1;await f.admin('editScene',edited);const before=JSON.stringify(f.state);const retry=await f.adapter.submitAction(f.token,r);expect((retry as any).duplicate).toBe(true);expect(JSON.stringify(f.state)).toBe(before);
+ const edited=structuredClone(f.state);edited.units=edited.units.filter(u=>u.id!=='g');await f.admin('editScene',edited);expect(f.state.units.some(u=>u.id==='uk')).toBe(true);const before=JSON.stringify(f.state);const retry=await f.adapter.submitAction(f.token,r);expect((retry as any).duplicate).toBe(true);expect(JSON.stringify(f.state)).toBe(before);
 });
 it('post-attack Blitzkrieg is a new decision and is never triggered or skipped',async()=>{
  const f=await fixture();let id='';await f.scene(s=>{id=give(s,'land_battle').id;give(s,'special_136','active');});const result=await f.adapter.submitAction(f.token,await action(f,'PLAY_CARD',{regionId:'western_europe',defenderId:'uk',attackerId:'g'},id));expect(result.receipt.stopReason).toBe('new_decision');expect(f.state.resolution!.choice!.kind).toBe('TRIGGER');expect(f.state.units.some(u=>u.country==='germany'&&u.regionId==='western_europe')).toBe(false);
@@ -122,4 +123,26 @@ it('a search after an earlier subeffect still pauses for new information despite
  const f=await fixture();await f.scene(s=>{startResolution(s,'constructed-search','germany',[{kind:'trace',label:'earlier effect'},{kind:'cards',seat:'germany',from:'drawPile',to:'hand',min:1,max:1,label:'search'}],[],undefined,'discardPile',true);});
  const o=await f.adapter.observe(f.token);if(!('decisions'in o))throw Error('no observation');const q=o.decisions[0];expect(q.kind).toBe('CARDS');expect(q.effectIndex).toBe(1);
  expect(continuation(o,{answers:[{kind:'CARDS',ids:[q.options[0].id]}]},new Set())).toEqual({reason:'new_information'});
+});
+
+it('special_236 reveal barrier wakes participants and keeps nonparticipants waiting through every acknowledgement',async()=>{
+ const f=await fixture(true);let card='';await f.scene(s=>{s.activeSeat=s.viewSeat=s.operatorSeat='italy';card=give(s,'special_236').id;for(const seat of ['germany','italy','japan'] as const){const d=s.decks[seat],i=d.drawPile.findIndex(c=>c.definitionId===(seat==='italy'?'special_219':'build_army'));d.discardPile.push(...d.drawPile.splice(i,1));}});
+ const identity=await f.room.createIdentity('axis'),connection='axis-setup';let snapshot:RoomSnapshot;await f.room.connect(identity.token,connection,v=>{if(!('replaced'in v))snapshot=v;});
+ const axisCall=(method:string,...args:unknown[])=>f.room.request(identity.token,{id:crypto.randomUUID(),connection,epoch:snapshot!.room.epoch,revision:snapshot!.state?.revision??null,method,args});
+ await axisCall('seat',{kind:'player',seat:'germany'});for(const seat of ['germany','italy','japan'])await axisCall('binding',seat,true);const axis=new LocalAiAdapter(f.room);await axis.connect(identity.token);
+ await f.admin('dispatch',{type:'PLAY_CARD',seat:'italy',expectedRevision:f.state.revision,cardId:card,effectIndices:[0],targetIds:[],guided:true});
+ for(let n=0;n<8&&!f.state.resolution?.revealGroup;n++){const q=f.state.resolution!.choice!;await f.admin('dispatch',{type:'RESOLVE_ENGINE_CHOICE',seat:q.seat,expectedRevision:f.state.revision,choiceId:q.id,ids:q.options.slice(0,Math.max(q.min,1)).map(o=>o.id),guided:true});}
+ expect(f.state.resolution!.revealGroup).toBeTruthy();expect(f.state.resolution!.choice).toBeNull();const group=structuredClone(f.state.resolution!.revealGroup!);
+ const malformed=structuredClone(f.state);malformed.resolution!.revealGroup!.frameId='missing-frame';expect(observePlayer(malformed,['germany'],{epoch:'x',sequence:1,serverId:'s',userId:'u',name:'test',locked:false,replay:false}).status).toBe('unsupported');
+ let participant=await axis.waitDecision(identity.token,{waitId:'reveal',leaseMs:100});expect(participant.status).toBe('decision');expect(participant.observation!.offers.some(o=>o.command.type==='ACK_RESPONSE_NOTICE')).toBe(true);
+ let unrelatedDone=false;const unrelated=f.adapter.waitDecision(f.token,{waitId:'unrelated',leaseMs:1000});unrelated.then(()=>unrelatedDone=true);
+ const ack=async(seat:typeof SEATS[number],noticeId:string)=>{await f.admin('dispatch',{type:'ACK_RESPONSE_NOTICE',seat,expectedRevision:f.state.revision,noticeId});const o=await f.adapter.observe(f.token);expect(o.status).toBe('waiting_other');expect(o.offers).toEqual([]);expect(JSON.stringify(o)).not.toContain('翻开的是');};
+ await ack('japan',group.items.find(i=>i.seat==='japan')!.requestId);participant=await axis.waitDecision(identity.token,{waitId:'result',after:participant.cursor,leaseMs:100});expect(participant.status).toBe('decision');
+ await ack('japan',group.items.find(i=>i.seat==='japan')!.resultId);await pause(5);expect(unrelatedDone).toBe(false);
+ for(const seat of ['italy','germany'] as const){const item=group.items.find(i=>i.seat===seat)!;await ack(seat,item.requestId);await ack(seat,item.resultId);}
+ expect(f.state.resolution!.revealGroup).toBeUndefined();expect(f.state.resolution!.choice!.seat).toBe('germany');expect((await axis.observe(identity.token)).status).toBe('needs_ai');
+ expect((await unrelated).leaseExpired).toBe(true);
+ for(let n=0;n<12&&f.state.resolution?.running;n++){const q=f.state.resolution!.choice!;await f.admin('dispatch',{type:'RESOLVE_ENGINE_CHOICE',seat:q.seat,expectedRevision:f.state.revision,choiceId:q.id,ids:[],guided:true});}
+ expect(f.state.resolution?.running).toBe(false);expect((await f.adapter.observe(f.token)).status).not.toBe('unsupported');
+ const broken=structuredClone(f.state);broken.resolution!.running=true;broken.resolution!.choice=null;delete broken.resolution!.revealGroup;expect(observePlayer(broken,['united_states'],{epoch:'x',sequence:1,serverId:'s',userId:'u',name:'test',locked:false,replay:false}).status).toBe('unsupported');
 });
