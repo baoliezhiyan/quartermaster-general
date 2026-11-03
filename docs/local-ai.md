@@ -1,4 +1,4 @@
-# 本机 AI 玩家接口 1.1.0（客户端 v1.8.4）
+# 本机 AI 玩家接口 1.2.0（客户端 v1.8.4）
 
 ## 基线与边界
 
@@ -80,3 +80,6 @@ observe/submit/wait 返回完整当前玩家观察和 changes。changes 是与�
 
 
 增强包与本轮补齐字段见 [local-ai-enhanced.md](local-ai-enhanced.md)。便携包无需开发依赖，直接使用包内 runtime/node.exe。
+
+
+单行动合并和持续等待的新增契约、CLI及限制见 [local-ai-actions.md](local-ai-actions.md)。旧 wait 仍是有界单次等待；新 wait-decision 才在CLI内部持续续订。

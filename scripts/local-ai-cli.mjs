@@ -2,37 +2,49 @@ import {cachedReference} from './local-ai-reference-cache.mjs';
 import {readFile,writeFile,mkdir,appendFile} from 'node:fs/promises';
 import {resolve,dirname,join} from 'node:path';
 import {fileURLToPath} from 'node:url';
-const root=resolve(dirname(fileURLToPath(import.meta.url)),'..');
-const started=performance.now();
-const args=process.argv.slice(2),command=args[0]??'help';
+const root=resolve(dirname(fileURLToPath(import.meta.url)),'..'),started=performance.now(),args=process.argv.slice(2),command=args[0]??'help';
 const option=(name,fallback)=>{const i=args.indexOf(name);return i>=0?args[i+1]:fallback;};
-if(command==='help'){console.log('node scripts/local-ai-cli.mjs connect|status|observe|reference|wait|submit|disconnect --config <私有JSON> [--timeout 毫秒] [--request-file UTF8.json]\n配置: {"url":"http://127.0.0.1:4185","token":"个人返回链接中 identity 的值"}\n先在普通网页创建 AI 用户并入座、绑定同阵营国家，再 connect 接管该身份。');process.exit(0);}
+if(command==='help'){console.log('connect|status|observe|reference|wait|submit|submit-action|wait-decision|cancel-wait|result|disconnect\n--config 私有JSON --request-file UTF8.json --compact / --full --wait --wait-id 自选编号\nwait-decision 内部续订，只有本身份新决策或终止事件输出JSON；Ctrl+C 或 cancel-wait 可取消。');process.exit(0);}
+let controller=new AbortController(),cancelRemote,stats={httpRequests:0,leases:0,eventsIgnored:0,waitMs:0};
 try{
- if(!['connect','status','observe','reference','wait','submit','disconnect'].includes(command))throw Object.assign(Error('未知命令'),{code:'INVALID_REQUEST'});
- const configPath=resolve(option('--config',join(root,'local-ai-private/session.json'))),config=await readFile(configPath,'utf8').then(text=>{try{return JSON.parse(text.replace(/^\uFEFF/,''));}catch{throw Object.assign(Error('身份配置不是有效 JSON；未输出文件内容'),{code:'CONFIG'});}});
- const url=new URL(config.url);if(url.protocol!=='http:'||!['127.0.0.1','localhost','[::1]'].includes(url.hostname)||url.username||url.password)throw Object.assign(Error('只允许本机 HTTP 房间'),{code:'CONFIG'});
+ if(!['connect','status','observe','reference','wait','submit','submit-action','wait-decision','cancel-wait','result','disconnect'].includes(command))throw Object.assign(Error('未知命令'),{code:'INVALID_REQUEST'});
+ const configPath=resolve(option('--config',join(root,'local-ai-private/session.json'))),config=await readFile(configPath,'utf8').then(text=>{try{return JSON.parse(text.replace(/^\uFEFF/,''));}catch{throw Object.assign(Error('身份配置JSON无效'),{code:'CONFIG'});}});
+ const url=new URL(config.url);if(url.protocol!=='http:'||!['127.0.0.1','localhost','[::1]'].includes(url.hostname)||url.username||url.password)throw Object.assign(Error('只允许本机HTTP'),{code:'CONFIG'});
  const cachePath=configPath+'.observation.json';let previous;try{previous=JSON.parse(await readFile(cachePath,'utf8'));}catch{}
- let body={};
+ const request=async(operation,body,signal=controller.signal)=>{stats.httpRequests++;const response=await fetch(new URL('/api/local-ai/'+operation,url),{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+config.token},body:JSON.stringify(body),signal:AbortSignal.any([signal,AbortSignal.timeout(operation==='wait'?70000:120000)])});const v=await response.json();if(!v.ok)throw Object.assign(Error(v.result?.message??'接口拒绝'),{code:v.result?.code??'REJECTED'});return v;};
+ let body={},operation=command;
  if(command==='wait')body={after:Number(option('--after',previous?.sequence??-1)),timeout:Number(option('--timeout',30000))};
- if(command==='submit'){const file=option('--request-file');if(!file)throw Object.assign(Error('缺少 --request-file'),{code:'INVALID_REQUEST'});body=JSON.parse((await readFile(file,'utf8')).replace(/^\uFEFF/,''));}
- const response=await fetch(new URL('/api/local-ai/'+(command==='reference'?'observe':command),url),{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+config.token},body:JSON.stringify(body),signal:AbortSignal.timeout(command==='wait'?70000:120000)});
- const value=await response.json();if(!value.ok)throw Object.assign(Error(value.result?.message??'接口拒绝'),{code:value.result?.code??'REJECTED'});
- if(value.result?.result?.ok===false)throw Object.assign(Error('正式控制器拒绝操作：'+value.result.result.error),{code:'ENGINE_REJECTED'});
+ if(['submit','submit-action'].includes(command)){const file=option('--request-file');if(!file)throw Object.assign(Error('缺少 --request-file'),{code:'INVALID_REQUEST'});body=JSON.parse((await readFile(file,'utf8')).replace(/^\uFEFF/,''));if(args.includes('--wait'))operation=command+'-wait';}
+ if(command==='reference')operation='observe';
+ if(command==='result')body={requestId:option('--request-id')};
+ const continuous=command==='wait-decision'||operation.endsWith('-wait'),waitFile=configPath+'.wait.json';
+ if(continuous){const waitId=option('--wait-id',body.requestId??crypto.randomUUID());let cursor;try{cursor=JSON.parse(await readFile(configPath+'.decision.json','utf8'));}catch{}
+  const wait={waitId,leaseMs:Number(option('--lease-ms',25000)),...(command==='wait-decision'?{after:args.includes('--fresh')?null:cursor?.cursor,expected:previous?{gameId:previous.gameId,epoch:previous.epoch,bindings:previous.bindings}:undefined}:{})};
+  body=command==='wait-decision'?wait:{...body,wait};await writeFile(waitFile,JSON.stringify({waitId,pid:process.pid}));
+  cancelRemote=()=>request('cancel-wait',{waitId},new AbortController().signal).catch(()=>{});
+  for(const signal of ['SIGINT','SIGTERM'])process.on(signal,()=>{void cancelRemote();controller.abort();});
+ }
+ if(command==='cancel-wait'){let waitId=option('--wait-id');if(!waitId)waitId=JSON.parse(await readFile(waitFile,'utf8')).waitId;body={waitId};}
+ let value,failures=0;
+ while(true){try{value=await request(operation,body);failures=0;}catch(e){if(!continuous||e.code||controller.signal.aborted||++failures>3)throw e;await new Promise(r=>setTimeout(r,500*failures));continue;}
+  stats.waitMs+=value.result.statistics?.waitMs??0;stats.eventsIgnored+=value.result.statistics?.eventsIgnored??0;
+  if(continuous&&value.result.leaseExpired){stats.leases++;continue;}break;
+ }
+ if(value.result?.result?.ok===false)throw Object.assign(Error('正式控制器拒绝：'+value.result.result.error),{code:'ENGINE_REJECTED'});
  const observation=value.result.observation??(value.result.interfaceVersion?value.result:null);
  if(observation){
-  const referencePath=configPath+'.reference.json';
-  const reference=await cachedReference(referencePath,observation,async referenceId=>{
-   const res=await fetch(new URL('/api/local-ai/reference',url),{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+config.token},body:JSON.stringify({referenceId}),signal:AbortSignal.timeout(30000)});
-   const reply=await res.json();if(!reply.ok)throw Object.assign(Error(reply.result?.message??'静态资料读取失败'),{code:reply.result?.code??'REFERENCE_FAILED'});return reply.result;
-  });
-  value.referenceCache={path:referencePath,id:reference.data.id,digest:reference.digest};
-  if(command==='reference')value.result=reference;
-  const continuous=previous?.gameId===observation.gameId&&previous?.epoch===observation.epoch;
-  value.changes={resync:!continuous,fromSequence:previous?.sequence??null,toSequence:observation.sequence,fields:continuous?Object.fromEntries(['public','mapFacts','reference','privateCountries','decisions','phase','activeSeat','round','status'].filter(k=>JSON.stringify(previous[k])!==JSON.stringify(observation[k])).map(k=>[k,observation[k]])):null};
+  const referencePath=configPath+'.reference.json';const reference=await cachedReference(referencePath,observation,async referenceId=>(await request('reference',{referenceId})).result);
+  value.referenceCache={path:referencePath,id:reference.data.id,digest:reference.digest};if(command==='reference')value.result=reference;
+  const same=previous?.gameId===observation.gameId&&previous?.epoch===observation.epoch;
+  value.changes={resync:!same,fromSequence:previous?.sequence??null,toSequence:observation.sequence,fields:same?Object.fromEntries(['public','mapFacts','reference','privateCountries','decisions','phase','activeSeat','round','status'].filter(k=>JSON.stringify(previous[k])!==JSON.stringify(observation[k])).map(k=>[k,observation[k]])):null};
   await mkdir(dirname(cachePath),{recursive:true});await writeFile(cachePath,JSON.stringify(observation),'utf8');
+  if(value.result.cursor!==undefined)await writeFile(configPath+'.decision.json',JSON.stringify({cursor:value.result.cursor}));
  }
- await mkdir(join(root,'local-ai-private'),{recursive:true});
- await appendFile(join(root,'local-ai-private/bridge.jsonl'),JSON.stringify({at:new Date().toISOString(),command,ms:performance.now()-started,requestId:body.requestId,ok:true,status:observation?.status,sequence:observation?.sequence})+'\n');
- if(command==='status'){const o=value.result;value.result={interfaceVersion:o.interfaceVersion,gameVersion:o.gameVersion,gameId:o.gameId,serverId:o.serverId,userId:o.userId,name:o.name,bindings:o.bindings,status:o.status,phase:o.phase,decisionSeats:o.decisionSeats,locked:o.locked,replay:o.replay,rules:o.rules,preludeEnabled:o.preludeEnabled};delete value.changes;}
- console.log(JSON.stringify(value,null,2));
-}catch(e){const code=e.code??'TRANSPORT';try{await mkdir(join(root,'local-ai-private'),{recursive:true});await appendFile(join(root,'local-ai-private/bridge.jsonl'),JSON.stringify({at:new Date().toISOString(),command,ms:performance.now()-started,ok:false,errorCode:code})+'\n');}catch{}console.log(JSON.stringify({ok:false,error:{code,message:e.message}},null,2));process.exitCode=['STALE','WRONG_GAME'].includes(code)?3:['DISCONNECTED','AUTH','REJECTED','ENGINE_REJECTED'].includes(code)?4:code==='ILLEGAL_CHOICE'||code==='INVALID_REQUEST'?2:5;}
+ if(command==='status'){const o=value.result;value.result={interfaceVersion:o.interfaceVersion,gameVersion:o.gameVersion,gameId:o.gameId,serverId:o.serverId,userId:o.userId,name:o.name,bindings:o.bindings,status:o.status,phase:o.phase,decisionSeats:o.decisionSeats,locked:o.locked,replay:o.replay,rules:o.rules};delete value.changes;}
+ if(observation&&(args.includes('--compact')||['submit-action','wait-decision'].includes(command)&&!args.includes('--full'))){
+  const o=observation;value.result.observation={gameId:o.gameId,epoch:o.epoch,revision:o.revision,status:o.status,phase:o.phase,round:o.round,activeSeat:o.activeSeat,bindings:o.bindings,offers:o.offers,decisions:o.decisions};
+  value.changes={resync:value.changes?.resync,fromSequence:previous?.sequence,toSequence:o.sequence};
+ }
+ value.statistics={...stats,totalMs:performance.now()-started};await mkdir(join(root,'local-ai-private'),{recursive:true});await appendFile(join(root,'local-ai-private/bridge.jsonl'),JSON.stringify({at:new Date().toISOString(),command,requestId:body.requestId,ok:true,...value.statistics})+'\n');
+ console.log(JSON.stringify(value,null,2));if(value.result.receipt?.status==='rejected')process.exitCode=2;
+}catch(e){const code=controller.signal.aborted?'CANCELLED':e.code??'TRANSPORT';try{await mkdir(join(root,'local-ai-private'),{recursive:true});await appendFile(join(root,'local-ai-private/bridge.jsonl'),JSON.stringify({at:new Date().toISOString(),command,ms:performance.now()-started,ok:false,errorCode:code,...stats})+'\n');}catch{}console.log(JSON.stringify({ok:false,error:{code,message:code==='CANCELLED'?'等待已取消':e.message},statistics:stats},null,2));process.exitCode=code==='CANCELLED'?130:['STALE','WRONG_GAME'].includes(code)?3:['DISCONNECTED','AUTH','REJECTED','ENGINE_REJECTED'].includes(code)?4:['ILLEGAL_CHOICE','INVALID_REQUEST','DUPLICATE_CONFLICT'].includes(code)?2:5;}

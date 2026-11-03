@@ -1,5 +1,5 @@
 战场军需官 1.8.4-ai增强版
-游戏版本：1.8.4；AI接口：1.1.0。
+游戏版本：1.8.4；AI接口：以 version/ai-build.json 为准。
 正式规则不变；确切构建身份见 version/ai-build.json。
 本包自带 runtime/node.exe，无需安装 Node、pnpm 或开发依赖。
 
