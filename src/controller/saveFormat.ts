@@ -1,3 +1,4 @@
+import {diffValue} from '../network/jsonPatch';
 import {preludeCatalog} from '../core/cardCatalog';
 import { createGame, PHASE_NAMES, SEATS, transition } from '../core';
 import type { Command, GameState, SeatId } from '../core';
@@ -213,12 +214,12 @@ export function validateSession(value:unknown):SaveSession {
     const r=value.recovery;demand(object(r)&&typeof r.fromCreation==='boolean'&&Array.isArray(r.steps));validateState(r.initial);
     demand(r.initial.gameId===value.state.gameId);
     for(const step of r.steps){demand(object(step));if(step.kind==='restore'){demand(typeof step.reason==='string');validateState(step.state);demand(step.state.gameId===value.state.gameId);}else demand(step.kind==='command'&&object(step.command)&&typeof step.command.type==='string');}
-    demand(JSON.stringify(recoverRecord(r as unknown as RecoveryRecord))===JSON.stringify(value.state),'对局记录回放与当前局面不一致。');
+    demand(diffValue(recoverRecord(r as unknown as RecoveryRecord),value.state).length===0,'对局记录回放与当前局面不一致。');
   }
   const session=value as unknown as SaveSession;
   demand(verifyReplay(session),'存档命令回放与当前局面不一致。');return structuredClone(session);
 }
 export function verifyReplay(session:SaveSession) {
-  try {let state=structuredClone(session.replayBase);for(const command of session.commands){const result=transition(state,command);if(!result.ok)return false;state=result.state;}return JSON.stringify(state)===JSON.stringify(session.state);}catch{return false;}
+  try {let state=structuredClone(session.replayBase);for(const command of session.commands){const result=transition(state,command);if(!result.ok)return false;state=result.state;}return diffValue(state,session.state).length===0;}catch{return false;}
 }
 
