@@ -1,3 +1,4 @@
+import {referenceData,referenceIdentity} from './reference';
 import type {Room} from '../network/Room';
 import {AiError,compileOffer,type Submission} from './contract';
 type Observation=Awaited<ReturnType<Room['localAiObserve']>>;
@@ -17,6 +18,7 @@ export class LocalAiAdapter {
  async disconnect(token:string){const s=this.sessions.get(token);if(s){s.alive=false;for(const wake of s.wake)wake();await this.room.disconnect(token,s.connection);this.sessions.delete(token);}return {disconnected:true};}
  private session(token:string){const s=this.sessions.get(token);if(!s?.alive)throw new AiError('DISCONNECTED','请先 connect；身份可能已被另一页面接管');return s;}
  async observe(token:string):Promise<Observation>{const s=this.session(token);return this.room.localAiObserve(token,s.connection);}
+ async reference(token:string,expectedId:string){await this.observe(token);if(expectedId!==referenceIdentity.id)throw new AiError('REFERENCE_MISMATCH','静态资料版本不匹配，请先 observe');return referenceData();}
  async wait(token:string,after:number,timeout:number){
   if(!Number.isSafeInteger(after)||!Number.isFinite(timeout)||timeout<0||timeout>60000)throw new AiError('INVALID_REQUEST','等待超时范围为 0..60000 毫秒');
   const session=this.session(token);let timer:ReturnType<typeof setTimeout>|undefined,notify:()=>void=()=>{};

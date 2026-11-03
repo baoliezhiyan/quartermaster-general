@@ -12,7 +12,8 @@ export function localAiHttp(adapter,logDir){
    if(req.method!=='POST'||!req.headers['content-type']?.startsWith('application/json'))throw Object.assign(Error('需要 POST JSON'),{code:'INVALID_REQUEST'});
    token=(req.headers.authorization??'').replace(/^Bearer /,'');if(!token||token.length>200)throw Object.assign(Error('需要玩家身份'),{code:'AUTH'});
    let text='';for await(const chunk of req){text+=chunk;if(Buffer.byteLength(text)>65536)throw Object.assign(Error('请求过大'),{code:'INVALID_REQUEST'});}body=JSON.parse(text||'{}');
-   if(operation==='connect')result=await adapter.connect(token);
+   if(operation==='reference')result=await adapter.reference(token,body.referenceId);
+   else if(operation==='connect')result=await adapter.connect(token);
    else if(operation==='disconnect')result=await adapter.disconnect(token);
    else if(operation==='status'||operation==='observe')result=await adapter.observe(token);
    else if(operation==='wait')result=await adapter.wait(token,body.after,body.timeout??30000);

@@ -1,5 +1,5 @@
 import type {Command,SeatId} from '../core/types';
-export const AI_INTERFACE_VERSION='1.0.0';
+export const AI_INTERFACE_VERSION='1.1.0';
 export interface Offer {id:string;seat:SeatId;label:string;command:Record<string,unknown>; selections?:Record<string,{ids:string[];min:number;max:number;ordered?:boolean;requirements?:readonly string[]}>}
 export interface Submission {requestId:string;gameId:string;epoch:string;revision:number;offerId:string;selections?:Record<string,string[]>}
 export class AiError extends Error {constructor(public code:string,message:string){super(message);}}

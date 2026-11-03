@@ -5,14 +5,15 @@ import {createHash} from 'node:crypto';
 const require=createRequire(import.meta.url),root=resolve('.');
 let previousFolder;try{const previous=JSON.parse(await readFile('releases/multiplayer-latest.json','utf8'));previousFolder=win32.basename(previous.folder);if(previous.previousFolder&&!await stat(join(root,'releases',previousFolder,'data')).catch(()=>null))previousFolder=win32.basename(previous.previousFolder);}catch(e){if(e.code!=='ENOENT')throw e;}
 const version=(JSON.parse(await readFile('package.json','utf8')).displayVersion??JSON.parse(await readFile('package.json','utf8')).version).replace(/^1\.0\.0$/, '1.0').replace(/^1\.0\.1$/, '1.01').replace(/^1\.1\.0$/, '1.1').replace(/^1\.2\.0$/, '1.2').replace(/^1\.3\.0$/, '1.3');
-const name=`战场军需官-v${version}`;
+const aiEnhanced=process.argv.includes('--ai');
+const name=`战场军需官-v${version}${aiEnhanced?'-ai增强版':''}`;
 // Refuse to merge into an existing release (it may contain player saves).
 await mkdir(join(root,'releases'),{recursive:true});
 const folder=join(root,'releases',name);await mkdir(folder);
 for(const dir of ['dist','dist-server'])await cp(join(root,dir),join(folder,dir),{recursive:true});
 await rename(join(folder,'dist-server/Room.js'),join(folder,'dist-server/Room.mjs'));
 await mkdir(join(folder,'scripts'));await writeFile(join(folder,'scripts/multiplayer-server.mjs'),(await readFile('scripts/multiplayer-server.mjs','utf8')).replaceAll('../dist-server/Room.js','../dist-server/Room.mjs'));
-for(const name of ['validate-match-log.mjs','match-log-store.mjs','join-client.mjs','static-assets.mjs','ws-compression.mjs','server-origin.mjs','request-json.mjs','http-response.mjs','journal-store.mjs','wire-snapshot.mjs','start-online.mjs','network-diagnostics.mjs','start-cloudflare.ps1','start-internet.ps1','start-cpolar.mjs','configure-cpolar.ps1','start-cpolar-game.ps1'])await cp(join('scripts',name),join(folder,'scripts',name));
+for(const name of ['local-ai-http.mjs','validate-match-log.mjs','match-log-store.mjs','join-client.mjs','static-assets.mjs','ws-compression.mjs','server-origin.mjs','request-json.mjs','http-response.mjs','journal-store.mjs','wire-snapshot.mjs','start-online.mjs','network-diagnostics.mjs','start-cloudflare.ps1','start-internet.ps1','start-cpolar.mjs','configure-cpolar.ps1','start-cpolar-game.ps1'])await cp(join('scripts',name),join(folder,'scripts',name));
 await writeFile(join(folder,'加入联机版游戏.cmd'),'@echo off\r\nchcp 65001 >nul\r\n"%~dp0runtime\\node.exe" "%~dp0scripts\\join-client.mjs"\r\nif errorlevel 1 pause\r\n','ascii');
 
 await mkdir(join(folder,'对局记录'));
@@ -25,9 +26,11 @@ await cp('src/actionReplay/trainingContract.ts',join(folder,'回放接口/traini
 await cp('docs/training-replay-output-v1.md',join(folder,'回放接口/训练端输出规范-v1.md'));
 await cp('docs/action-replay-adapter.md',join(folder,'回放接口/adapter.md'));
 await cp('docs/match-log-spec-v2.0.md',join(folder,'回放接口/spec-v2.0.md'));
+if(!aiEnhanced){
 await mkdir(join(folder,'回放样例'));
 // Only freshly generated contract samples; never package stale/user archives.
 for(const sample of ['client-standard.jsonl','client-gm-edit.jsonl','constructed-training-resources.jsonl'])await cp(join('outputs/match-log-samples',sample),join(folder,'回放样例',sample));
+}
 
 
 await mkdir(join(folder,'cloudflare'));
@@ -49,9 +52,20 @@ await cp(dirname(require.resolve('ws/package.json')),join(folder,'node_modules/w
 await mkdir(join(folder,'version'));
 await writeFile(join(folder,'version/package.json'),JSON.stringify({type:'module',version,private:true}));
 await cp('docs/v3-local-multiplayer.md',join(folder,'使用说明.md'));
-await writeFile(join(folder,'启动本地版游戏.cmd'),'@echo off\r\nchcp 65001 >nul\r\nset QM_PUBLIC_ORIGIN=\r\ncd /d "%~dp0"\r\n"%~dp0runtime\\node.exe" "%~dp0scripts\\multiplayer-server.mjs" --open\r\nif errorlevel 1 pause\r\n','ascii');
+await writeFile(join(folder,'启动本地版游戏.cmd'),'@echo off\r\nchcp 65001 >nul\r\nset QM_PUBLIC_ORIGIN=\r\nset QM_LOCAL_AI=0\r\ncd /d "%~dp0"\r\n"%~dp0runtime\\node.exe" "%~dp0scripts\\multiplayer-server.mjs" --open\r\nif errorlevel 1 pause\r\n','ascii');
 await mkdir(join(folder,'licenses'));for(const dep of ['react','react-dom','ws'])await cp(join(dirname(require.resolve(dep+'/package.json')),'LICENSE'),join(folder,'licenses',dep+'-LICENSE.txt'));
 await cp('scripts/release/licenses/NODE-LICENSE.txt',join(folder,'licenses/NODE-LICENSE.txt'));
+if(aiEnhanced){
+ for(const file of ['local-ai-cli.mjs','local-ai-reference-cache.mjs','start-local-ai.mjs'])await cp(join(root,'scripts',file),join(folder,'scripts',file));
+ await writeFile(join(folder,'启动本机AI接口.cmd'),'@echo off\r\nchcp 65001 >nul\r\nset QM_PUBLIC_ORIGIN=\r\ncd /d "%~dp0"\r\n"%~dp0runtime\\node.exe" "%~dp0scripts\\start-local-ai.mjs" --open\r\nif errorlevel 1 pause\r\n','ascii');
+ await writeFile(join(folder,'AI命令.cmd'),'@echo off\r\nchcp 65001 >nul\r\n"%~dp0runtime\\node.exe" "%~dp0scripts\\local-ai-cli.mjs" %*\r\n','ascii');
+ await mkdir(join(folder,'local-ai-private'));
+ await writeFile(join(folder,'local-ai-private/session.example.json'),JSON.stringify({url:'http://127.0.0.1:4185',token:''},null,2)+'\n');
+ await cp('docs/local-ai-portable.txt',join(folder,'AI使用说明.txt'));
+ const identity=JSON.parse(await readFile('src/matchLog/build-identity.json','utf8'));
+ const aiVersion=(await readFile('src/localAi/contract.ts','utf8')).match(/AI_INTERFACE_VERSION='([^']+)'/)[1];
+ await writeFile(join(folder,'version/ai-build.json'),JSON.stringify({edition:'1.8.4-ai增强版',gameVersion:version,aiInterfaceVersion:aiVersion,formalBaseline:'ac94499',adapterBaseline:'2b380af',...identity},null,2)+'\n');
+}
 const hashes={};async function scan(dir,prefix=''){for(const e of await readdir(dir,{withFileTypes:true})){const key=prefix+e.name;if(e.isDirectory())await scan(join(dir,e.name),key+'/');else hashes[key]=createHash('sha256').update(await readFile(join(dir,e.name))).digest('hex');}}
 await scan(folder);await writeFile(join(folder,'version/SHA256.json'),JSON.stringify(hashes,null,2));
 await writeFile('releases/multiplayer-latest.json',JSON.stringify({folder:name,previousFolder,version,url:'http://127.0.0.1:4183/'},null,2));console.log(folder);
