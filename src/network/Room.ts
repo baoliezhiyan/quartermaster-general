@@ -1,3 +1,7 @@
+import {cardEffects} from '../core/specialCards';
+import {observePlayer} from '../localAi/observation';
+import {allianceOf} from '../core/basic';
+export {LocalAiAdapter} from '../localAi/adapter';
 import {pendingResponseSeats} from '../core/resolution';
 export {diffValue,applyPatch} from './jsonPatch';
 import {recordPerformance,measure,measureAsync} from '../controller/performanceProbe';
@@ -35,6 +39,27 @@ export class Room {
   this.recoveryExists=recovery().then(value=>!!value);
   for(const i of identities){const bindings=SEATS.filter(seat=>i.bindings?.includes(seat)&&!this.occupant(seat));this.users.set(i.token,{...i,bindings,access:bindings.length?{kind:'player',seat:bindings[0]}:{kind:'public'},online:false,connection:'',view:bindings[0]??'germany',results:new Map()});}
  }
+ localAiAuthorize(token:string){return this.serial(async()=>{
+  const u=this.user(token),seats=u.bindings??[];
+  if(u.access.kind!=='player'||!seats.length||seats.length>3||seats.some(seat=>allianceOf(seat)!==allianceOf(seats[0])))throw Error('AI_REQUIRES_BOUND_ALLIANCE');
+ });}
+ /** Optional local adapter read. Uses the same player projection for each bound seat. */
+ localAiObserve(token:string,connection:string){return this.serial(async()=>{
+  const u=this.user(token);if(!u.online||u.connection!==connection)throw Error('AI_CONNECTION_LOST');
+  const seats=u.bindings??[];
+  if(u.access.kind!=='player'||!seats.length||seats.length>3||seats.some(seat=>allianceOf(seat)!==allianceOf(seats[0])))throw Error('AI_REQUIRES_BOUND_ALLIANCE');
+  return observePlayer(this.engine.getSnapshot(),seats,{epoch:this.epoch,sequence:this.sequence,serverId:this.serverId,userId:u.id,name:u.name,locked:this.sceneLocked,replay:this.engine.getSessionInfo().replayMode});
+ });}
+ localAiPrepare(token:string,connection:string,command:Command){return this.serial(async()=>{
+  const u=this.user(token),s=this.engine.getSnapshot();
+  if(!u.online||u.connection!==connection||command.type==='CREATE_GAME'||u.access.kind!=='player'||!u.bindings?.includes(command.seat)||!s||command.expectedRevision!==s.revision)throw Error('AI_STALE_OR_UNAUTHORIZED');
+  if(command.type==='PLAY_CARD'){
+   const view=this.projectView(s,{kind:'player',seat:command.seat},command.seat)!;
+   const cardId=command.cardId;const c=view.decks[command.seat].hand.find(c=>c.id===cardId);if(!c)throw Error('AI_CARD_UNAVAILABLE');
+   command={...command,effectIndices:cardEffects(view,c,command.targetIds).map((_,i)=>i)};
+  }
+  return command;
+ });}
  private occupant(seat:SeatId){return [...this.users.values()].find(u=>u.bindings?.includes(seat)||u.access.kind==='player'&&u.access.seat===seat);}
  private identities():Identity[]{return [...this.users.values()].map(({id,name,token,bindings})=>({id,name,token,bindings}));}
  private updateFactControllers(){this.engine.setFactControllers(Object.fromEntries(SEATS.map(seat=>{const user=[...this.users.values()].find(u=>(u.bindings??[]).includes(seat)||u.access.kind==='player'&&u.access.seat===seat);return [seat,{controllerId:user?.id??null,bound:!!user}];})) as import('../matchLog/contract').ControllerMap,[...this.users.values()].map(u=>({controllerId:u.id,kind:'human' as const,displayName:u.name})));}
