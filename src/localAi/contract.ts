@@ -1,6 +1,6 @@
 import type {Command,SeatId} from '../core/types';
-export const AI_INTERFACE_VERSION='1.0.0';
-export interface Offer {id:string;seat:SeatId;label:string;command:Record<string,unknown>; selections?:Record<string,{ids:string[];min:number;max:number;ordered?:boolean;requirements?:readonly string[]}>}
+export const AI_INTERFACE_VERSION='1.2.0';
+export interface Offer {id:string;seat:SeatId;label:string;command:Record<string,unknown>;details?:import('../core/actions').BasicOption; selections?:Record<string,{ids:string[];min:number;max:number;ordered?:boolean;requirements?:readonly string[]}>}
 export interface Submission {requestId:string;gameId:string;epoch:string;revision:number;offerId:string;selections?:Record<string,string[]>}
 export class AiError extends Error {constructor(public code:string,message:string){super(message);}}
 export function compileOffer(offers:Offer[],request:Submission):Command {
@@ -11,3 +11,7 @@ export function compileOffer(offers:Offer[],request:Submission):Command {
  for(const [key,rule] of Object.entries(spec)){const ids=input[key]??[];if(!Array.isArray(ids)||ids.some(id=>typeof id!=='string'||!rule.ids.includes(id))||new Set(ids).size!==ids.length||ids.length<rule.min||ids.length>rule.max)throw new AiError('ILLEGAL_CHOICE',key+' 数量或候选无效');selected[key]=key==='takeCardId'||key==='cardId'?ids[0]:ids;}
  return {...offer.command,...selected,seat:offer.seat,expectedRevision:request.revision} as Command;
 }
+
+export interface ActionIntent {regionId?:string;defenderId?:string;attackerId?:string;airId?:string;recycleId?:string;airIntercept?:boolean;feeCardIds?:string[];cardId?:string;answers?:{kind:'CARDS'|'PAY_COST'|'SELECT'|'EFFECT_DECISION'|'AIR_INTERCEPT';effectIndex?:number;ids:string[]}[]}
+export interface ActionRequest extends Submission {intent:ActionIntent}
+export interface ReceiptStore {read(key:string):Promise<any>;write(key:string,value:unknown):Promise<void>}

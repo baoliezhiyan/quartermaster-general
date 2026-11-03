@@ -1,3 +1,9 @@
+import {boardOptions} from '../core/boardEffects';
+import {pendingResponseSeats} from '../core/resolution';
+import {mapFacts} from './mapFacts';
+import {referenceIdentity} from './reference';
+import {publicActiveCards} from '../core/publicActiveCards';
+import {persistentHistory} from '../core/prelude';
 import {cardName,seatOf,allianceOf} from '../core/basic';
 import {specialCard} from '../core/cardCatalog';
 import {REGIONS} from '../core/map';
@@ -6,12 +12,12 @@ import {seatAirMoveOptions,airDestinations} from '../core/actions';
 import {airActionOptions} from '../core/phaseAvailability';
 import {playableCard,usableStatus} from '../ui/playAvailability';
 import {resolutionTargets} from '../ui/map/targetChoices';
-import {suppliedUnits} from '../core/supply';
+import {allianceScores,suppliedUnits} from '../core/supply';
 import {projectState} from '../network/project';
 import type {ReadState,SeatId,CardInstance} from '../core/types';
 import {AI_INTERFACE_VERSION,type Offer} from './contract';
 import {VERSION} from '../actionReplay/state';
-const card=(c:CardInstance)=>({id:c.id,definitionId:c.definitionId,country:c.country,name:c.definitionId==='hidden'?'未知牌':cardName(c),type:specialCard(c.definitionId,c.balance)?.type??'基本牌',text:specialCard(c.definitionId,c.balance)?.text??cardName(c)});
+const card=(c:CardInstance)=>{const d=specialCard(c.definitionId,c.balance);return {id:c.id,definitionId:c.definitionId,deckOwner:c.deckOwner,country:c.country,balance:!!c.balance,name:c.definitionId==='hidden'?'未知牌':cardName(c),type:d?.type??'基本牌',text:d?.text??cardName(c),tension:d?.tension??null,sourceIndex:d?.sourceIndex??null,persistentHistory:persistentHistory(c.definitionId,!!c.balance)};};
 const sorted=(cs:readonly CardInstance[])=>cs.map(card).sort((a,b)=>a.definitionId.localeCompare(b.definitionId)||a.id.localeCompare(b.id));
 export function offersFor(s:ReadState,seat:SeatId):Offer[]{
  const result:Offer[]=[],d=s.decks[seat];
@@ -28,7 +34,7 @@ export function offersFor(s:ReadState,seat:SeatId):Offer[]{
  if(s.phase==='AIR'){
  for(const o of airActionOptions(s).filter(o=>o.enabled))add('air:'+o.id,o.label,{type:'SELECT_AIR_ACTION',action:o.id});
  if(s.airAction)add('air:back','返回空军行动选择',{type:'SELECT_AIR_ACTION',action:null});
- if(s.airAction==='move')for(const o of seatAirMoveOptions(s,seat))add('move:'+o.id,o.label+'；弃置一张手牌',{type:'MOVE_AIR',optionId:o.id},{cardId:{ids:d.hand.map(c=>c.id),min:1,max:1}});
+ if(s.airAction==='move')for(const o of seatAirMoveOptions(s,seat)){add('move:'+o.id,o.label+'；弃置一张手牌',{type:'MOVE_AIR',optionId:o.id},{cardId:{ids:d.hand.map(c=>c.id),min:1,max:1}});result[result.length-1].details=o;}
  }
  if(['PLAY','AIR'].includes(s.phase)){
  for(const c of d.hand.filter(c=>playableCard(s,c))){const targets=cardTargetChoices(s,c);add('play:'+c.id,'打出'+cardName(c),{type:'PLAY_CARD',cardId:c.id,effectIndices:[],targetIds:[],guided:true},targets.length?{targetIds:{ids:targets,min:1,max:specialCard(c.definitionId,c.balance)?.sourceIndex===162?Math.min(3,targets.length):1,ordered:true}}:undefined);}
@@ -40,21 +46,29 @@ export function offersFor(s:ReadState,seat:SeatId):Offer[]{
 }
 const supportedChoices=new Set(['WITHDRAW','BUILD_ORDER','EFFECT_DECISION','AIR_DEFENSE','AIR_INTERCEPT','TRIGGER','ORDER_MANDATORY_TRIGGERS','FORCE_HAND','PAY_COST','ACTION','RELOCATE','REALLOCATE','EFFECTS','SELECT','CARDS','EXTRA_CARD','EXTRA_TARGET','EXTRA_EFFECTS']);
 export function observePlayer(source:ReadState|null,bindings:SeatId[],meta:{epoch:string;sequence:number;serverId:string;userId:string;name:string;locked:boolean;replay:boolean}){
- const base={interfaceVersion:AI_INTERFACE_VERSION,gameVersion:VERSION,...meta,bindings};
+ const base={interfaceVersion:AI_INTERFACE_VERSION,gameVersion:VERSION,...meta,bindings,reference:referenceIdentity};
  if(!source)return {...base,gameId:null,revision:null,status:'waiting_game',offers:[] as Offer[]};
  const views=bindings.map(seat=>projectState(source,{kind:'player',seat},seat)!);
  const pub=projectState(source,{kind:'public'},'germany')!;
- const privateCountries=Object.fromEntries(views.map(s=>{const seat=s.viewSeat,d=s.decks[seat],p=s.prelude?.decks[seat];return [seat,{hand:d.hand.map(card),deckComposition:sorted(d.drawPile),discard:d.discardPile.map(card),faceDown:d.faceDown.map(card),active:d.active.map(card),resolving:d.resolving.map(card),removed:d.removed.map(card),prelude:p?{hand:p.hand.map(card),knownTop:p.drawPile[0]?card(p.drawPile[0]):null,deckComposition:sorted(p.drawPile),discard:p.discardPile.map(card)}:null,notices:s.responseNotices,disabledResponseIds:s.disabledResponseIds,uses:Object.fromEntries(Object.entries(source.resolution?.turnUses??{}).filter(([key])=>[...d.active,...d.faceDown,...d.hand,...d.resolving].some(c=>key.includes(c.id))))}];}));
+ const privateCountries=Object.fromEntries(views.map(s=>{const seat=s.viewSeat,d=s.decks[seat],p=s.prelude?.decks[seat];return [seat,{hand:d.hand.map(card),deckComposition:sorted(d.drawPile),discard:d.discardPile.map(card),faceDown:d.faceDown.map(card),active:d.active.map(card),resolving:d.resolving.map(card),removed:d.removed.map(card),prelude:p?{hand:p.hand.map(card),knownTop:p.drawPile[0]?card(p.drawPile[0]):null,deckComposition:sorted(p.drawPile),discard:p.discardPile.map(card)}:null,notices:s.responseNotices,disabledResponseIds:s.disabledResponseIds,roundUses:Object.fromEntries(Object.entries(source.roundUses??{}).filter(([id])=>Object.values(d).flat().some(c=>c.id===id))),uses:Object.fromEntries(Object.entries(source.resolution?.turnUses??{}).filter(([key])=>[...d.active,...d.faceDown,...d.hand,...d.resolving].some(c=>key.includes(c.id))))}];}));
  const offers=meta.locked||meta.replay?[]:views.flatMap(s=>offersFor(s,s.viewSeat));
- const decisions=views.flatMap(s=>{const q=s.resolution?.choice;if(!q)return [];const targets=resolutionTargets(s);const f=s.resolution?.frames.find(f=>f.id===q.frameId);
+ const decisions=views.flatMap(s=>{const q=s.resolution?.choice;if(!q)return [];const targets=resolutionTargets(s);const f=s.resolution?.frames.find(f=>f.id===q.frameId),actual=source.resolution?.frames.find(f=>f.id===q.frameId),effect=f?.effects[f.nextEffectIndex];
+  const details=effect?.kind==='action'?boardOptions(s,effect):[];
   const windowIds=new Set([q.windowId,...q.options.map(o=>o.windowId)].filter(Boolean));
   const triggerReasons=(source.resolution?.windows??[]).filter(w=>windowIds.has(w.id)).map(w=>{
    const event=source.resolution?.events.find(e=>e.id===w.originEventId),effect=event?.effect,parent=source.resolution?.frames.find(f=>f.id===event?.frameId);
-   const c=Object.values(s.decks).flatMap(d=>Object.values(d).flat()).find(c=>c.id===parent?.cardId&&c.definitionId!=='hidden');
+   const sourceVisible=!!parent&&(bindings.includes(parent.owner)||source.publicCardIds?.includes(parent.cardId??'')||Object.values(pub.decks).some(d=>d.active.some(c=>c.id===parent.cardId)));
+   const c=sourceVisible?Object.values(s.decks).flatMap(d=>Object.values(d).flat()).find(c=>c.id===parent?.cardId&&c.definitionId!=='hidden'):undefined;
    return {timing:w.timing,sourceCard:c?card(c):undefined,effect:effect?.kind==='action'?{kind:effect.kind,country:effect.country,action:effect.action,regionId:effect.option?.regionId??effect.selection?.regionId}:effect?.kind==='signal'?{kind:effect.kind,phase:effect.tag.startsWith('PHASE:')?effect.tag.slice(6):undefined}:effect?.kind==='remove'?{kind:effect.kind,unit:effect.unit,cause:effect.cause}:effect&&['deckTop','forceHand','draw'].includes(effect.kind)?{kind:effect.kind}:undefined};
   });
-  return [{triggerReasons,seat:s.viewSeat,id:q.id,kind:q.kind,prompt:q.prompt,min:q.min,max:q.max,canSkip:q.canSkip,requirements:q.requirements,options:[...q.options].sort((a,b)=>a.id.localeCompare(b.id)).map(o=>({...o,label:specialCard(o.label)?.name??o.label,regionId:targets.find(t=>t.id===o.id)?.regionId})),context:f?{source:f.source,cardId:f.cardId,effects:f.effects.map(e=>({kind:e.kind,label:e.label,fee:e.fee,...(e.kind==='cards'?{from:e.from,to:e.to,min:e.min,max:e.max,filter:e.filter,requirements:e.requirements,order:e.order}:e.kind==='action'?{action:e.action,country:e.country,regions:e.regions,selection:e.selection}:e.kind==='extraPlay'?{from:e.from,filter:e.filter,allowSkip:e.allowSkip}:{})})),stage:f.stage}:undefined}];});
- const noDecision=source.resolution?.running&&!source.resolution.choice;
+  return [{frameId:q.frameId,field:q.field,effectIndex:actual?.nextEffectIndex,triggerReasons,seat:s.viewSeat,id:q.id,kind:q.kind,prompt:q.prompt,min:q.min,max:q.max,canSkip:q.canSkip,requirements:q.requirements,options:[...q.options].sort((a,b)=>a.id.localeCompare(b.id)).map(o=>({...o,label:specialCard(o.label)?.name??o.label,regionId:targets.find(t=>t.id===o.id)?.regionId,details:q.field==='option'?details.find(d=>d.id===o.id):undefined})),context:f?{source:f.source,cardId:f.cardId,effects:f.effects.map(e=>({kind:e.kind,label:e.label,fee:e.fee,...(e.kind==='cards'?{from:e.from,to:e.to,min:e.min,max:e.max,filter:e.filter,requirements:e.requirements,order:e.order}:e.kind==='action'?{action:e.action,country:e.country,regions:e.regions,selection:e.selection}:e.kind==='extraPlay'?{from:e.from,filter:e.filter,allowSkip:e.allowSkip}:{})})),stage:f.stage}:undefined}];});
+ const blockingNoticeSeats=pendingResponseSeats(source).filter(seat=>bindings.includes(seat));
+ const noDecision=source.resolution?.running&&!source.resolution.choice&&!blockingNoticeSeats.length;
  const unsupported=source.mode!=='FULL'||!!source.trainingCourse||!!noDecision||!!source.resolution?.choice&&!supportedChoices.has(source.resolution.choice.kind);
- return {...base,gameId:source.gameId,revision:source.revision,rules:pub.rules,preludeEnabled:!!source.prelude,phase:pub.phase,round:pub.round,activeSeat:pub.activeSeat,decisionSeats:[...new Set(offers.map(o=>o.seat))],status:source.status==='FINISHED'?'finished':unsupported?'unsupported':offers.length?'needs_ai':'waiting_other',unsupportedReason:unsupported?'需要 FULL 正式对局及明确决策节点；未自动执行任何选择':undefined,public:{units:pub.units,suppliedUnitIds:[...suppliedUnits(pub)].sort(),scores:pub.scores,neutrality:pub.neutrality,turnFlags:pub.turnFlags,airAction:pub.airAction,basicPlaysRemaining:pub.basicPlaysRemaining,winner:pub.winner,victoryReason:pub.victoryReason,prelude:pub.prelude?{active:pub.prelude.active,turn:pub.prelude.turn,round:pub.prelude.round,tension:pub.prelude.tension,discarded:pub.prelude.discarded,played:pub.prelude.played}:null,countries:Object.fromEntries(Object.entries(pub.decks).map(([seat,d])=>[seat,{handCount:d.hand.length,deckCount:d.drawPile.length,faceDownCount:d.faceDown.length,active:d.active.map(card),visibleDiscard:d.discardPile.map(card),revealedResponses:d.faceDown.filter(c=>c.definitionId!=='hidden').map(card)}])),log:pub.publicLog},privateCountries,decisions,offers:unsupported?[]:offers,regions:REGIONS.map(r=>({id:r.id,name:r.name,type:r.type})),alliance:bindings.length?allianceOf(bindings[0]):null};
+ return {...base,gameId:source.gameId,revision:source.revision,rules:pub.rules,preludeEnabled:!!source.prelude,phase:pub.phase,round:pub.round,activeSeat:pub.activeSeat,decisionSeats:[...new Set(offers.map(o=>o.seat))],status:source.status==='FINISHED'?'finished':unsupported?'unsupported':offers.length?'needs_ai':'waiting_other',unsupportedReason:unsupported?'需要 FULL 正式对局及明确决策节点；未自动执行任何选择':undefined,public:{units:pub.units,suppliedUnitIds:[...suppliedUnits(pub)].sort(),scores:pub.scores,allianceScores:allianceScores(pub),axisBonus:pub.axisBonus,neutrality:pub.neutrality,neutralityNotices:pub.neutralityNotices,redistributed:pub.redistributed,turnFlags:pub.turnFlags,airAction:pub.airAction,basicPlaysRemaining:pub.basicPlaysRemaining,winner:pub.winner,victoryReason:pub.victoryReason,prelude:pub.prelude?{active:pub.prelude.active,turn:pub.prelude.turn,round:pub.prelude.round,tension:pub.prelude.tension,discarded:pub.prelude.discarded,played:pub.prelude.played}:null,countries:Object.fromEntries(Object.entries(pub.decks).map(([id,d])=>{const seat=id as SeatId,p=pub.prelude?.decks[seat],armaments=pub.publicArmamentCounts?.[seat]??0,active=publicActiveCards(pub,seat),treaties=active.filter(c=>persistentHistory(c.definitionId,!!c.balance));return [seat,{handCount:d.hand.length,deckCount:d.drawPile.length,discardCount:pub.publicDiscardCounts?.[seat]??d.discardPile.length,faceDownCount:d.faceDown.length,responseCount:d.faceDown.length-armaments,armamentCount:armaments,statusCount:active.length-treaties.length,treatyCount:treaties.length,active:active.map(card),visibleDiscard:d.discardPile.map(card),revealedResponses:d.faceDown.filter(c=>c.definitionId!=='hidden').map(card),prelude:p?{handCount:p.hand.length,deckCount:p.drawPile.length,discardCount:p.discardPile.length}:null}];})),log:pub.publicLog},resolutionSerial:source.balanceResolutionSerial??null,placements:source.events.filter(e=>e.type==='UNIT_PLACED'&&e.revision>=source.revision-1),resolutionRunning:!!source.resolution?.running,resolutionFacts:(source.resolution?.events??[]).flatMap(event=>{
+ const f=source.resolution?.frames.find(f=>f.id===event.frameId);if(!f||!bindings.includes(f.owner))return [];
+ const e=event.effect;if(!e||!['action','cards','score'].includes(e.kind))return [];
+ return [{eventId:event.id,frameId:f.id,effectIndex:event.effectIndex,kind:e.kind,outcome:event.outcome,applied:event.applied,ended:event.ended,cancelled:event.cancelled,
+ ...(e.kind==='action'?{action:e.action,regionId:e.option?.regionId,repeated:!!e.option?.existingId}:e.kind==='cards'&&bindings.includes(e.seat)?{seat:e.seat,fee:!!e.fee,from:e.from,to:e.to,cardIds:e.selectedIds}:e.kind==='score'?{seat:e.seat,amount:e.amount}:{})}];
+ }),blockingNoticeSeats,mapFacts:mapFacts(pub),privateCountries,decisions,offers:unsupported?[]:offers,regions:REGIONS.map(r=>({id:r.id,name:r.name,type:r.type})),alliance:bindings.length?allianceOf(bindings[0]):null};
 }

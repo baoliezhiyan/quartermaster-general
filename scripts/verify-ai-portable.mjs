@@ -1,0 +1,36 @@
+import {spawn,execFile} from 'node:child_process';
+import {promisify} from 'node:util';
+import {readFile,writeFile,mkdir,stat} from 'node:fs/promises';
+import {resolve,join} from 'node:path';
+import {createHash} from 'node:crypto';
+import WebSocket from 'ws';
+import assert from 'node:assert/strict';
+const run=promisify(execFile),arg=process.argv.indexOf('--root');assert(arg>=0,'--root 解压包目录');
+const root=resolve(process.argv[arg+1]),node=join(root,'runtime/node.exe'),area=resolve(process.argv[process.argv.indexOf('--area')+1]||'outputs/portable-ai-verify');
+assert(process.argv.includes('--area'));await mkdir(area,{recursive:true});await stat(node);
+const base='http://127.0.0.1:19483',ai='http://127.0.0.1:19485',data=join(area,'data-'+Date.now()),config=join(area,'session.json'),sockets=[],children=[];
+const env={...process.env,PATH:'',NODE_PATH:'',QM_PORT:'19483',QM_AI_PORT:'19485',QM_DATA_DIR:data,QM_NO_OPEN:'1',QM_PUBLIC_ORIGIN:'',QM_LOCAL_AI:'1'};
+function start(kind){const name=kind==='ai'?'启动本机AI接口.cmd':'启动本地版游戏.cmd';const child=spawn(join(process.env.SystemRoot,'System32/cmd.exe'),['/d','/s','/c',`""${join(root,name)}""`],{cwd:area,env,stdio:['ignore','pipe','pipe'],windowsHide:true,windowsVerbatimArguments:true});children.push(child);child.output='';child.stdout.on('data',b=>child.output+=b);child.stderr.on('data',b=>child.output+=b);return child;}
+async function ready(child){await new Promise((ok,no)=>{const timer=setTimeout(()=>no(Error('服务启动超时 '+child.output)),15000);const check=()=>{if(child.output.includes('本机入口：'+base+'/')){clearTimeout(timer);ok();}};child.stdout.on('data',check);child.once('exit',()=>{clearTimeout(timer);no(Error('服务退出 '+child.output));});check();});}
+async function stop(child){if(child.exitCode===null){await run(join(process.env.SystemRoot,'System32/taskkill.exe'),['/PID',String(child.pid),'/T','/F'],{windowsHide:true}).catch(()=>{});await new Promise(r=>setTimeout(r,200));}}
+async function post(path,body,token){const r=await fetch(base+path,{method:'POST',headers:{'Content-Type':'application/json',...(token?{Authorization:'Bearer '+token}:{})},body:JSON.stringify(body)}),v=await r.json();assert(v.ok,v.error);return v.result;}
+async function user(name,identity){const u=identity??await post('/api/identity',{name});u.connection=crypto.randomUUID();u.revision=null;const ws=new WebSocket(base.replace('http','ws')+'/api/socket',{origin:base});sockets.push(ws);await new Promise((ok,no)=>{ws.on('error',no);ws.on('open',()=>ws.send(JSON.stringify({token:u.token,connection:u.connection})));ws.on('message',raw=>{const v=JSON.parse(raw);if(v.room){u.epoch=v.room.epoch;u.revision=v.state?.revision??u.revision??null;ok();}});});return u;}
+async function call(u,method,...args){return post('/api/request',{id:crypto.randomUUID(),connection:u.connection,epoch:u.epoch,revision:u.revision??null,method,args},u.token);}
+async function cli(command,...args){const {stdout}=await run(node,[join(root,'scripts/local-ai-cli.mjs'),command,'--config',config,...args],{cwd:area,env,timeout:15000,windowsHide:true});return JSON.parse(stdout);}
+try{
+ const ordinary=start('ordinary');await ready(ordinary);assert((await fetch(base)).ok);let closed=false;try{await fetch(ai,{signal:AbortSignal.timeout(1000)});}catch{closed=true;}assert(closed,'普通入口必须关闭AI端口，即使父环境设置1');await stop(ordinary);
+ const enhanced=start('ai');await ready(enhanced);const html=await (await fetch(base)).text();assert(html.includes('v1.8.4'));
+ const collision=start('ordinary');await new Promise((ok,no)=>{const t=setTimeout(()=>no(Error('重复入口未及时拒绝')),8000);collision.once('exit',()=>{clearTimeout(t);ok();});});assert(collision.output.includes('此数据目录已有服务运行'));
+ const gm=await user('构造GM'),u=await user('构造AI');await call(gm,'seat',{kind:'gm'});await call(u,'seat',{kind:'player',seat:'germany'});for(const seat of ['germany','japan','italy'])await call(u,'binding',seat,true);await call(gm,'dispatch',{type:'CREATE_GAME',gameId:'portable-constructed',seed:17,prelude:false,balance:true});
+ await writeFile(config,JSON.stringify({url:ai,token:u.token}));const connect=await cli('connect');assert.equal(connect.result.interfaceVersion,JSON.parse(await readFile(join(root,'version/ai-build.json'),'utf8')).aiInterfaceVersion);assert.equal((await cli('status')).result.bindings.length,3);
+ const first=await cli('observe'),o=first.result;assert(o.mapFacts.countries.france.reserve);assert(o.mapFacts.countries.china.adjacency);assert.equal(o.public.countries.united_kingdom.discardCount,0);assert.equal(o.privateCountries.germany.hand.find(c=>c.type==='基本牌').tension,null);
+ const ref=await cli('reference');assert.equal(ref.result.data.id,o.reference.id);assert(ref.result.data.map.straits.length);assert.equal(ref.result.digest,createHash('sha256').update(JSON.stringify(ref.result.data)).digest('hex'));
+ const cache=config+'.reference.json';const cached=JSON.parse(await readFile(cache,'utf8'));cached.data.rulesFingerprint='old';await writeFile(cache,JSON.stringify(cached));await cli('observe');assert.equal(JSON.parse(await readFile(cache,'utf8')).data.rulesFingerprint,o.reference.rulesFingerprint);
+ const wait=await cli('wait','--timeout','25');assert.equal(wait.result.revision,o.revision);
+ const offer=o.offers.find(x=>x.seat==='italy'),request={requestId:crypto.randomUUID(),gameId:o.gameId,epoch:o.epoch,revision:o.revision,offerId:offer.id,selections:{cardIds:offer.selections.cardIds.ids.slice(0,7)}};const file=join(area,'选择 请求.json');await writeFile(file,JSON.stringify(request));const submitted=await cli('submit','--request-file',file);assert(submitted.result.result.ok);const repeated=await cli('submit','--request-file',file);assert(repeated.result.duplicate);assert.equal(repeated.result.observation.revision,submitted.result.observation.revision);
+ await cli('disconnect');await cli('connect');assert.equal((await cli('observe')).result.revision,submitted.result.observation.revision);await cli('disconnect');
+ for(const ws of sockets)ws.terminate();await stop(enhanced);
+ const restarted=start('ai');await ready(restarted);await user(null,gm);await call(gm,'seat',{kind:'gm'});await call(gm,'restore');const restored=await cli('connect');assert.equal(restored.result.gameId,o.gameId);assert(!restored.result.offers.some(x=>x.seat==='italy'&&x.command.type==='KEEP_OPENING'));await cli('disconnect');
+ const logs=await readFile(join(root,'local-ai-private/audit/interface.jsonl'),'utf8');assert(!logs.includes(u.token));assert(!logs.includes(gm.token));
+ console.log(JSON.stringify({passed:true,root,gameVersion:'1.8.4',interfaceVersion:'1.1.0',checks:['实际普通CMD入口、AI端口关闭','实际AI CMD入口、普通网页','中文空格路径、空PATH、包内Node与ws','同数据目录拒绝重复入口','connect/status/observe/reference/wait','静态缓存过期重新获取','UTF-8提交与重复幂等','断开重连','进程重启后GM按正式机制恢复','日志无令牌']},null,2));
+}finally{for(const ws of sockets)ws.terminate();for(const child of children)await stop(child);}

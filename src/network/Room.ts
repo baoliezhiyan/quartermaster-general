@@ -1,3 +1,6 @@
+import {boardOptions} from '../core/boardEffects';
+import {seatAirMoveOptions} from '../core/actions';
+import type {ActionIntent} from '../localAi/contract';
 import {cardEffects} from '../core/specialCards';
 import {observePlayer} from '../localAi/observation';
 import {allianceOf} from '../core/basic';
@@ -59,6 +62,20 @@ export class Room {
    command={...command,effectIndices:cardEffects(view,c,command.targetIds).map((_,i)=>i)};
   }
   return command;
+ });}
+ localAiCheckAction(token:string,connection:string,command:Command,intent:ActionIntent){return this.serial(async()=>{
+  const u=this.user(token),s=this.engine.getSnapshot();if(!s||!u.online||u.connection!==connection||command.type==='CREATE_GAME'||!u.bindings?.includes(command.seat)||command.expectedRevision!==s.revision)throw Error('AI_STALE_OR_UNAUTHORIZED');
+  const view=this.projectView(s,{kind:'player',seat:command.seat},command.seat)!;
+  const move=command.type==='MOVE_AIR'||command.type==='SELECT_AIR_ACTION'&&command.action==='move';
+  let options=move?seatAirMoveOptions(view,command.seat):undefined;
+  const cardId=command.type==='PLAY_CARD'?command.cardId:intent.cardId;
+  const c=view.decks[command.seat].hand.find(c=>c.id===cardId);
+  if(command.type==='SELECT_AIR_ACTION'&&!c)throw Error('AI_CARD_UNAVAILABLE');
+  if(!move&&c){const e=cardEffects(view,c,[]).find(e=>e.kind==='action');if(e?.kind==='action')options=boardOptions(view,{...e,...(command.type==='SELECT_AIR_ACTION'?{airMode:command.action==='supremacy'?'supremacy':'deploy'}:view.phase==='AIR'?{airMode:view.airAction==='supremacy'?'supremacy':'deploy'}:{})});}
+  if(options){const keys=['regionId','defenderId','attackerId','airId','recycleId'] as const;
+   const valid=options.filter(o=>keys.every(key=>intent[key]===undefined||o[key]===intent[key]||key==='defenderId'&&intent[key]==='empty'&&!o[key]));
+   if(!valid.length||command.type==='MOVE_AIR'&&!valid.some(o=>o.id===command.optionId))throw Error('AI_ILLEGAL_TARGET');
+  }
  });}
  private occupant(seat:SeatId){return [...this.users.values()].find(u=>u.bindings?.includes(seat)||u.access.kind==='player'&&u.access.seat===seat);}
  private identities():Identity[]{return [...this.users.values()].map(({id,name,token,bindings})=>({id,name,token,bindings}));}
