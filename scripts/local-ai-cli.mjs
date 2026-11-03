@@ -1,15 +1,18 @@
+import {compactObservationChange,decisionObservation,decisionSummary} from './local-ai-compact.mjs';
 import {cachedReference} from './local-ai-reference-cache.mjs';
-import {readFile,writeFile,mkdir,appendFile} from 'node:fs/promises';
+import {readFile,writeFile,mkdir,appendFile,rename} from 'node:fs/promises';
 import {resolve,dirname,join} from 'node:path';
 import {fileURLToPath} from 'node:url';
 const root=resolve(dirname(fileURLToPath(import.meta.url)),'..'),started=performance.now(),args=process.argv.slice(2),command=args[0]??'help';
 const option=(name,fallback)=>{const i=args.indexOf(name);return i>=0?args[i+1]:fallback;};
 if(command==='help'){console.log('connect|status|observe|reference|wait|submit|submit-action|wait-decision|cancel-wait|result|disconnect\n--config 私有JSON --request-file UTF8.json --compact / --full --wait --wait-id 自选编号\nwait-decision 内部续订，只有本身份新决策或终止事件输出JSON；Ctrl+C 或 cancel-wait 可取消。');process.exit(0);}
+const privateDir=resolve(process.env.QM_AI_PRIVATE_DIR||join(root,'local-ai-private'));
 let controller=new AbortController(),cancelRemote,stats={httpRequests:0,leases:0,eventsIgnored:0,waitMs:0};
 try{
  if(!['connect','status','observe','reference','wait','submit','submit-action','wait-decision','cancel-wait','result','disconnect'].includes(command))throw Object.assign(Error('未知命令'),{code:'INVALID_REQUEST'});
  const configPath=resolve(option('--config',join(root,'local-ai-private/session.json'))),config=await readFile(configPath,'utf8').then(text=>{try{return JSON.parse(text.replace(/^\uFEFF/,''));}catch{throw Object.assign(Error('身份配置JSON无效'),{code:'CONFIG'});}});
  const url=new URL(config.url);if(url.protocol!=='http:'||!['127.0.0.1','localhost','[::1]'].includes(url.hostname)||url.username||url.password)throw Object.assign(Error('只允许本机HTTP'),{code:'CONFIG'});
+ const deliveredPath=configPath+'.delivered.json';let delivered;try{delivered=JSON.parse(await readFile(deliveredPath,'utf8'));}catch{}
  const cachePath=configPath+'.observation.json';let previous;try{previous=JSON.parse(await readFile(cachePath,'utf8'));}catch{}
  const request=async(operation,body,signal=controller.signal)=>{stats.httpRequests++;const response=await fetch(new URL('/api/local-ai/'+operation,url),{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+config.token},body:JSON.stringify(body),signal:AbortSignal.any([signal,AbortSignal.timeout(operation==='wait'?70000:120000)])});const v=await response.json();if(!v.ok)throw Object.assign(Error(v.result?.message??'接口拒绝'),{code:v.result?.code??'REJECTED'});return v;};
  let body={},operation=command;
@@ -41,10 +44,13 @@ try{
   if(value.result.cursor!==undefined)await writeFile(configPath+'.decision.json',JSON.stringify({cursor:value.result.cursor}));
  }
  if(command==='status'){const o=value.result;value.result={interfaceVersion:o.interfaceVersion,gameVersion:o.gameVersion,gameId:o.gameId,serverId:o.serverId,userId:o.userId,name:o.name,bindings:o.bindings,status:o.status,phase:o.phase,decisionSeats:o.decisionSeats,locked:o.locked,replay:o.replay,rules:o.rules};delete value.changes;}
- if(observation&&(args.includes('--compact')||['submit-action','wait-decision'].includes(command)&&!args.includes('--full'))){
-  const o=observation;value.result.observation={gameId:o.gameId,epoch:o.epoch,revision:o.revision,status:o.status,phase:o.phase,round:o.round,activeSeat:o.activeSeat,bindings:o.bindings,offers:o.offers,decisions:o.decisions};
-  value.changes={resync:value.changes?.resync,fromSequence:previous?.sequence,toSequence:o.sequence};
+ if(observation&&!['status','reference'].includes(command)){
+  if(args.includes('--compact')||(['submit-action','wait-decision'].includes(command)||operation.endsWith('-wait'))&&!args.includes('--full')){
+   value.changes=compactObservationChange(delivered,observation);const shown=value.changes.mode==='snapshot'?value.changes.snapshot:decisionSummary(observation);
+   if(value.result===observation)value.result=shown;else value.result.observation=shown;
+  }
+  const temp=deliveredPath+'.'+crypto.randomUUID()+'.tmp';await writeFile(temp,JSON.stringify(decisionObservation(observation)));await rename(temp,deliveredPath);
  }
- value.statistics={...stats,totalMs:performance.now()-started};await mkdir(join(root,'local-ai-private'),{recursive:true});await appendFile(join(root,'local-ai-private/bridge.jsonl'),JSON.stringify({at:new Date().toISOString(),command,requestId:body.requestId,ok:true,...value.statistics})+'\n');
+ value.statistics={...stats,totalMs:performance.now()-started};await mkdir(privateDir,{recursive:true});await appendFile(join(privateDir,'bridge.jsonl'),JSON.stringify({at:new Date().toISOString(),command,requestId:body.requestId,ok:true,...value.statistics})+'\n');
  console.log(JSON.stringify(value,null,2));if(value.result.receipt?.status==='rejected')process.exitCode=2;
-}catch(e){const code=controller.signal.aborted?'CANCELLED':e.code??'TRANSPORT';try{await mkdir(join(root,'local-ai-private'),{recursive:true});await appendFile(join(root,'local-ai-private/bridge.jsonl'),JSON.stringify({at:new Date().toISOString(),command,ms:performance.now()-started,ok:false,errorCode:code,...stats})+'\n');}catch{}console.log(JSON.stringify({ok:false,error:{code,message:code==='CANCELLED'?'等待已取消':e.message},statistics:stats},null,2));process.exitCode=code==='CANCELLED'?130:['STALE','WRONG_GAME'].includes(code)?3:['DISCONNECTED','AUTH','REJECTED','ENGINE_REJECTED'].includes(code)?4:['ILLEGAL_CHOICE','INVALID_REQUEST','DUPLICATE_CONFLICT'].includes(code)?2:5;}
+}catch(e){const code=controller.signal.aborted?'CANCELLED':e.code??'TRANSPORT';try{await mkdir(privateDir,{recursive:true});await appendFile(join(privateDir,'bridge.jsonl'),JSON.stringify({at:new Date().toISOString(),command,ms:performance.now()-started,ok:false,errorCode:code,...stats})+'\n');}catch{}console.log(JSON.stringify({ok:false,error:{code,message:code==='CANCELLED'?'等待已取消':e.message},statistics:stats},null,2));process.exitCode=code==='CANCELLED'?130:['STALE','WRONG_GAME'].includes(code)?3:['DISCONNECTED','AUTH','REJECTED','ENGINE_REJECTED'].includes(code)?4:['ILLEGAL_CHOICE','INVALID_REQUEST','DUPLICATE_CONFLICT'].includes(code)?2:5;}

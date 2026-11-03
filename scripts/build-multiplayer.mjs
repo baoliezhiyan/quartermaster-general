@@ -56,7 +56,7 @@ await writeFile(join(folder,'启动本地版游戏.cmd'),'@echo off\r\nchcp 6500
 await mkdir(join(folder,'licenses'));for(const dep of ['react','react-dom','ws'])await cp(join(dirname(require.resolve(dep+'/package.json')),'LICENSE'),join(folder,'licenses',dep+'-LICENSE.txt'));
 await cp('scripts/release/licenses/NODE-LICENSE.txt',join(folder,'licenses/NODE-LICENSE.txt'));
 if(aiEnhanced){
- for(const file of ['local-ai-cli.mjs','local-ai-reference-cache.mjs','start-local-ai.mjs'])await cp(join(root,'scripts',file),join(folder,'scripts',file));
+ for(const file of ['local-ai-cli.mjs','local-ai-reference-cache.mjs','local-ai-compact.mjs','start-local-ai.mjs'])await cp(join(root,'scripts',file),join(folder,'scripts',file));
  await writeFile(join(folder,'启动本机AI接口.cmd'),'@echo off\r\nchcp 65001 >nul\r\nset QM_PUBLIC_ORIGIN=\r\ncd /d "%~dp0"\r\n"%~dp0runtime\\node.exe" "%~dp0scripts\\start-local-ai.mjs" --open\r\nif errorlevel 1 pause\r\n','ascii');
  await writeFile(join(folder,'AI命令.cmd'),'@echo off\r\nchcp 65001 >nul\r\n"%~dp0runtime\\node.exe" "%~dp0scripts\\local-ai-cli.mjs" %*\r\n','ascii');
  await mkdir(join(folder,'local-ai-private'));

@@ -1,3 +1,4 @@
+import {diffValue} from '../network/jsonPatch';
 import {recordSceneEdit} from '../actionReplay/recorder';
 import {rememberPublicDiscards} from '../core/publicHistory';
 import {readHistorySave,restoreHistoryTail,turnPoint} from '../actionReplay/historySave';
@@ -55,7 +56,7 @@ export class LocalGameController implements GameController {
     }
   }
   private async initialize() {
-    try {const saved=await this.store!.read();if(saved){this.session=validateSession(saved);this.persistedVersions.set(this.session.state.gameId,this.session.updatedAt);this.state=deepFreeze(structuredClone(this.session.state));if(this.session.playback){const {file,cursor}=this.session.playback,prepared=prepareReplay(file);const expected=replayStateAt(file,cursor);expected.viewSeat=this.session.state.viewSeat;if(JSON.stringify(expected)!==JSON.stringify(this.session.state))throw new Error('回放节点与保存的局面不一致。');this.playback={file:prepared.file,entries:prepared.entries,cursor};this.access={kind:'gm'};}}}
+    try {const saved=await this.store!.read();if(saved){this.session=validateSession(saved);this.persistedVersions.set(this.session.state.gameId,this.session.updatedAt);this.state=deepFreeze(structuredClone(this.session.state));if(this.session.playback){const {file,cursor}=this.session.playback,prepared=prepareReplay(file);const expected=replayStateAt(file,cursor);expected.viewSeat=this.session.state.viewSeat;if(diffValue(expected,this.session.state).length!==0)throw new Error('回放节点与保存的局面不一致。');this.playback={file:prepared.file,entries:prepared.entries,cursor};this.access={kind:'gm'};}}}
     catch(error){this.info={...this.info,storageError:`自动恢复失败：${String(error)}`};}
     if(!this.info.storageError&&this.session&&!this.playback&&this.session.state.prelude&&!this.session.state.prelude.historyDiscard){this.restore(this.session,this.session.state,'升级序章弃牌规则');this.state=deepFreeze(this.session.state);}
     this.info={...this.info,ready:true,savedAt:this.session?.updatedAt??null};this.publish();

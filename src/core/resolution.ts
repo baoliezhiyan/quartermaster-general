@@ -79,7 +79,14 @@ function validEffect(s:ReadState,e:Effect,f?:ResolutionFrame):boolean {
   if(e.kind==='rebuild'&&e.selective)return !!e.remaining||!!e.withdrawnUnits||s.units.some(u=>u.country===e.country&&u.type!=='air');
   if(e.kind==='rebuild')return e.withdrawnIds?e.withdrawnIds.some(id=>!s.units.some(u=>u.id===id)):s.units.some(u=>u.country===e.country&&u.type==='army');
   if(e.kind==='action'&&e.fromBinding&&!f?.memory?.[e.fromBinding]?.some(id=>s.units.some(u=>u.id===id)))return false;
-  if(e.kind==='action') return boardOptions(s,e).some(o=>!e.option || o.id===e.option.id);
+  if(e.kind==='action') return boardOptions(s,e).some(o=>e.option?o.id===e.option.id:
+    // A partially/fully selected action is not interchangeable with another
+    // legal plan. In particular, a lost attacker must not leave Validate
+    // retrying a now-empty filtered set after air defense has been answered.
+    (!e.selection?.regionId||o.regionId===e.selection.regionId)&&
+    (!e.selection?.defenderId||(o.defenderId??'empty')===e.selection.defenderId)&&
+    (!e.selection?.attackerId||o.attackerId===e.selection.attackerId)&&
+    (e.airIntercept===undefined||!!o.intercept===e.airIntercept));
   if(e.kind==='reallocate') return mayReallocate(s,e.seat) && !s.redistributed && reallocationCards(s,e.seat).length>0;
   if(e.kind==='cancel') {
     const event=s.resolution?.events.find(v=>v.id===f?.parentEventId);
