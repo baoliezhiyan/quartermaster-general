@@ -15,7 +15,12 @@ async function ready(child){await new Promise((ok,no)=>{const timer=setTimeout((
 async function stop(child){if(child.exitCode===null){await run(join(process.env.SystemRoot,'System32/taskkill.exe'),['/PID',String(child.pid),'/T','/F'],{windowsHide:true}).catch(()=>{});await new Promise(r=>setTimeout(r,200));}}
 async function post(path,body,token){const r=await fetch(base+path,{method:'POST',headers:{'Content-Type':'application/json',...(token?{Authorization:'Bearer '+token}:{})},body:JSON.stringify(body)}),v=await r.json();assert(v.ok,v.error);return v.result;}
 async function user(name,identity){const u=identity??await post('/api/identity',{name});u.connection=crypto.randomUUID();u.revision=null;const ws=new WebSocket(base.replace('http','ws')+'/api/socket',{origin:base});sockets.push(ws);await new Promise((ok,no)=>{ws.on('error',no);ws.on('open',()=>ws.send(JSON.stringify({token:u.token,connection:u.connection})));ws.on('message',raw=>{const v=JSON.parse(raw);if(v.room){u.epoch=v.room.epoch;u.revision=v.state?.revision??u.revision??null;ok();}});});return u;}
-async function call(u,method,...args){return post('/api/request',{id:crypto.randomUUID(),connection:u.connection,epoch:u.epoch,revision:u.revision??null,method,args},u.token);}
+async function call(u,method,...args){
+ // WebSocket deltas omit state.revision at the top level; refresh the request
+ // version through the formal sync path instead of using an old full snapshot.
+ if(method!=='sync'){const fresh=await post('/api/request',{id:crypto.randomUUID(),connection:u.connection,method:'sync',args:[]},u.token);u.epoch=fresh.room.epoch;u.revision=fresh.state?.revision??null;}
+ return post('/api/request',{id:crypto.randomUUID(),connection:u.connection,epoch:u.epoch,revision:u.revision??null,method,args},u.token);
+}
 async function cli(command,...args){const {stdout}=await run(node,[join(root,'scripts/local-ai-cli.mjs'),command,'--config',config,...args],{cwd:area,env,timeout:15000,windowsHide:true});return JSON.parse(stdout);}
 try{
  const ordinary=start('ordinary');await ready(ordinary);assert((await fetch(base)).ok);let closed=false;try{await fetch(ai,{signal:AbortSignal.timeout(1000)});}catch{closed=true;}assert(closed,'普通入口必须关闭AI端口，即使父环境设置1');await stop(ordinary);
