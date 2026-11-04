@@ -1,6 +1,6 @@
 战场军需官 1.8.4-ai增强版
 游戏版本：1.8.4；AI接口：以 version/ai-build.json 为准。
-正式规则不变；确切构建身份见 version/ai-build.json。
+包含已验收的接口收尾及两处核心缺陷修复；确切源码与构建身份见 version/ai-build.json。
 本包自带 runtime/node.exe，无需安装 Node、pnpm 或开发依赖。
 
 一、启动
@@ -29,8 +29,13 @@ url 默认 http://127.0.0.1:4185，不需要更改。
 .\runtime\node.exe .\scripts\local-ai-cli.mjs status
 .\runtime\node.exe .\scripts\local-ai-cli.mjs observe
 .\runtime\node.exe .\scripts\local-ai-cli.mjs reference
-.\runtime\node.exe .\scripts\local-ai-cli.mjs wait --timeout 30000
+.\runtime\node.exe .\scripts\local-ai-cli.mjs wait-decision --wait-id next-001
 .\runtime\node.exe .\scripts\local-ai-cli.mjs submit --request-file .\local-ai-private\request.json
+合并一个行动并等待下一项己方决策：
+.\runtime\node.exe .\scripts\local-ai-cli.mjs submit-action --request-file .\local-ai-private\action.json --wait
+查询已执行回执：.\runtime\node.exe .\scripts\local-ai-cli.mjs result --request-id 原请求编号
+取消等待：.\runtime\node.exe .\scripts\local-ai-cli.mjs cancel-wait --wait-id next-001
+需要全量同步：.\runtime\node.exe .\scripts\local-ai-cli.mjs observe --full
 也可用 AI命令.cmd 加同样参数。跨目录请用绝对路径并对空格加引号。
 
 submit 的 UTF-8 JSON 文件格式：
@@ -40,6 +45,15 @@ submit 的 UTF-8 JSON 文件格式：
 网络异常重试必须沿用同一文件及 requestId，不能另起编号重复动作。
 机器输出JSON；非0退出码表示错误，具体看 error.code。
 
+合并请求沿用上述身份与版本字段，增加 intent，例如：
+{"requestId":"build-001","gameId":"观察中的值","epoch":"观察中的值","revision":123,"offerId":"当前建设陆军的offer.id","intent":{"regionId":"eastern_europe"}}
+攻击可指定 regionId、defenderId、attackerId；调度可指定 cardId、airId、regionId。
+状态/响应可指定 feeCardIds 和明确目标；有兵模回收时可指定 recycleId。
+只合并本行动，不连带发动闪电战等后续触发。对方响应、新信息、缺失参数或失效会停止，
+回执写明已完成步骤和剩余内容；不自动恢复剩余操作，不承诺原子撤回。
+wait-decision 在内部续订，只有己方新决定或终止事件才返回；旧 wait 仍是有界等待。
+当前聊天工具可能需要通过进程 session_id 续等，不能唤醒已结束的聊天。
+
 四、信息与缓存
 观察输出自己的绑定国家手牌、无序牌库组成、暗置牌、当前提示、公开场面和数量。
 紧张度字段 tension：数字0是确实为0，null是不适用。未公开敌牌和未知牌序不输出。
@@ -48,7 +62,11 @@ mapFacts 给出正式查询的动态相邻、补给来源、大本营、部队�
 reference 给出静态地图、基础连接、海峡、印刷兵模等资料。
 缓存按规则指纹、资料版本、接口版本和摘要校验；不能把旧资料套在新构建上。
 缓存位于 session.json.reference.json；当前观察缓存位于 session.json.observation.json。
-日志位于 local-ai-private/audit/interface.jsonl 与 bridge.jsonl。
+紧凑结果中的 changes 含新增公开记录、部队/分数及己方牌区变化；
+mode=delta 时须接在匹配 fromHash 的基线上，mode=snapshot 时提供完整必要动态观察。
+新的 .delivered.json 是最后输出的观察基线；可用 scripts/local-ai-compact.mjs 的
+applyObservationChange 还原。基线不匹配须 observe --full，不能将决策摘要当完整场面。
+日志位于 local-ai-private/audit/interface.jsonl 与 bridge.jsonl，合并回执位于 requests/。
 这些文件可以含己方秘密牌面，请按私人对局资料保管；令牌不写入日志。
 
 五、暂停和恢复
@@ -57,7 +75,9 @@ disconnect 断开AI连接但保留绑定，connect 后再 observe 可以恢复�
 服务重启遵守普通客户端流程：游戏不会自动读入，GM先点恢复上次对局，再连接AI。
 旧 epoch 的请求会失效，不能盲目重放。
 游戏存档和回放仍使用GM原入口；没有专用AI回放客户端。
-正式v1.8.4同规则指纹的记录按原校验导入；v1.8.2/1.8.3等异版本仍会拒绝。
+本轮核心修复产生新规则指纹。同版本且同规则指纹的记录按原校验导入；
+旧指纹动作回放及带旧身份记录的主机档案不会自动兼容，未提供跨指纹迁移器。
+普通JSON状态仍须满足原结构与重演校验；v1.8.2/1.8.3等异版本记录仍会拒绝。
 构建指纹正常生成，没有伪装旧身份或放宽校验。
 
 六、限制

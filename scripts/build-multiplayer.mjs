@@ -1,3 +1,4 @@
+import {execFileSync} from 'node:child_process';
 import {mkdir,cp,readFile,writeFile,readdir,stat,rename} from 'node:fs/promises';
 import {join,resolve,dirname,win32} from 'node:path';
 import {createRequire} from 'node:module';
@@ -64,7 +65,7 @@ if(aiEnhanced){
  await cp('docs/local-ai-portable.txt',join(folder,'AI使用说明.txt'));
  const identity=JSON.parse(await readFile('src/matchLog/build-identity.json','utf8'));
  const aiVersion=(await readFile('src/localAi/contract.ts','utf8')).match(/AI_INTERFACE_VERSION='([^']+)'/)[1];
- await writeFile(join(folder,'version/ai-build.json'),JSON.stringify({edition:'1.8.4-ai增强版',gameVersion:version,aiInterfaceVersion:aiVersion,formalBaseline:'ac94499',adapterBaseline:'2b380af',...identity},null,2)+'\n');
+ await writeFile(join(folder,'version/ai-build.json'),JSON.stringify({edition:'1.8.4-ai增强版',gameVersion:version,aiInterfaceVersion:aiVersion,formalBaseline:'ac94499',adapterBaseline:'3831dec',coreFixCommit:'49a9108',sourceCommit:execFileSync('git',['rev-parse','HEAD'],{cwd:root,encoding:'utf8'}).trim(),...identity},null,2)+'\n');
 }
 const hashes={};async function scan(dir,prefix=''){for(const e of await readdir(dir,{withFileTypes:true})){const key=prefix+e.name;if(e.isDirectory())await scan(join(dir,e.name),key+'/');else hashes[key]=createHash('sha256').update(await readFile(join(dir,e.name))).digest('hex');}}
 await scan(folder);await writeFile(join(folder,'version/SHA256.json'),JSON.stringify(hashes,null,2));
