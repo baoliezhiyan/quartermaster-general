@@ -1,0 +1,4 @@
+einops==0.8.2
+flash-linear-attention==0.4.2
+fla-core==0.4.2
+triton-windows==3.6.0.post26

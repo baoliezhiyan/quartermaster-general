@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { spawn, execFileSync } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';
-import { appendFileSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { createInterface } from 'node:readline';
@@ -12,7 +12,16 @@ const results = join(root,'outputs/qwen-baseline');
 const python = process.env.QM_QWEN_PYTHON ?? 'D:/LLMs/environments/qm-qwen35-baseline/Scripts/python.exe';
 const modelDir = 'D:/LLMs/models/Qwen3.5-2B';
 const modelRevision = '15852e8c16360a2fea060d615a32b45270f8a8fc';
-const git = (...args) => execFileSync('git',args,{cwd:root,encoding:'utf8'}).trim();
+const gitPathRecord = 'D:/LLMs/environments/qm-qwen35-baseline/runtime/git-path.txt';
+const gitExe = process.env.QM_QWEN_GIT ?? (existsSync(gitPathRecord) ? readFileSync(gitPathRecord,'utf8').trim() : 'git');
+const git = (...args) => execFileSync(gitExe,args,{cwd:root,encoding:'utf8'}).trim();
+const backend = process.env.QM_QWEN_BACKEND ?? 'efficient-bf16';
+if (!['efficient-bf16','reference-bf16'].includes(backend)) throw Error('未知推理后端 '+backend);
+const accelerated = backend === 'efficient-bf16';
+const kernels = accelerated ? (process.env.QM_QWEN_KERNELS ?? 'D:/LLMs/environments/qm-qwen35-kernels') : '';
+const compiler = accelerated ? join(kernels,'triton/runtime/tcc/tcc.exe') : '';
+const benchSeconds = Number(process.env.QM_QWEN_BENCH_SECONDS ?? 540);
+if (!Number.isSafeInteger(benchSeconds) || benchSeconds < 1 || benchSeconds > 540) throw Error('性能短测上限须在 1–540 秒');
 const sha = data => createHash('sha256').update(data).digest('hex');
 const mode = process.argv[2] ?? 'preview';
 const START = performance.now();
@@ -34,7 +43,7 @@ const configuration = {
   worktreeStatus:git('status','--short'), changedFiles:git('diff','--stat','HEAD'),
   node:process.version, python, modelDir, modelRevision, modelRepo:manifest.repo,
   gameSeeds:[20261105,20261106],
-  limits:{benchWallSeconds:540, requestSeconds:180, gameDecisions:3500, gameWallSeconds:14400, repeatedDecision:6},
+  backend, kernelPath:kernels, compiler, limits:{benchWallSeconds:benchSeconds, requestSeconds:180, gameDecisions:3500, gameWallSeconds:14400, repeatedDecision:6},
   fullGameRules:{mode:'FULL',prelude:true,neutrality:true,balance:true},
 };
 
@@ -42,7 +51,7 @@ if (mode === 'preview') {
   const deps=execFileSync(python,['-c',
     "import sys,importlib.metadata as m; print(sys.version); print('\\n'.join(p+'=='+m.version(p) for p in ('torch','transformers','accelerate','psutil','nvidia-ml-py')))"],
     {encoding:'utf8'});
-  console.log(JSON.stringify({...configuration,...identity,results,dependencies:deps.trim()},null,2));
+  console.log(JSON.stringify({...configuration,...identity,results,dependencies:deps.trim(), kernelCompilerAvailable:!accelerated||existsSync(compiler)},null,2));
   try {
     console.log(execFileSync('nvidia-smi',['--query-gpu=name,memory.total,memory.used,driver_version','--format=csv'],{encoding:'utf8'}).trim());
   } catch(error) { console.log('无法读取 nvidia-smi：'+error.message); }
@@ -65,6 +74,9 @@ write('run.json',{...configuration,...engine.engineIdentity,promptVersion:engine
   diagnosticBundleSha256:sha(readFileSync(bundle)), modelWorkerSha256:sha(readFileSync(join(root,'scripts/qwen-baseline/model.py'))), orchestratorSha256:sha(readFileSync(fileURLToPath(import.meta.url))), fixtureSeeds:fixed.map(f=>({id:f.id,seed:f.seed}))});
 console.log('结果目录 '+out);
 console.log('固定局面 '+fixed.length+' 个，正式规则 '+engine.engineIdentity.rulesFingerprint);
+if(mode==='fixtures' || mode==='verify') {
+  write('fixture-contract.json',fixed.map(({id,source,seed,seat,state,fact})=>({id,source,seed,seat,rules:state.rules,fact})));
+}
 
 function actionable(observation) {
   return observation.offers.some(o=>o.command.type!=='ACK_RESPONSE_NOTICE'||(observation.resolutionRunning&&!observation.decisions.length&&observation.blockingNoticeSeats.includes(o.seat)));
@@ -89,6 +101,19 @@ function logProgress(id, step, observation) {
 if(mode==='verify'){
   const cases=['opening-seven','discard-forced-two','prelude-neutrality','mulberry-sea_mediterranean','battle-air','fleet-fee-true'];
   const checked=[];
+  for(const f of fixed){
+    const room=await createDiagnosticRoom({state:f.state,seed:f.seed,gameId:f.id});
+    try {
+      const side=sideOf(f.seat);
+      for(const s of [side,1-side]){
+        const observation=await room.observe(s);
+        assert.equal(Object.keys(observation.privateCountries).length,3,f.id);
+        assert(Object.keys(observation.privateCountries).every(seat=>sideOf(seat)===s),f.id);
+        const input=makeInput(observation,room.reference,f.fact?.question);
+        if(s===side) assert(input.offers.some(o=>o.seat===f.seat),f.id+' 缺少当事国候选');
+      }
+    } finally {await room.close();}
+  }
   for(const id of cases){
     const f=fixed.find(v=>v.id===id);
     const room=await createDiagnosticRoom({state:f.state,seed:f.seed,gameId:id});
@@ -139,8 +164,10 @@ if(mode==='verify'){
 class ModelWorker {
   constructor(deadline) {
     this.deadline=deadline;
-    this.child=spawn(python,[join(root,'scripts/qwen-baseline/model.py'),modelDir],
-      {cwd:root,stdio:['pipe','pipe','pipe'],windowsHide:true});
+    this.child=spawn(python,[join(root,'scripts/qwen-baseline/model.py'),modelDir,join(out,'memory.jsonl')],
+      {cwd:root,env:{...process.env,PYTHONPATH:kernels,CC:compiler,
+        QM_QWEN_KERNELS:kernels,QM_QWEN_EFFICIENT_SDPA:accelerated?'1':'0',QM_QWEN_FLA_CONV:accelerated?'1':'0',
+        TRITON_CACHE_DIR:'D:/LLMs/environments/qm-qwen35-kernel-cache'},stdio:['pipe','pipe','pipe'],windowsHide:true});
     this.child.on('error',error=>{this.spawnError=error;});
     this.child.stdin.on('error',()=>{});
     this.child.stderr.on('data',chunk=>appendFileSync(join(out,'model.stderr.log'),chunk));
@@ -166,6 +193,7 @@ class ModelWorker {
   close(){if(this.child.exitCode===null&&!this.child.killed)this.child.kill();}
 }
 
+if(accelerated&&!existsSync(compiler)) throw Error('找不到独立加速环境的 TinyCC '+compiler);
 const worker=new ModelWorker(mode==='bench'?START+configuration.limits.benchWallSeconds*1000:Infinity);
 process.once('SIGINT',()=>worker.close());
 process.once('SIGTERM',()=>worker.close());
@@ -187,12 +215,12 @@ try {
     for(let attempt=0;attempt<=maxRetries;attempt++){
       const messages=correction ? [...input.messages,{role:'user',content:'上次输出未通过校验：'+correction+'。按原候选重试，返回一个JSON对象。'}] : input.messages;
       const envBefore=prepMs;
-      const generated=await worker.request(messages);
+      const generated=await worker.request(messages).catch(error=>({ok:false,error:error.message,type:'WorkerRequestError'}));
       const afterInference=performance.now();
       const row={id,step,attempt,observation:o,messages,legalOffers:input.offers,expectedFact:fact,model:generated};
       if(!generated.ok){
         record('decisions.jsonl',{...row,classification:generated.type==='OutOfMemoryError'?'oom':'model_error'});
-        return {stop:'model_error',error:generated.error,fatal:true};
+        return {stop:generated.type==='WorkerRequestError'?'model_timeout_or_connection':'model_error',error:generated.error,fatal:true};
       }
       let parsed;
       try {
@@ -242,24 +270,30 @@ try {
       const f=fixed.find(v=>v.id===id);
       const room=await createDiagnosticRoom({state:f.state,seed:f.seed,gameId:id});
       try {
+        const prepareStarted=performance.now();
         const o=await room.observe(sideOf(f.seat));
         const input=makeInput(o,room.reference);
+        const environmentPrepareMs=performance.now()-prepareStarted;
         const measured=await worker.request(input.messages,'length');
         if(!measured.ok)throw Error(measured.error);
-        available.push({id,inputTokens:measured.inputTokens,observation:o,messages:input.messages,offers:input.offers});
+        available.push({id,inputTokens:measured.inputTokens,environmentPrepareMs,observation:o,messages:input.messages,offers:input.offers});
       } finally {await room.close();}
     }
     available.sort((a,b)=>a.inputTokens-b.inputTokens);
+    write('input-lengths.json',available.map(({id,inputTokens})=>({id,inputTokens})));
     const inputs=[available[0],available[0],available[Math.floor(available.length/2)],available.at(-1)];
     const names=['first-short','warm-short','warm-medium','warm-long'];
     for(const [index,input] of inputs.entries()){
       console.log('性能 '+(index+1)+'/'+inputs.length+' · '+names[index]+' · '+input.inputTokens+' tokens');
-      const result=await worker.request(input.messages);
+      const requestedAt=performance.now();
+      const result=await worker.request(input.messages).catch(error=>({
+        ok:false,error:error.message,inputTokens:input.inputTokens,seconds:(performance.now()-requestedAt)/1000,
+      }));
       record('performance.jsonl',{profile:names[index],...input,model:result});
       const {text:_text,...metrics}=result;
       summaries.push({profile:names[index],fixture:input.id,...metrics});
       if(!result.ok)break;
-      if(index===0) {
+      if(!existsSync(join(out,'representative-action.json')) || !JSON.parse(readFileSync(join(out,'representative-action.json'),'utf8')).result?.ok) {
         // Submit one representative real model decision in a fresh equivalent room.
         const f=fixed.find(v=>v.id===input.id);
         const room=await createDiagnosticRoom({state:f.state,seed:f.seed,gameId:f.id});
@@ -288,7 +322,8 @@ try {
         while(true){
           const views=await Promise.all([room.observe(0),room.observe(1)]);
           if(views[0].status==='finished'){result={stop:'natural_finish',winner:views[0].public.winner,reason:views[0].public.victoryReason};break;}
-          if(views.some(o=>o.status==='unsupported')){result={stop:'unsupported',reason:views[0].unsupportedReason};break;}
+          const unsupported=views.find(o=>o.status==='unsupported');
+          if(unsupported){result={stop:'unsupported',reason:unsupported.unsupportedReason};break;}
           if(steps>=configuration.limits.gameDecisions||(performance.now()-begun)/1000>configuration.limits.gameWallSeconds){result={stop:'game_budget'};break;}
           let side=f?sideOf(f.seat):views.findIndex(actionable);
           if(side<0)side=views.findIndex(v=>v.offers.length>0);

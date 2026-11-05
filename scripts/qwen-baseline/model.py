@@ -1,6 +1,7 @@
 """Single BF16 CUDA worker. UTF-8 JSONL over pipes, no network listener."""
 import collections
 import json
+import importlib.metadata
 import os
 import sys
 import threading
@@ -30,6 +31,45 @@ def main():
     import accelerate
     from transformers import AutoTokenizer, GenerationConfig, Qwen3_5ForConditionalGeneration
     from transformers.generation.streamers import BaseStreamer
+    from transformers.models.qwen3_5 import modeling_qwen3_5
+
+    kernels = {
+        "gatedDelta": "fla" if modeling_qwen3_5.chunk_gated_delta_rule is not None else "torch",
+        "causalConv1d": "extension" if modeling_qwen3_5.causal_conv1d_fn is not None else "torch",
+    }
+    if os.environ.get("QM_QWEN_KERNELS"):
+        if kernels["gatedDelta"] != "fla":
+            raise RuntimeError("FLA requested but unavailable")
+        kernels.update({name: importlib.metadata.version(name) for name in
+                        ("flash-linear-attention", "fla-core", "triton-windows", "einops")})
+    if os.environ.get("QM_QWEN_FLA_CONV") == "1":
+        if kernels["gatedDelta"] != "fla":
+            raise RuntimeError("FLA convolution requires the FLA kernel environment")
+        from fla.modules.conv import causal_conv1d
+
+        def prefill_conv(x, weight, bias, activation, seq_idx=None):
+            if seq_idx is not None:
+                raise ValueError("Packed causal convolution inputs are unsupported")
+            output, _ = causal_conv1d(x.transpose(1, 2), weight, bias, activation=activation)
+            return output.transpose(1, 2)
+
+        modeling_qwen3_5.causal_conv1d_fn = prefill_conv
+        kernels["causalConv1d"] = "fla_triton_prefill"
+    from contextlib import nullcontext
+
+    attention = "sdpa"
+    attention_context = nullcontext
+    if os.environ.get("QM_QWEN_EFFICIENT_SDPA") == "1":
+        from functools import partial
+        from torch.nn.attention import SDPBackend, sdpa_kernel
+        from transformers.integrations import sdpa_attention
+
+        # Windows lacks the fused Flash GQA kernel in this Torch build. Transformers
+        # already implements equivalent explicit KV repetition for the masked path.
+        sdpa_attention.use_gqa_in_sdpa = lambda _mask, _key: False
+        attention_context = partial(sdpa_kernel, SDPBackend.EFFICIENT_ATTENTION)
+        attention = "sdpa_efficient_explicit_kv"
+    telemetry = Path(sys.argv[2])
 
     model_dir = Path(sys.argv[1])
     manifest = json.loads((model_dir / "download-manifest.json").read_text(encoding="utf-8"))
@@ -51,6 +91,11 @@ def main():
     process = psutil.Process()
 
     class Memory:
+        def __init__(self, stage, input_tokens=None):
+            self.stage = stage
+            self.input_tokens = input_tokens
+            self.started = time.perf_counter()
+
         def __enter__(self):
             self.peaks = {}
             self.stop = threading.Event()
@@ -68,8 +113,20 @@ def main():
                 self.peaks[name] = max(self.peaks.get(name, 0), value)
 
         def run(self):
+            last_write = 0.0
             while not self.stop.is_set():
                 self.sample()
+                now = time.perf_counter()
+                if now - last_write >= 1.0:
+                    snapshot = {
+                        "stage": self.stage, "inputTokens": self.input_tokens,
+                        "seconds": now - self.started, **self.peaks,
+                        "cudaAllocatedBytes": torch.cuda.max_memory_allocated(),
+                        "cudaReservedBytes": torch.cuda.max_memory_reserved(),
+                    }
+                    with telemetry.open("a", encoding="utf-8") as handle:
+                        handle.write(json.dumps(snapshot) + "\n")
+                    last_write = now
                 self.stop.wait(0.05)
 
         def __exit__(self, *_):
@@ -98,7 +155,7 @@ def main():
     initial_gpu = pynvml.nvmlDeviceGetMemoryInfo(gpu)
     load_started = time.perf_counter()
     torch.cuda.reset_peak_memory_stats()
-    with Memory() as load_memory:
+    with Memory("load") as load_memory:
         tokenizer = AutoTokenizer.from_pretrained(model_dir, local_files_only=True, trust_remote_code=False)
         tokenizer.chat_template = (model_dir / "chat_template.jinja").read_text(encoding="utf-8")
         model, load_info = Qwen3_5ForConditionalGeneration.from_pretrained(
@@ -124,10 +181,10 @@ def main():
         "device": torch.cuda.get_device_name(), "driver": pynvml.nvmlSystemGetDriverVersion(),
         "gpuTotalBytes": initial_gpu.total, "initialGpuUsedBytes": initial_gpu.used,
         "loadPeaks": load_memory.peaks, "weightBytes": {"/".join(k): v for k, v in weights.items()},
-        "loadInfo": {key: sorted(value) if isinstance(value, set) else value for key, value in load_info.items()}, "seed": SEED, "precision": "BF16 CUDA; native FP32 parameters as measured",
+        "kernels": kernels, "loadInfo": {key: sorted(value) if isinstance(value, set) else value for key, value in load_info.items()}, "seed": SEED, "precision": "BF16 CUDA; native FP32 parameters as measured",
         "generation": {"do_sample": False, "num_beams": 1, "use_cache": True,
                        "prefix_cache": False, "thinking": False, "max_new_tokens": 128,
-                       "attention": "sdpa", "device_map": {"": "cuda:0"}},
+                       "attention": attention, "device_map": {"": "cuda:0"}},
     })
     for line in sys.stdin:
         input_tokens = None
@@ -153,11 +210,12 @@ def main():
             )
             streamer = FirstToken()
             torch.cuda.reset_peak_memory_stats()
-            with Memory() as memory, torch.inference_mode():
+            with Memory("generate", input_tokens) as memory, torch.inference_mode():
                 encoded = encoded.to("cuda:0")
                 torch.cuda.synchronize()
                 generation_started = time.perf_counter()
-                result = model.generate(**encoded, generation_config=config, streamer=streamer)
+                with attention_context():
+                    result = model.generate(**encoded, generation_config=config, streamer=streamer)
                 torch.cuda.synchronize()
                 generation_ended = time.perf_counter()
                 tokens = result[0, input_tokens:].tolist()
