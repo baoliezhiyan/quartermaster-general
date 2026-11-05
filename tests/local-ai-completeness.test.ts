@@ -5,7 +5,7 @@ import {PRELUDE_CARDS} from '../src/core/cardCatalog';
 import {observePlayer} from '../src/localAi/observation';
 import {referenceData,referenceIdentity} from '../src/localAi/reference';
 import {mapFacts} from '../src/localAi/mapFacts';
-import {adjacentRegions,suppliedUnits} from '../src/core/supply';
+import {adjacentRegions,suppliedUnits,countryScore} from '../src/core/supply';
 import {REGIONS,STRAITS} from '../src/core/map';
 import {homeRegion,supplySource} from '../src/core/modifiers';
 import {reserve,COUNTRY_NAMES} from '../src/core/basic';
@@ -47,6 +47,17 @@ it('relocated Soviet capital, card-created and removed supply points and live un
  expect(o.mapFacts.countries.soviet_union.homeRegion).toBe('siberia');expect(o.mapFacts.countries.germany.supplySources).toContain('siberia');expect(o.mapFacts.countries.germany.supplySources).not.toContain('moscow');expect(o.mapFacts.countries.china.supplySources).toContain('western_china');
  for(const country of Object.keys(COUNTRY_NAMES) as CountryId[]){expect(o.mapFacts.countries[country].homeRegion).toBe(homeRegion(s,country));expect(o.mapFacts.countries[country].supplySources).toEqual(REGIONS.filter(r=>supplySource(s,country,r.id,r.supply)).map(r=>r.id));}
  expect(o.mapFacts.units.filter(u=>u.supplied).map(u=>u.id).sort()).toEqual([...suppliedUnits(s)].sort());
+ expect(o.mapFacts.countries.germany.scoringRegions).toContain('siberia');
+ expect(o.mapFacts.countries.germany.scoringRegions).not.toContain('moscow');
+ expect(o.mapFacts.countries.germany.scoringRegions).not.toContain('ukraine');
+ expect(o.mapFacts.countries.china.scoringRegions).not.toContain('western_china');
+ s.rules!.balanceEnabled=false;
+ expect(observation(s).mapFacts.countries.china.scoringRegions).toContain('western_china');
+ s.units=s.units.filter(u=>u.regionId!=='siberia');
+ s.units.push({id:'axis-occupation',type:'army',country:'germany',regionId:'siberia'});
+ const scored=observation(s).mapFacts.countries;
+ expect(scored.soviet_union.homeOccupied).toBe(true);
+ for(const country of Object.keys(COUNTRY_NAMES) as CountryId[])expect(scored[country].boardScore).toBe(countryScore(s,country));
 });
 it('all eight countries reserves follow placement, removal and balance switch without reimplementing limits',()=>{
  const s=game();for(const balance of [false,true]){s.rules!.balanceEnabled=balance;const before=mapFacts(s);s.units.push({id:'italian-extra',type:'army',country:'italy',regionId:'balkans'});const after=observation(s).mapFacts;expect(after.countries.italy.reserve.army).toBe(Number(before.countries.italy.reserve.army)-1);

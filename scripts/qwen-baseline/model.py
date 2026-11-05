@@ -29,7 +29,7 @@ def main():
     import torch
     import transformers
     import accelerate
-    from transformers import AutoTokenizer, GenerationConfig, Qwen3_5ForConditionalGeneration
+    from transformers import AutoTokenizer, GenerationConfig, Qwen3_5Config, Qwen3_5ForCausalLM, Qwen3_5ForConditionalGeneration
     from transformers.generation.streamers import BaseStreamer
     from transformers.models.qwen3_5 import modeling_qwen3_5
 
@@ -148,6 +148,8 @@ def main():
                 self.is_prompt = False
             elif self.at is None:
                 self.at = time.perf_counter()
+                with telemetry.with_name("first-tokens.jsonl").open("a", encoding="utf-8") as handle:
+                    handle.write(json.dumps({"inputTokens": input_tokens, "firstTokenSeconds": self.at - generation_started}) + "\n")
 
         def end(self):
             pass
@@ -158,14 +160,20 @@ def main():
     with Memory("load") as load_memory:
         tokenizer = AutoTokenizer.from_pretrained(model_dir, local_files_only=True, trust_remote_code=False)
         tokenizer.chat_template = (model_dir / "chat_template.jinja").read_text(encoding="utf-8")
-        model, load_info = Qwen3_5ForConditionalGeneration.from_pretrained(
+        text_only = os.environ.get("QM_QWEN_TEXT_ONLY") == "1"
+        loader = Qwen3_5ForCausalLM if text_only else Qwen3_5ForConditionalGeneration
+        text_options = ({
+            "config": Qwen3_5Config.from_pretrained(model_dir, local_files_only=True).text_config,
+            "key_mapping": {r"^model\.language_model\.": "model."},
+        } if text_only else {})
+        model, load_info = loader.from_pretrained(
             model_dir, dtype=torch.bfloat16, device_map={"": "cuda:0"},
-            local_files_only=True, attn_implementation="sdpa", output_loading_info=True,
+            local_files_only=True, attn_implementation="sdpa", output_loading_info=True, **text_options,
         )
         model.eval()
         if any(t.device.type != "cuda" for t in model.parameters()):
             raise RuntimeError("Unexpected non-GPU model parameter")
-        if load_info.get("missing_keys") or load_info.get("mismatched_keys"):
+        if any(load_info.get(key) for key in ("missing_keys", "mismatched_keys", "unexpected_keys", "error_msgs")):
             raise RuntimeError("Incomplete checkpoint load: " + str(load_info))
         torch.cuda.synchronize()
     weights = collections.Counter()
@@ -181,7 +189,7 @@ def main():
         "device": torch.cuda.get_device_name(), "driver": pynvml.nvmlSystemGetDriverVersion(),
         "gpuTotalBytes": initial_gpu.total, "initialGpuUsedBytes": initial_gpu.used,
         "loadPeaks": load_memory.peaks, "weightBytes": {"/".join(k): v for k, v in weights.items()},
-        "kernels": kernels, "loadInfo": {key: sorted(value) if isinstance(value, set) else value for key, value in load_info.items()}, "seed": SEED, "precision": "BF16 CUDA; native FP32 parameters as measured",
+        "modelClass": type(model).__name__, "kernels": kernels, "loadInfo": {key: sorted(value) if isinstance(value, set) else value for key, value in load_info.items()}, "seed": SEED, "precision": "BF16 CUDA; native FP32 parameters as measured",
         "generation": {"do_sample": False, "num_beams": 1, "use_cache": True,
                        "prefix_cache": False, "thinking": False, "max_new_tokens": 128,
                        "attention": attention, "device_map": {"": "cuda:0"}},
@@ -199,8 +207,13 @@ def main():
             if request.get("op") == "length":
                 emit({"ok": True, "inputTokens": input_tokens})
                 continue
+            if request.get("op") == "compare":
+                from equivalence import compare
+                result = compare(model, encoded, tokenizer, attention_context)
+                emit({"ok": True, **result, "seconds": time.perf_counter() - started})
+                continue
             max_new_tokens = 128
-            if input_tokens + max_new_tokens > model.config.text_config.max_position_embeddings:
+            if input_tokens + max_new_tokens > model.config.get_text_config().max_position_embeddings:
                 raise RuntimeError("context_limit: " + str(input_tokens))
             config = GenerationConfig(
                 max_new_tokens=max_new_tokens, do_sample=False, num_beams=1,
@@ -231,7 +244,11 @@ def main():
                   "inputTokens": input_tokens, "seconds": time.perf_counter() - started,
                   "cudaAllocatedBytes": torch.cuda.max_memory_allocated(),
                   "cudaReservedBytes": torch.cuda.max_memory_reserved()})
-            # Leave a failed worker with its original error and resource report.
+            if isinstance(error, torch.cuda.OutOfMemoryError) and request.get("op") == "generate":
+                encoded = result = None
+                error.__traceback__ = None
+                torch.cuda.empty_cache()
+                continue
             break
 
 

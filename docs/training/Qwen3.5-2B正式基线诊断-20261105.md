@@ -1,5 +1,7 @@
 # Qwen3.5-2B 正式游戏基线诊断
 
+本页保留首轮数据。现行提示词、规则核对及启动方式见 [规则与动作协议复验](Qwen3.5-2B规则与动作协议复验-20261105.md)。
+
 ## 运行入口
 
 在 `D:/Codex/QuartermasterGeneral/worktrees/training-qwen-baseline` 双击 `启动Qwen正式基线诊断.cmd`。该工作树固定使用客户端 v1.8.4、AI 接口 1.2.1，正式基线为 `c13904a0829f310e39f798215882653c21c26d64`。规则指纹为 `994ca2cfa372a35ac8b1fb382aafb158ff3410c357f3ccb33441c5279cd5a8a7`。

@@ -17,10 +17,13 @@ echo 2. 模型加载和短、中、长真实输入性能短测（最多9分钟�
 echo 3. 运行30个固定局面
 echo 4. 运行2局完整游戏冒烟
 echo 5. 查看结果目录
+echo 6. 导出三类完整提示词样例（无需模型）
 echo 0. 退出
-choice /C 123450 /N /M "选择："
+choice /C 1234560 /N /M "选择："
 set "qm_option=%errorlevel%"
-if "%qm_option%"=="6" exit /b
+if "%qm_option%"=="7" exit /b
+if "%qm_option%"=="255" exit /b 1
+if "%qm_option%"=="0" exit /b 1
 if "%qm_option%"=="1" "%qm_node%" scripts/qwen-baseline/run.mjs preview
 if "%qm_option%"=="2" "%qm_node%" scripts/qwen-baseline/run.mjs bench
 if "%qm_option%"=="3" "%qm_node%" scripts/qwen-baseline/run.mjs fixtures
@@ -29,4 +32,5 @@ if "%qm_option%"=="5" (
     if not exist "outputs\qwen-baseline\runs" mkdir "outputs\qwen-baseline\runs"
     explorer "%CD%\outputs\qwen-baseline\runs"
 )
+if "%qm_option%"=="6" "%qm_node%" scripts/qwen-baseline/run.mjs samples
 goto menu
