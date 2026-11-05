@@ -6,6 +6,7 @@ import { join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { createInterface } from 'node:readline';
 import { build } from 'vite';
+import { inferenceRecovery } from './inference-recovery.mjs';
 
 const root = fileURLToPath(new URL('../../',import.meta.url));
 const results = join(root,'outputs/qwen-baseline');
@@ -29,7 +30,7 @@ const mode = process.argv[2] ?? 'preview';
 const START = performance.now();
 const elapsed = () => (performance.now()-START)/1000;
 
-if (!['preview','bench','fixtures','games','verify','samples','bench-long'].includes(mode)) throw Error('未知入口 '+mode);
+if (!['preview','bench','fixtures','games','verify','samples','bench-long','stability','stability-cold'].includes(mode)) throw Error('未知入口 '+mode);
 const base = 'c13904a0829f310e39f798215882653c21c26d64';
 if (git('diff','--name-only',base,'--','src/core','src/data')) throw Error('正式核心或数据偏离固定基线');
 const identity = JSON.parse(readFileSync(join(root,'src/matchLog/build-identity.json'),'utf8'));
@@ -45,7 +46,7 @@ const configuration = {
   worktreeStatus:git('status','--short'), changedFiles:git('diff','--stat','HEAD'),
   node:process.version, python, modelDir, modelRevision, modelRepo:manifest.repo,
   gameSeeds:[20261105,20261106],
-  backend, textOnly, compareKernels, kernelPath:kernels, compiler, limits:{benchWallSeconds:benchSeconds, requestSeconds:180, gameDecisions:3500, gameWallSeconds:14400, repeatedDecision:6},
+  backend, textOnly, compareKernels, memoryPolicy:process.env.QM_QWEN_MEMORY_POLICY??'pressure', kernelPath:kernels, compiler, limits:{benchWallSeconds:benchSeconds, requestSeconds:180, gameDecisions:3500, gameWallSeconds:14400, repeatedDecision:6},
   fullGameRules:{mode:'FULL',prelude:true,neutrality:true,balance:true},
 };
 
@@ -75,7 +76,7 @@ const fixed=fixtures();
 assert.equal(configuration.promptVersion,engine.PROMPT_VERSION);
 assert.equal(configuration.protocolVersion,engine.PROTOCOL_VERSION);
 write('run.json',{...configuration,...engine.engineIdentity,promptVersion:engine.PROMPT_VERSION,
-  diagnosticBundleSha256:sha(readFileSync(bundle)), equivalenceSha256:sha(readFileSync(join(root,'scripts/qwen-baseline/equivalence.py'))), modelWorkerSha256:sha(readFileSync(join(root,'scripts/qwen-baseline/model.py'))), orchestratorSha256:sha(readFileSync(fileURLToPath(import.meta.url))), fixtureSeeds:fixed.map(f=>({id:f.id,seed:f.seed}))});
+  diagnosticBundleSha256:sha(readFileSync(bundle)), equivalenceSha256:sha(readFileSync(join(root,'scripts/qwen-baseline/equivalence.py'))), recoverySha256:sha(readFileSync(join(root,'scripts/qwen-baseline/inference-recovery.mjs'))), modelWorkerSha256:sha(readFileSync(join(root,'scripts/qwen-baseline/model.py'))), orchestratorSha256:sha(readFileSync(fileURLToPath(import.meta.url))), fixtureSeeds:fixed.map(f=>({id:f.id,seed:f.seed}))});
 console.log('结果目录 '+out);
 console.log('固定局面 '+fixed.length+' 个 · '+engine.PROMPT_VERSION+' · '+engine.PROTOCOL_VERSION+' · '+modelRevision+' · BF16 CUDA · '+backend);
 if(mode==='fixtures' || mode==='verify') {
@@ -221,6 +222,7 @@ if(mode==='verify'){
 class ModelWorker {
   constructor(deadline) {
     this.deadline=deadline;
+    this.generations=0;
     this.child=spawn(python,[join(root,'scripts/qwen-baseline/model.py'),modelDir,join(out,'memory.jsonl')],
       {cwd:root,env:{...process.env,PYTHONDONTWRITEBYTECODE:'1',PYTHONPATH:kernels,CC:compiler,
         QM_QWEN_TEXT_ONLY:textOnly?'1':'0',QM_QWEN_KERNELS:kernels,QM_QWEN_EFFICIENT_SDPA:accelerated?'1':'0',QM_QWEN_FLA_CONV:accelerated?'1':'0',
@@ -239,60 +241,97 @@ class ModelWorker {
         timer=setTimeout(()=>{this.close();reject(Error('model_timeout_or_wall_budget'));},limit);
       })]);
       if(line.done)throw this.spawnError??Error('模型进程已退出，查看 model.stderr.log');
-      return JSON.parse(line.value);
+      const response=JSON.parse(line.value);
+      if(response.kind==='ready')this.workerPid=response.pid;
+      return response;
     } finally {clearTimeout(timer);}
   }
-  request(messages,op='generate',seconds) {
-    if(this.child.exitCode!==null || this.child.killed) throw Error('model_worker_unavailable');
-    this.child.stdin.write(JSON.stringify({op,messages})+'\n','utf8');
+  request(messages,op='generate',seconds,requestId) {
+    if(this.stopping||this.child.exitCode!==null||this.child.signalCode!==null) throw Error('model_worker_unavailable');
+    this.child.stdin.write(JSON.stringify({op,messages,requestId})+'\n','utf8');
     return this.read(seconds);
   }
-  close(){if(this.child.exitCode===null&&!this.child.killed)this.child.kill();}
+  close(){
+    if(this.stopping||this.child.exitCode!==null||this.child.signalCode!==null)return;
+    this.stopping=true;
+    if(process.platform==='win32'&&this.child.pid){
+      try{
+        // Windows venv python.exe is a launcher. Stop only this worker's tree
+        // so a blocked CUDA process cannot survive its launcher's exit.
+        execFileSync(join(process.env.SystemRoot??'C:/Windows','System32/taskkill.exe'),
+          ['/PID',String(this.child.pid),'/T','/F'],{stdio:'ignore',windowsHide:true,timeout:5000});
+        return;
+      }catch(error){
+        this.stopError=error;
+      }
+    }
+    this.child.kill();
+  }
   async stop(){
+    if(this.stopError)throw Error('worker_tree_stop_failed');
     if(this.child.exitCode!==null||this.child.signalCode!==null)return;
     const closed=new Promise(resolve=>this.child.once('close',resolve));
     this.close();
+    if(this.stopError)throw Error("worker_tree_stop_failed");
     await closed;
   }
 }
 
 if(accelerated&&!existsSync(compiler)) throw Error('找不到独立加速环境的 TinyCC '+compiler);
-const benchmark=mode==='bench'||mode==='bench-long';
+const stability=mode==='stability'||mode==='stability-cold';
+const benchmark=mode==='bench'||mode==='bench-long'||stability;
 const deadline=benchmark?START+benchSeconds*1000:Infinity;
+const stabilityRounds=Number(process.env.QM_QWEN_STABILITY_ROUNDS??2);
+if(stability&&![1,2,3].includes(stabilityRounds))throw Error('连续验证轮数须为 1、2 或 3');
 let worker=new ModelWorker(deadline);
 let canceled=false;
 const interrupt=()=>{canceled=true;worker.close();};
 process.once('SIGINT',interrupt);
 process.once('SIGTERM',interrupt);
 let failed=false;
+let phase='startup';
 const summaries=[];
 const factual={};
 const requests={generated:0,actionFormatAttempts:0,actionFormatAccepted:0,engineAttempts:0,engineAccepted:0,answerFormatAttempts:0,answerFormatAccepted:0};
-const requestModel=async(messages,op='generate',seconds)=>{
+const requestModel=async(messages,op='generate',seconds,requestId=randomUUID())=>{
   const started=performance.now();
+  const instance=worker;
+  const workerPid=instance.workerPid,launcherPid=instance.child.pid;
+  const residence=op==='generate'?(instance.generations++===0?'first_generation':'resident'):undefined;
+  if(canceled||seconds<=0)return {ok:false,error:canceled?'canceled':'wall_budget',requestId,workerPid,launcherPid,residence};
   try {
-    const model=await worker.request(messages,op,seconds);
+    const model=await instance.request(messages,op,seconds,requestId);
     if(op==='generate'&&model.ok)requests.generated++;
-    return model;
-  } catch(error){return {ok:false,error:error.message,type:'WorkerRequestError',seconds:(performance.now()-started)/1000};}
+    return {...model,requestId,workerPid,launcherPid,residence};
+  } catch(error){return {ok:false,error:error.message,type:'WorkerRequestError',requestId,workerPid,launcherPid,residence,seconds:(performance.now()-started)/1000};}
 };
 const corrected=(input,raw,error)=>[...input.messages,
   {role:'assistant',content:raw},
   {role:'user',content:'上次原样输出 '+JSON.stringify(raw)+' 未通过。具体错误 '+error+'。请重答同一局面。'+input.output}];
 try {
   console.log('加载本地 BF16 CUDA 模型');
-  const loaded=await worker.read();
+  const loaded=await worker.read(stability?110:undefined);
   write('model-load.json',loaded);
   if(!loaded.ok)throw Error(loaded.error);
-  console.log('加载完成 '+loaded.modelLoadSeconds.toFixed(2)+'秒 · '+loaded.device);
+  phase='running';
+  console.log('进程就绪 '+loaded.coldWorkerSeconds.toFixed(2)+'秒（模型加载 '+loaded.modelLoadSeconds.toFixed(2)+'秒） · '+loaded.device);
 
-  async function askFact(room,side,o,id,fact,seconds) {
+  const recoverInference=inferenceRecovery({
+    request:(messages,seconds)=>requestModel(messages,'generate',seconds),
+    restart:async until=>{await worker.stop();return ensureWorker(until);},
+    log:entry=>{record('recovery.jsonl',entry);console.log('推理恢复 · '+entry.stage+' · '+entry.gameId+' · '+entry.revision);},
+  });
+  const infer=(room,side,observation,messages,seconds,gameDeadline)=>
+    gameDeadline===undefined?requestModel(messages,'generate',seconds):
+      recoverInference({observe:seat=>room.observe(seat),side,observation,messages,seconds,deadline:gameDeadline});
+
+  async function askFact(room,side,o,id,fact,seconds,gameDeadline) {
     const input=makeInput(o,room.reference,fact.question);
     let messages=input.messages;
     for(let attempt=0;attempt<2;attempt++){
-      const model=await requestModel(messages,'generate',seconds);
+      const model=await infer(room,side,o,messages,seconds,gameDeadline);
       const row={id,attempt,revision:o.revision,kind:fact.question.kind,messages,model,expected:fact.expected};
-      if(!model.ok){record('answers.jsonl',{...row,classification:'model_error'});return {stop:'model_error',error:model.error,fatal:true};}
+      if(!model.ok){record('answers.jsonl',{...row,classification:model.stale?'stale_observation':'model_error'});return model.stale?{stop:'stale_observation'}:{stop:'model_error',error:model.error,fatal:true};}
       let answer;
       requests.answerFormatAttempts++;
       try {answer=parseAnswer(model.text);}
@@ -312,18 +351,18 @@ try {
     return {stop:'answer_format_after_retry'};
   }
 
-  async function decide(room,side,o,id,step,previous,{first,seconds}={}) {
+  async function decide(room,side,o,id,step,previous,{first,seconds,gameDeadline}={}) {
     const before=performance.now(),input=makeInput(o,room.reference,undefined,previous);
     if(!input.offers.length)return {stop:'no_authorized_offer'};
     let messages=input.messages, correction;
     let prepMs=performance.now()-before;
     for(let attempt=0;attempt<2;attempt++){
-      const generated=attempt===0&&first?first:await requestModel(messages,'generate',seconds);
+      const generated=attempt===0&&first?first:await infer(room,side,o,messages,seconds,gameDeadline);
       const afterInference=performance.now();
       const row={id,step,attempt,observation:o,messages,legalOffers:input.offers,model:generated};
       if(!generated.ok){
-        record('decisions.jsonl',{...row,classification:generated.type==='OutOfMemoryError'?'oom':'model_error'});
-        return {stop:'model_error',error:generated.error,fatal:true};
+        record('decisions.jsonl',{...row,classification:generated.stale?'stale_observation':generated.type==='OutOfMemoryError'?'oom':'model_error'});
+        return generated.stale?{stop:'stale_observation'}:{stop:'model_error',error:generated.error,fatal:true};
       }
       let parsed;
       requests.actionFormatAttempts++;
@@ -342,10 +381,13 @@ try {
         record('decisions.jsonl',{...row,parsed:parsed.request,classification:'stale_observation'});
         return {stop:'stale_observation'};
       }
+      let definitive=false,accepted=false;
       try {
         requests.engineAttempts++;
         const result=await room.submit(side,parsed.request);
-        if(!result.result.ok)throw Error(result.result.error);
+        definitive=true;
+        accepted=result.result.ok;
+        if(!accepted)throw Error(result.result.error);
         requests.engineAccepted++;
         const after=await room.observe(side);
         const effect=shortResult(after);
@@ -354,9 +396,17 @@ try {
         return {ok:true,classification:'engine_accepted',offer:parsed.offer.label,observedResult:effect,
           previous:{action:parsed.offer.label,result:result.result,phase:after.phase,publicTail:after.public.log?.slice(-3)}};
       } catch(error) {
+        if(accepted){
+          record('decisions.jsonl',{...row,parsed:parsed.request,classification:'accepted_observation_error',error:error.message});
+          return {stop:'accepted_observation_error',error:error.message,fatal:true};
+        }
         if(/STALE|WRONG_GAME|局面已更新/i.test(error.message)) {
           record('decisions.jsonl',{...row,parsed:parsed.request,classification:'stale_observation',error:error.message});
           return {stop:'stale_observation'};
+        }
+        if(!definitive){
+          record('decisions.jsonl',{...row,parsed:parsed.request,classification:'submission_unknown',error:error.message});
+          return {stop:'submission_unknown',error:error.message,fatal:true};
         }
         const after=await room.observe(side);
         correction=error.message;
@@ -370,23 +420,78 @@ try {
     return {stop:'invalid_after_retry',error:correction};
   }
 
-  async function ensureWorker(){
+  async function ensureWorker(until=deadline){
     if(canceled)throw Error('canceled');
-    if(!worker.child.killed&&worker.child.exitCode===null&&worker.child.signalCode===null)return;
+    if(!worker.stopping&&worker.child.exitCode===null&&worker.child.signalCode===null)return;
     await worker.stop();
-    if(performance.now()>=deadline)throw Error('wall_budget');
+    const remaining=(until-performance.now())/1000;
+    if(remaining<=0)throw Error('wall_budget');
     worker=new ModelWorker(deadline);
-    const restarted=await worker.read(75);
-    record('model-restarts.jsonl',restarted);
+    const restarted=await worker.read(Math.min(75,remaining));
+    record('model-restarts.jsonl',{...restarted,launcherPid:worker.child.pid});
     if(!restarted.ok)throw Error(restarted.error);
+    return {pid:restarted.pid,launcherPid:worker.child.pid,coldWorkerSeconds:restarted.coldWorkerSeconds};
   }
 
-  if(benchmark) {
+  if(stability) {
+    const labels=mode==='stability-cold'?['long-prelude']:['standard-play','response-chain','long-prelude','standard-play'];
+    const prompts=new Map();
+    for(const label of new Set(labels)){
+      const id=sampleCases.find(([key])=>key===label)[1], f=fixed.find(v=>v.id===id);
+      const room=await createDiagnosticRoom({state:f.state,seed:f.seed,gameId:id});
+      try{
+        const side=sideOf(f.seat), o=await room.observe(side), input=makeInput(o,room.reference);
+        const length=await requestModel(input.messages,'length',8);
+        if(!length.ok)throw Error(length.error);
+        const promptSha256=sha(JSON.stringify(input.messages));
+        prompts.set(label,{f,input,promptSha256,inputTokens:length.inputTokens});
+        savePrompt(label,input.messages);
+      }finally{await room.close();}
+    }
+    const rounds=mode==='stability-cold'?1:stabilityRounds;
+    for(let round=1;round<=rounds;round++) {
+      for(const [index,label] of labels.entries()){
+        const {f,input,promptSha256,inputTokens}=prompts.get(label);
+        const requestId='stability-'+round+'-'+(index+1);
+        console.log('连续验证 '+round+'/'+rounds+' · '+label+' · '+inputTokens+' tokens');
+        const model=await requestModel(input.messages,'generate',45,requestId);
+        console.log('连续验证 '+requestId+' · '+(model.ok?model.seconds.toFixed(2)+'秒':model.error));
+        const row={requestId,round,index,label,promptSha256,inputTokens,model,workerPid:model.pid??worker.workerPid,launcherPid:worker.child.pid,
+          firstRequest:round===1&&index===0,restarted:false};
+        if(model.ok){
+          const room=await createDiagnosticRoom({state:f.state,seed:f.seed,gameId:f.id});
+          try{
+            const side=sideOf(f.seat),o=await room.observe(side), current=makeInput(o,room.reference);
+            assert.equal(sha(JSON.stringify(current.messages)),promptSha256);
+            let parsed;
+            requests.actionFormatAttempts++;
+            try{
+              if(model.hitOutputLimit)throw Error('输出达到 token 上限');
+              parsed=parseAction(model.text,current.offers,o,randomUUID());
+              requests.actionFormatAccepted++;
+              row.protocol={ok:true};
+            }catch(error){row.protocol={ok:false,error:error.message};}
+            if(parsed){
+              requests.engineAttempts++;
+              row.engine=await room.submit(side,parsed.request).then(x=>x.result);
+              if(row.engine.ok)requests.engineAccepted++;
+              row.replay=await saveReplay(room,requestId);
+            }
+          }catch(error){row.engine={ok:false,error:error.message};}
+          finally{await room.close();}
+        }
+        record('stability.jsonl',row);
+        summaries.push(row);
+        if(!model.ok){failed=true;break;}
+      }
+      if(failed)break;
+    }
+  } else if(benchmark) {
     // Attempt each input length before spending budget on corrective retries.
     const profiles=mode==='bench-long'?[['cold-long','long-prelude',110]]:[
       ['first-short','standard-play',55],['warm-short','standard-play',25],
       ['warm-medium','response-chain',65],['parameter','parameter-selection',45],
-      ['cold-long','long-prelude',110],
+      ['warm-long','long-prelude',75],
     ];
     const attempts=new Map();
     const measurements=new Map();
@@ -419,7 +524,6 @@ try {
         continue;
       }
       try {
-        if(mode==='bench'&&profile==='cold-long')await worker.stop();
         await ensureWorker();
         console.log('性能 '+profile+' · '+len.inputTokens+' tokens');
         const model=len.ok?await requestModel(messages,'generate',seconds):len;
@@ -477,6 +581,7 @@ try {
       const previous=[undefined,undefined];
       let steps=0, stale=0, result;
       const begun=performance.now(), repetitions=new Map();
+      const gameDeadline=begun+configuration.limits.gameWallSeconds*1000;
       console.log('开始 '+(index+1)+'/'+total+' '+id);
       try {
         while(true){
@@ -501,9 +606,12 @@ try {
           repetitions.set(signature,seen);
           if(seen>configuration.limits.repeatedDecision){result={stop:'action_loop',signature};break;}
           logProgress((index+1)+'/'+total+' '+id,steps,o);
-          const answer=f?.fact?await askFact(room,side,o,id,f.fact):undefined;
-          if(answer&&!answer.ok){result=answer;break;}
-          result=await decide(room,side,o,id,steps,previous[side]);
+          const answer=f?.fact?await askFact(room,side,o,id,f.fact,undefined,gameDeadline):undefined;
+          if(answer&&!answer.ok){
+            if(answer.stop==='stale_observation'&&++stale<=2)continue;
+            result=answer;break;
+          }
+          result=await decide(room,side,o,id,steps,previous[side],{gameDeadline});
           if(answer)result.answer=answer;
           if(result.stop==='stale_observation'&&++stale<=2)continue;
           if(!result.ok)break;
@@ -528,10 +636,10 @@ try {
   }
 } catch(error) {
   failed=true;
-  record('errors.jsonl',{error:error.message,seconds:elapsed()});
+  record('errors.jsonl',{phase,error:error.message,seconds:elapsed()});
   console.error(error.message);
 } finally {
-  worker.close();
+  worker.child.stdin.end();
   write('summary.json',{mode,failed,seconds:elapsed(),factual,requests,summaries});
   console.log('结果目录 '+out);
 }
