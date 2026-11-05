@@ -6,7 +6,7 @@ import { startResolution } from '../../src/core/resolution';
 import type { Question } from './input';
 
 type Report = { question: Question; expected: string; evidence: unknown };
-type Fixture = { id: string; source: string; seed: number; seat: SeatId; state: GameState; fact?: Report };
+export type Fixture = { id: string; source: string; seed: number; seat: SeatId; state: GameState; fact?: Report };
 type FixtureSpec = Omit<Fixture, 'seed' | 'state' | 'fact'> & {
   prepare: (s:GameState)=>GameState | void;
   check?: (s:GameState)=>Report;
@@ -240,4 +240,109 @@ export function fixtures():Fixture[] {
     s=spec.prepare(s)??s;
     return {id:spec.id,source:spec.source,seed,seat:spec.seat,state:s,fact:spec.check?.(s)};
   });
+}
+
+
+export type ExpressionCase = Fixture & {
+  cohort:'historical'|'corrected'|'new'|'permuted';
+  pair?:string;
+  original?:string;
+};
+
+export function expressionCases(history=fixtures()):ExpressionCase[] {
+  const cases:ExpressionCase[]=history.map(f=>({...f,cohort:'historical',
+    ...(f.id.startsWith('score-home-')&&f.fact?{fact:{...f.fact,question:{...f.fact.question,kind:'fact_read'}}}:{})}));
+  const fresh=(pair:string, variant:string, seed:number, seat:SeatId='germany'):ExpressionCase=>{
+    const state=createGame('qwen-expression-'+pair,seed,'FULL',false,false,true);
+    state.status='PLAYING';state.phase='PLAY';state.round=1;state.setupCompleted=[...SEATS];
+    state.activeSeat=state.viewSeat=state.operatorSeat=seat;
+    for(const deck of Object.values(state.decks))deck.drawPile.push(...deck.hand.splice(7));
+    return {id:pair+'-'+variant,source:pair,pair,cohort:'new',seed,seat,state};
+  };
+  function requireFact(ok:boolean,id:string){
+    if(!ok)throw Error('表达对照局面与正式规则核验不符 '+id);
+  }
+  function landPlan(s:GameState){
+    return placementPlans(s,{country:'germany',unitType:'army',mode:'build',regionIds:['eastern_europe']});
+  }
+
+  for(const changed of [false,true]){
+    const variant=changed?'yes':'no';
+    const repair=fresh('correct-connect',variant,20261201);
+    const s=repair.state;
+    s.units=[unit('probe','germany','ross_region'),unit('root','germany','germany'),
+      ...(!changed?[unit('block','soviet_union','eastern_europe')]:[])];
+    moveCard(s,'germany','build_army','hand');
+    const before=suppliedUnits(s).has('probe'), plans=landPlan(s);
+    requireFact(!before&&(plans.length>0)===changed,repair.id);
+    let connected=false;
+    if(plans.length){
+      const next=answer(play(structuredClone(s),'germany','build_army'),['eastern_europe']);
+      connected=suppliedUnits(next).has('probe')&&!unsuppliedForPhase(next,'germany').includes('probe');
+    }
+    requireFact(connected===changed,repair.id);
+    cases.push({...repair,cohort:'corrected',original:'connect-before-check-'+changed,
+      fact:claim('若德国现在尝试在东欧建设陆军，之后无人改变局势，能否合法建设并让罗斯地区的 probe 在补给检查时有补给？回答是或否。',
+        yes(connected),{before,plans,connected})});
+
+    const chain=fresh('new-home-chain',variant,20261202);
+    chain.state.units=[unit('ross-a','germany','ross_region'),unit('root-a','germany','germany'),
+      unit('link-a',changed?'germany':'italy','eastern_europe')];
+    requireFact(suppliedUnits(chain.state).has('ross-a')===changed,chain.id);
+    cases.push({...chain,fact:supply(chain.state,'ross-a')});
+
+    const anchor=fresh('new-naval-anchor',variant,20261203);
+    anchor.state.units=[unit('shore-b','germany','western_europe'),unit('fleet-b','germany','sea_north_sea','navy'),
+      unit('ocean-b','germany','sea_north_atlantic','navy'),...(changed?[unit('anchor-b','italy','iceland')]:[])];
+    requireFact(suppliedUnits(anchor.state).has('ocean-b')===changed,anchor.id);
+    cases.push({...anchor,fact:supply(anchor.state,'ocean-b')});
+
+    const enemy=fresh('new-enemy-placement',variant,20261204);
+    enemy.state.units=[unit('root-c','germany','germany'),...(changed?[unit('block-c','soviet_union','eastern_europe')]:[])];
+    moveCard(enemy.state,'germany','build_army','hand');
+    const plansC=landPlan(enemy.state);
+    requireFact((plansC.length>0)===!changed,enemy.id);
+    cases.push({...enemy,fact:claim('德国现在能否用普通建设陆军放置部队到东欧？回答是或否。',
+      yes(plansC.length>0),{plans:plansC})});
+
+    const repeat=fresh('new-repeat-trigger',variant,20261205,'united_states');
+    repeat.state.units=[unit('home-d','united_states','united_states'),unit('navy-d','united_states','sea_north_atlantic','navy'),
+      unit('extra-d','united_states','canada')];
+    if(changed)moveCard(repeat.state,'united_states','special_80','active');
+    const repeated=answer(play(structuredClone(repeat.state),'united_states','build_navy'),['sea_north_atlantic']);
+    const triggered=!!repeated.resolution?.choice?.options.some(o=>o.id.includes('special_80'));
+    requireFact(triggered===changed,repeat.id);
+    cases.push({...repeat,fact:claim('在北大西洋原地重复建设海军，是否会出现人工港候选？回答是或否。',
+      yes(triggered),{triggered,choice:repeated.resolution?.choice?.kind})});
+
+    const fee=fresh('new-fee-category',variant,20261206);
+    const navy=moveCard(fee.state,'germany','build_navy','hand');
+    moveCard(fee.state,'germany','build_army','hand');
+    const category=changed?'build_navy':'build_army';
+    startResolution(fee.state,'诊断指定费用','germany',[
+      {kind:'cards',seat:'germany',from:'hand',to:'discardPile',min:1,max:1,fee:true,requirements:[category],label:'支付一张指定类别手牌'},
+      {kind:'draw',seat:'germany',count:1,label:'结算验证'}],[],undefined,'discardPile',true);
+    const q=fee.state.resolution?.choice;
+    requireFact(q?.kind==='CARDS'&&q.options.some(o=>o.id===navy.id),fee.id);
+    const accepted=transition(structuredClone(fee.state),{type:'RESOLVE_ENGINE_CHOICE',seat:'germany',
+      expectedRevision:fee.state.revision,choiceId:q!.id,ids:[navy.id],guided:true}).ok;
+    requireFact(accepted===changed,fee.id);
+    cases.push({...fee,fact:claim('如果只选一张建设海军作支付，能否满足这个窗口的费用？回答是或否。',
+      yes(accepted),{category,accepted})});
+
+    const discard=fresh('new-forced-count',variant,20261207,'united_kingdom');
+    discard.state.activeSeat='germany';
+    const count=changed?2:1;
+    discard.state.pendingDiscard={seat:'united_kingdom',returnSeat:'germany',count};
+    const choose=(n:number)=>transition(structuredClone(discard.state),{type:'RESOLVE_FORCED_DISCARD',seat:'united_kingdom',
+      expectedRevision:discard.state.revision,cardIds:discard.state.decks.united_kingdom.hand.slice(0,n).map(c=>c.id)}).ok;
+    requireFact(choose(count)&&!choose(count===1?2:1),discard.id);
+    cases.push({...discard,fact:claim('当前这个强制弃牌窗口必须选几张不同手牌？填写数字字符串。',
+      String(count),{count},'fact_read')});
+  }
+  for(const original of ['mulberry-sea_mediterranean','discard-forced-two']){
+    const f=history.find(v=>v.id===original)!;
+    cases.push({...f,id:'permuted-'+original,cohort:'permuted',original,source:'候选及键内选项逆序'});
+  }
+  return cases;
 }

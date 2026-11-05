@@ -1,0 +1,661 @@
+[
+  {
+    "id": "own-land-false",
+    "source": "补给根与本国链对照",
+    "seed": 20261105,
+    "seat": "germany",
+    "cohort": "historical",
+    "question": {
+      "text": "当前观察中，单位 probe 是否有补给？回答是或否。 只填字符串 answer。",
+      "kind": "fact_read"
+    },
+    "expected": "否",
+    "stateSha256": "8fd583a8f7a0aee693709b4c3028faf894a52408d1be1eea52b64635df2a5ed1",
+    "evidenceSha256": "e5f422ae6861998c69f0b1c71838d9d2744c4ac33ed3cd13d7f9ae922f628b96"
+  },
+  {
+    "id": "ally-land-false",
+    "source": "盟军链与本国链对照",
+    "seed": 20261106,
+    "seat": "germany",
+    "cohort": "historical",
+    "question": {
+      "text": "当前观察中，单位 probe 是否有补给？回答是或否。 只填字符串 answer。",
+      "kind": "fact_read"
+    },
+    "expected": "否",
+    "stateSha256": "eb05d2d59ac356923193f51f72af9bd87242169ff506af6606f7c80aef902bbe",
+    "evidenceSha256": "e5f422ae6861998c69f0b1c71838d9d2744c4ac33ed3cd13d7f9ae922f628b96"
+  },
+  {
+    "id": "naval-anchor-false",
+    "source": "舰队链有无友方陆军锚点",
+    "seed": 20261107,
+    "seat": "germany",
+    "cohort": "historical",
+    "question": {
+      "text": "当前观察中，单位 probe 是否有补给？回答是或否。 只填字符串 answer。",
+      "kind": "fact_read"
+    },
+    "expected": "否",
+    "stateSha256": "db50e9896d8ef96d07b6b385024af6a2992a34e10d9fb991108e6c91831c8172",
+    "evidenceSha256": "e5f422ae6861998c69f0b1c71838d9d2744c4ac33ed3cd13d7f9ae922f628b96"
+  },
+  {
+    "id": "naval-source-false",
+    "source": "友陆军可锚定但不提供德国补给根",
+    "seed": 20261108,
+    "seat": "germany",
+    "cohort": "historical",
+    "question": {
+      "text": "当前观察中，单位 probe 是否有补给？回答是或否。 只填字符串 answer。",
+      "kind": "fact_read"
+    },
+    "expected": "否",
+    "stateSha256": "ce1327ea8a232690d86f74849dc736f54903dd54b6c4273227cded28209b6a4c",
+    "evidenceSha256": "e5f422ae6861998c69f0b1c71838d9d2744c4ac33ed3cd13d7f9ae922f628b96"
+  },
+  {
+    "id": "phase-check-false",
+    "source": "当前回合负责国与他国的补给移除对照",
+    "seed": 20261109,
+    "seat": "italy",
+    "cohort": "historical",
+    "question": {
+      "text": "若在当前版图直接开始当前行动国的补给检查，忽略后续改变及移除响应，probe 是否列入待清除名单？回答是或否。 只填字符串 answer。",
+      "kind": "rule_application"
+    },
+    "expected": "否",
+    "stateSha256": "526a44b719d4b286fd405bcf6d7535003b4e09f2d67a4f33267a7e4a46be6878",
+    "evidenceSha256": "82fcc3c2409713eb5a3f3e0b9d888d543da006467a11d81c0262048742867c96"
+  },
+  {
+    "id": "connect-before-check-false",
+    "source": "征召后在检查前补链的反事实对照",
+    "seed": 20261110,
+    "seat": "germany",
+    "cohort": "historical",
+    "question": {
+      "text": "若德国现在仅尝试在东欧新建设陆军，且接下来无人改变局势，能否合法建设并使 probe 在补给检查时有补给？回答是或否。 只填字符串 answer。",
+      "kind": "rule_application"
+    },
+    "expected": "否",
+    "stateSha256": "8a6ef77d4d4c26713e1b7b4f06e20b1da6662cbb38357c0cac9821351bb023be",
+    "evidenceSha256": "9bd8fd7cdbc344ac54f51084c0d62532d843e61e8aef53c96cd206348c2841e8"
+  },
+  {
+    "id": "own-land-true",
+    "source": "补给根与本国链对照",
+    "seed": 20261111,
+    "seat": "germany",
+    "cohort": "historical",
+    "question": {
+      "text": "当前观察中，单位 probe 是否有补给？回答是或否。 只填字符串 answer。",
+      "kind": "fact_read"
+    },
+    "expected": "是",
+    "stateSha256": "df64cc47b5a8da73ea8c11b8d3fdfda604006ab66f5218e4e4bbfaec2d22aa99",
+    "evidenceSha256": "06cb782106676111a0a34da96492e935ad6acc4d74bdc708981378b2cb1a07d8"
+  },
+  {
+    "id": "ally-land-true",
+    "source": "盟军链与本国链对照",
+    "seed": 20261112,
+    "seat": "germany",
+    "cohort": "historical",
+    "question": {
+      "text": "当前观察中，单位 probe 是否有补给？回答是或否。 只填字符串 answer。",
+      "kind": "fact_read"
+    },
+    "expected": "是",
+    "stateSha256": "60e66184ae5ae657ae4525021c18e33c72c521662efa9c59a8e07d68ffbbac21",
+    "evidenceSha256": "06cb782106676111a0a34da96492e935ad6acc4d74bdc708981378b2cb1a07d8"
+  },
+  {
+    "id": "naval-anchor-true",
+    "source": "舰队链有无友方陆军锚点",
+    "seed": 20261113,
+    "seat": "germany",
+    "cohort": "historical",
+    "question": {
+      "text": "当前观察中，单位 probe 是否有补给？回答是或否。 只填字符串 answer。",
+      "kind": "fact_read"
+    },
+    "expected": "是",
+    "stateSha256": "8177f833b06571cb3582e6ca190d01c814c622ef61585716a3ffb542901409bb",
+    "evidenceSha256": "06cb782106676111a0a34da96492e935ad6acc4d74bdc708981378b2cb1a07d8"
+  },
+  {
+    "id": "naval-source-true",
+    "source": "友陆军可锚定但不提供德国补给根",
+    "seed": 20261114,
+    "seat": "germany",
+    "cohort": "historical",
+    "question": {
+      "text": "当前观察中，单位 probe 是否有补给？回答是或否。 只填字符串 answer。",
+      "kind": "fact_read"
+    },
+    "expected": "是",
+    "stateSha256": "e0cd24019e36ac97611ea30b307bc87cab0560558c5d65ac0c75ed33b9f9bf0b",
+    "evidenceSha256": "06cb782106676111a0a34da96492e935ad6acc4d74bdc708981378b2cb1a07d8"
+  },
+  {
+    "id": "phase-check-true",
+    "source": "当前回合负责国与他国的补给移除对照",
+    "seed": 20261115,
+    "seat": "germany",
+    "cohort": "historical",
+    "question": {
+      "text": "若在当前版图直接开始当前行动国的补给检查，忽略后续改变及移除响应，probe 是否列入待清除名单？回答是或否。 只填字符串 answer。",
+      "kind": "rule_application"
+    },
+    "expected": "是",
+    "stateSha256": "3e1508738f9843300ba3886324c9eff9d31d54136340f80a2da84bf2910028e4",
+    "evidenceSha256": "e54ce2a98f518f90737da02d251f05eec15cea5be23921564dd1f16e3b3b99ed"
+  },
+  {
+    "id": "connect-before-check-true",
+    "source": "征召后在检查前补链的反事实对照",
+    "seed": 20261116,
+    "seat": "germany",
+    "cohort": "historical",
+    "question": {
+      "text": "若德国现在仅尝试在东欧新建设陆军，且接下来无人改变局势，能否合法建设并使 probe 在补给检查时有补给？回答是或否。 只填字符串 answer。",
+      "kind": "rule_application"
+    },
+    "expected": "是",
+    "stateSha256": "bf0615344ebeef52cabed62fc786917c53249afe4af7c873fa7548f47313e9cf",
+    "evidenceSha256": "c1f128f9554fb55bc3531105da332991b0d39b03b4acfbc348dbe00bd416ca6a"
+  },
+  {
+    "id": "build-remote-false",
+    "source": "远端建设与牌面定点征召，含敌占对照",
+    "seed": 20261117,
+    "seat": "germany",
+    "cohort": "historical",
+    "question": {
+      "text": "假设给德国一次普通建设陆军效果。当前版图能否在蒙古放置陆军？回答是或否。 只填字符串 answer。",
+      "kind": "rule_application"
+    },
+    "expected": "否",
+    "stateSha256": "18a80866ae5780f151841185292eb03eba698e804cbbaacb7ba1a282a90a6b50",
+    "evidenceSha256": "fd5a372f74e1a56522ebbc8cd899a2760c9519c2bf1bcc1646697c6f89b51fe3"
+  },
+  {
+    "id": "build-remote-true",
+    "source": "远端建设与牌面定点征召，含敌占对照",
+    "seed": 20261118,
+    "seat": "germany",
+    "cohort": "historical",
+    "question": {
+      "text": "假设给德国一次普通建设陆军效果。当前版图能否在蒙古放置陆军？回答是或否。 只填字符串 answer。",
+      "kind": "rule_application"
+    },
+    "expected": "否",
+    "stateSha256": "65e0992087c485d369ab0a73aaf2a6069ddd8cf0d5c7c6ef8ffc31d6e3fb5c49",
+    "evidenceSha256": "fd5a372f74e1a56522ebbc8cd899a2760c9519c2bf1bcc1646697c6f89b51fe3"
+  },
+  {
+    "id": "recruit-remote-false",
+    "source": "远端建设与牌面定点征召，含敌占对照",
+    "seed": 20261119,
+    "seat": "germany",
+    "cohort": "historical",
+    "question": {
+      "text": "假设给德国一次明确允许蒙古地区的征召陆军效果。当前版图能否在蒙古放置陆军？回答是或否。 只填字符串 answer。",
+      "kind": "rule_application"
+    },
+    "expected": "是",
+    "stateSha256": "33f1d83f9895f1d5a43d98cce7df883dae6327f0938b08d98914adeb4797d104",
+    "evidenceSha256": "21eff5e1b9533dd4182092c9a4c01bfacd603d683c4e7c45d4d0e5522fdbbc98"
+  },
+  {
+    "id": "recruit-remote-true",
+    "source": "远端建设与牌面定点征召，含敌占对照",
+    "seed": 20261120,
+    "seat": "germany",
+    "cohort": "historical",
+    "question": {
+      "text": "假设给德国一次明确允许蒙古地区的征召陆军效果。当前版图能否在蒙古放置陆军？回答是或否。 只填字符串 answer。",
+      "kind": "rule_application"
+    },
+    "expected": "否",
+    "stateSha256": "502ad56106cf2cdc4f2baa1d2e829acf67210e59b2745313c4cc4e9fd4260b2f",
+    "evidenceSha256": "fe5064a2e42dc23af64a08facff118a185ef08a329607534409306bd713cbcc1"
+  },
+  {
+    "id": "score-home-false",
+    "source": "计分点共占及失去大本营的资格对照",
+    "seed": 20261121,
+    "seat": "germany",
+    "cohort": "historical",
+    "question": {
+      "text": "若版图保持不变，现在只结算德国的版图基础分，不算卡效及盟友，德国共得几分？填写数字字符串。 只填字符串 answer。",
+      "kind": "fact_read"
+    },
+    "expected": "1",
+    "stateSha256": "8c541c339dd7fc687c70b4e066d5bb293d3ce5c7628a8aaf9f355f6830a3e0a7",
+    "evidenceSha256": "da7fa286d959df553a0bd3e44947a338017cf3e8ad8b8fd4475f1c30ee3b9cfe"
+  },
+  {
+    "id": "score-home-true",
+    "source": "计分点共占及失去大本营的资格对照",
+    "seed": 20261122,
+    "seat": "germany",
+    "cohort": "historical",
+    "question": {
+      "text": "若版图保持不变，现在只结算德国的版图基础分，不算卡效及盟友，德国共得几分？填写数字字符串。 只填字符串 answer。",
+      "kind": "fact_read"
+    },
+    "expected": "0",
+    "stateSha256": "5725c9d3d70605b22006127db346cda49262031a3c86eb8e6c46ce67f7bba90d",
+    "evidenceSha256": "81017b77e6b32a8df8203193353169a8871b371dde24cc129fc797af8c3488fc"
+  },
+  {
+    "id": "battle-air",
+    "source": "基本陆战进入正式防御窗口",
+    "seed": 20261123,
+    "seat": "united_kingdom",
+    "cohort": "historical",
+    "question": {
+      "text": "当前窗口是否允许英国选择空军防御？回答是或否。 只填字符串 answer。",
+      "kind": "fact_read"
+    },
+    "expected": "是",
+    "stateSha256": "9a9461ca8e8a7a2e17208414798f76bf4fe26492c8b00f69d444e80a492d658c",
+    "evidenceSha256": "04588ae4c30bfedc814d6a6e85c9dbdc284e5c1e214cd544ea05124c2d3c0282"
+  },
+  {
+    "id": "direct-destroy",
+    "source": "贝塔松直接消灭与空军防御对照",
+    "seed": 20261124,
+    "seat": "italy",
+    "cohort": "historical",
+    "question": {
+      "text": "在此版图打出贝塔松，选北海英国海军，单凭同地区英国空军能否进入空军防御选择？回答是或否。 只填字符串 answer。",
+      "kind": "rule_application"
+    },
+    "expected": "否",
+    "stateSha256": "5ac2532f2070dfe954d75dafaf16fe699b40c057a80c23f9287dbfa08ef3616e",
+    "evidenceSha256": "37789ea6b5aca6c60ac4bfc11eeae97852611a94dab073038b999dfd402d50c8"
+  },
+  {
+    "id": "mulberry-sea_mediterranean",
+    "source": "实战第二局机制：用实际造船厂接出第二个同名人工港窗口",
+    "seed": 20261125,
+    "seat": "united_states",
+    "cohort": "historical",
+    "question": {
+      "text": "两个同名人工港候选是否来自不同的海域建设？回答是或否。 只填字符串 answer。",
+      "kind": "fact_read"
+    },
+    "expected": "是",
+    "stateSha256": "74b3e7e1c557f3be10fdd2d191c4f042df9fd0318b31ef60f2475af5f933d45e",
+    "evidenceSha256": "97284af44701d3728d960b26faab5e4e5ae0f203862370a80966901008623efd"
+  },
+  {
+    "id": "mulberry-sea_north_atlantic",
+    "source": "实战第二局机制：用实际造船厂接出第二个同名人工港窗口",
+    "seed": 20261126,
+    "seat": "united_states",
+    "cohort": "historical",
+    "question": {
+      "text": "两个同名人工港候选是否来自不同的海域建设？回答是或否。 只填字符串 answer。",
+      "kind": "fact_read"
+    },
+    "expected": "是",
+    "stateSha256": "c070c7fb932f29661f67addab4b55e58f9659cc52c92b0ba413eba3a7540d1a7",
+    "evidenceSha256": "32677e6ecb636f68bcbc1fbdcc0582b5d611227a9047e87351dae3967e4ec221"
+  },
+  {
+    "id": "repeat-navy-false",
+    "source": "重复建设的实际触发对照",
+    "seed": 20261127,
+    "seat": "united_states",
+    "cohort": "historical",
+    "question": {
+      "text": "假设选择在北大西洋原地重复建设海军，是否会出现人工港候选？回答是或否。 只填字符串 answer。",
+      "kind": "rule_application"
+    },
+    "expected": "否",
+    "stateSha256": "e8a70bde22ee71bb352cac9a972d7405f4856f1d11fc69a8b5b668d8f4335c0a",
+    "evidenceSha256": "1d1faee1ebcc5b1c4582a9422e289ed097826802a40f23fe4c52bce2b8218a9e"
+  },
+  {
+    "id": "repeat-navy-true",
+    "source": "重复建设的实际触发对照",
+    "seed": 20261128,
+    "seat": "united_states",
+    "cohort": "historical",
+    "question": {
+      "text": "假设选择在北大西洋原地重复建设海军，是否会出现人工港候选？回答是或否。 只填字符串 answer。",
+      "kind": "rule_application"
+    },
+    "expected": "是",
+    "stateSha256": "11df8db98b3268bcb4f2ec4d0e54fa1cb34e8f5d24e5b4176b489840eb8b1096",
+    "evidenceSha256": "eb21b8b9d04e98de0f349f708b305c559dbbf69c97ec39530162be6d472d3cf7"
+  },
+  {
+    "id": "fleet-fee-false",
+    "source": "正式增强波罗的海舰队出动：费用与北海建设条件",
+    "seed": 20261129,
+    "seat": "germany",
+    "cohort": "historical",
+    "question": {
+      "text": "当前手牌没有建设海军，能否在此时发动波罗的海舰队出动？回答是或否。 只填字符串 answer。",
+      "kind": "rule_application"
+    },
+    "expected": "否",
+    "stateSha256": "211467792e17d45a722bdbfdb8f0c64debdbd932d9f22742c1ee7512e46891ae",
+    "evidenceSha256": "3176ae03669d49ab79a1ade606c470e456e6f391d036ef20cf88d5b73d4ee7d1"
+  },
+  {
+    "id": "fleet-fee-true",
+    "source": "正式增强波罗的海舰队出动：费用与北海建设条件",
+    "seed": 20261130,
+    "seat": "germany",
+    "cohort": "historical",
+    "question": {
+      "text": "当前是否必须用一张建设海军支付发动费用？回答是或否。 只填字符串 answer。",
+      "kind": "fact_read"
+    },
+    "expected": "是",
+    "stateSha256": "2120750f7fc317f0ad9e2903b1773245a97ef6e8594a473b8a63662d0f624e6c",
+    "evidenceSha256": "3c7ec7099025e7b9b89c69f7004bb0410fe0e7cab90ec879da9c4985c051deb9"
+  },
+  {
+    "id": "opening-seven",
+    "source": "真实十二选七起手",
+    "seed": 20261131,
+    "seat": "germany",
+    "cohort": "historical",
+    "question": {
+      "text": "德国起手选择需保留几张？填写数字字符串。 只填字符串 answer。",
+      "kind": "fact_read"
+    },
+    "expected": "7",
+    "stateSha256": "6b95ae3c085c1dd012ec7e4ad80cd7094a6fffefa4729387e6eb0a0023fa6f0b",
+    "evidenceSha256": "825d36007da084f84258f22a862946b839a53eefc8ca809671cae25c07012a37"
+  },
+  {
+    "id": "discard-none",
+    "source": "正式弃牌允许不弃",
+    "seed": 20261132,
+    "seat": "italy",
+    "cohort": "historical",
+    "question": {
+      "text": "当前弃牌候选是否允许空数组？回答是或否。 只填字符串 answer。",
+      "kind": "fact_read"
+    },
+    "expected": "是",
+    "stateSha256": "495eaee2a3764be04d6ef2951d91a2d8bb83b4f947d3f758db88aeaf98ee47c6",
+    "evidenceSha256": "126fcfdc43286003187b792e90c541c96cd1b938dbd767c319e2267fe60ada92"
+  },
+  {
+    "id": "discard-forced-two",
+    "source": "强制弃牌二选多的固定请求",
+    "seed": 20261133,
+    "seat": "united_kingdom",
+    "cohort": "historical",
+    "question": {
+      "text": "当前必须弃几张？填写数字字符串。 只填字符串 answer。",
+      "kind": "fact_read"
+    },
+    "expected": "2",
+    "stateSha256": "1a90e34ea3b375cfdecdbf20b618d765dab5361b8a262986f2ae78bc25867d6c",
+    "evidenceSha256": "cb28c4a5dd5fc3504f38f6cc47901d60b2ddf20cbfb7edbde496f63fc120b3ef"
+  },
+  {
+    "id": "prelude-neutrality",
+    "source": "完整序章、中立与平衡开关并存",
+    "seed": 20261134,
+    "seat": "germany",
+    "cohort": "historical",
+    "question": null,
+    "expected": null,
+    "stateSha256": "8ae5630b56e612b2e0b642ded00378388f5fe2bd069a98af05795886e5db64a7",
+    "evidenceSha256": null
+  },
+  {
+    "id": "correct-connect-no",
+    "source": "correct-connect",
+    "pair": "correct-connect",
+    "cohort": "corrected",
+    "seed": 20261201,
+    "seat": "germany",
+    "original": "connect-before-check-false",
+    "question": {
+      "text": "若德国现在尝试在东欧建设陆军，之后无人改变局势，能否合法建设并让罗斯地区的 probe 在补给检查时有补给？回答是或否。 只填字符串 answer。",
+      "kind": "rule_application"
+    },
+    "expected": "否",
+    "stateSha256": "ba347b3b8487c8983f31f1a68af13072baeb117c84c94a46a8cf6b6fd78f785c",
+    "evidenceSha256": "edda6fb01852f7e85b62f0878b080f03c5ba71edb3dca31eee3383d614b338c7"
+  },
+  {
+    "id": "new-home-chain-no",
+    "source": "new-home-chain",
+    "pair": "new-home-chain",
+    "cohort": "new",
+    "seed": 20261202,
+    "seat": "germany",
+    "question": {
+      "text": "当前观察中，单位 ross-a 是否有补给？回答是或否。 只填字符串 answer。",
+      "kind": "fact_read"
+    },
+    "expected": "否",
+    "stateSha256": "4d93a264c2e10ffb38bb253538676eddf0e45c1bc7e2c4a7a7062c8773627f81",
+    "evidenceSha256": "f86c33be4b055f6d5d878878308bc199f30652d6ee7ea65c70e38d226b150dec"
+  },
+  {
+    "id": "new-naval-anchor-no",
+    "source": "new-naval-anchor",
+    "pair": "new-naval-anchor",
+    "cohort": "new",
+    "seed": 20261203,
+    "seat": "germany",
+    "question": {
+      "text": "当前观察中，单位 ocean-b 是否有补给？回答是或否。 只填字符串 answer。",
+      "kind": "fact_read"
+    },
+    "expected": "否",
+    "stateSha256": "5a4266db72dab052d23cdc2c2e8858a287e46e4e41b04278c69f21af6c0f57c0",
+    "evidenceSha256": "fa790b06883ed0087383b18ea39150b8bc8a77a18a0f3d68b28af4b00dcae133"
+  },
+  {
+    "id": "new-enemy-placement-no",
+    "source": "new-enemy-placement",
+    "pair": "new-enemy-placement",
+    "cohort": "new",
+    "seed": 20261204,
+    "seat": "germany",
+    "question": {
+      "text": "德国现在能否用普通建设陆军放置部队到东欧？回答是或否。 只填字符串 answer。",
+      "kind": "rule_application"
+    },
+    "expected": "是",
+    "stateSha256": "2dbde3d03af23dd29239438ae183934a84fdf9a7d5735f912f72cd17d6296050",
+    "evidenceSha256": "dcf81971cd4e99ababa4b3c6b6f9c8cbade98838df0f421b2013df64acd74d71"
+  },
+  {
+    "id": "new-repeat-trigger-no",
+    "source": "new-repeat-trigger",
+    "pair": "new-repeat-trigger",
+    "cohort": "new",
+    "seed": 20261205,
+    "seat": "united_states",
+    "question": {
+      "text": "在北大西洋原地重复建设海军，是否会出现人工港候选？回答是或否。 只填字符串 answer。",
+      "kind": "rule_application"
+    },
+    "expected": "否",
+    "stateSha256": "ad8841680c29337771cafd0f687e486b8129ddf7c8eea87f7fa7d9d77e95852f",
+    "evidenceSha256": "3ee387e080f5210dce3e51ae3028446b18a5aa36d743ecbfc1364dacc0044372"
+  },
+  {
+    "id": "new-fee-category-no",
+    "source": "new-fee-category",
+    "pair": "new-fee-category",
+    "cohort": "new",
+    "seed": 20261206,
+    "seat": "germany",
+    "question": {
+      "text": "如果只选一张建设海军作支付，能否满足这个窗口的费用？回答是或否。 只填字符串 answer。",
+      "kind": "rule_application"
+    },
+    "expected": "否",
+    "stateSha256": "2b4b8421368c9e55c65dfd254d8f45f126040a4cfbbaa70d567d6ee2850b9b0e",
+    "evidenceSha256": "7369f1c5e5b0a3cc38538bf677c074810e0c7fddd1b8efaefb155c84a0271864"
+  },
+  {
+    "id": "new-forced-count-no",
+    "source": "new-forced-count",
+    "pair": "new-forced-count",
+    "cohort": "new",
+    "seed": 20261207,
+    "seat": "united_kingdom",
+    "question": {
+      "text": "当前这个强制弃牌窗口必须选几张不同手牌？填写数字字符串。 只填字符串 answer。",
+      "kind": "fact_read"
+    },
+    "expected": "1",
+    "stateSha256": "ec4f9479adf088e6c87a69ea96a09d67101960e44a2f382fa46ddeeb7c77e299",
+    "evidenceSha256": "6aea6dfe6561984cdc5c54ead84d47d2cf29e48253ae282aef237404adad4661"
+  },
+  {
+    "id": "correct-connect-yes",
+    "source": "correct-connect",
+    "pair": "correct-connect",
+    "cohort": "corrected",
+    "seed": 20261201,
+    "seat": "germany",
+    "original": "connect-before-check-true",
+    "question": {
+      "text": "若德国现在尝试在东欧建设陆军，之后无人改变局势，能否合法建设并让罗斯地区的 probe 在补给检查时有补给？回答是或否。 只填字符串 answer。",
+      "kind": "rule_application"
+    },
+    "expected": "是",
+    "stateSha256": "e61a3709868fb32c44bd6f8ad27620e53930a54cf0b7273e8c6e12c5a8b2eb8f",
+    "evidenceSha256": "84e7c95342f5e039f25cf32795cd202a659ea303e84ecd0421f40b5dac30082b"
+  },
+  {
+    "id": "new-home-chain-yes",
+    "source": "new-home-chain",
+    "pair": "new-home-chain",
+    "cohort": "new",
+    "seed": 20261202,
+    "seat": "germany",
+    "question": {
+      "text": "当前观察中，单位 ross-a 是否有补给？回答是或否。 只填字符串 answer。",
+      "kind": "fact_read"
+    },
+    "expected": "是",
+    "stateSha256": "549c55d8baf02350e5bbcb872200bbc9ef89cff5a07e658d095ee4f09fd2f24c",
+    "evidenceSha256": "776856ffe60aa716a37d817d6706b0ee97e4b90245b91f7298e05863fec08c8d"
+  },
+  {
+    "id": "new-naval-anchor-yes",
+    "source": "new-naval-anchor",
+    "pair": "new-naval-anchor",
+    "cohort": "new",
+    "seed": 20261203,
+    "seat": "germany",
+    "question": {
+      "text": "当前观察中，单位 ocean-b 是否有补给？回答是或否。 只填字符串 answer。",
+      "kind": "fact_read"
+    },
+    "expected": "是",
+    "stateSha256": "add37f55e2d506edd3fb01653a5d042d8593cc342a69a63b2ac3e3e1609a9117",
+    "evidenceSha256": "d62e5b0a3691a2ec22feef8a10ac7ddee0eb7f02d978631d3026414bf18a4967"
+  },
+  {
+    "id": "new-enemy-placement-yes",
+    "source": "new-enemy-placement",
+    "pair": "new-enemy-placement",
+    "cohort": "new",
+    "seed": 20261204,
+    "seat": "germany",
+    "question": {
+      "text": "德国现在能否用普通建设陆军放置部队到东欧？回答是或否。 只填字符串 answer。",
+      "kind": "rule_application"
+    },
+    "expected": "否",
+    "stateSha256": "03c74f91b9ac1bdfc22630fd6ce05c3d6cdca31aee33f6d4905349684e5b3f06",
+    "evidenceSha256": "c40f0ef815ddea83c6d4375f23c02a2d8a5cab1dddd42ba90a5a589319be5ac3"
+  },
+  {
+    "id": "new-repeat-trigger-yes",
+    "source": "new-repeat-trigger",
+    "pair": "new-repeat-trigger",
+    "cohort": "new",
+    "seed": 20261205,
+    "seat": "united_states",
+    "question": {
+      "text": "在北大西洋原地重复建设海军，是否会出现人工港候选？回答是或否。 只填字符串 answer。",
+      "kind": "rule_application"
+    },
+    "expected": "是",
+    "stateSha256": "4dbc4a77f7ab1eedf94b5149b9b2875e6cf0efb1848317ea73188cc2a5ea1723",
+    "evidenceSha256": "9f7570a9682b57f79a83761c8aab65633756a47221368b89fa57cf44e82385c9"
+  },
+  {
+    "id": "new-fee-category-yes",
+    "source": "new-fee-category",
+    "pair": "new-fee-category",
+    "cohort": "new",
+    "seed": 20261206,
+    "seat": "germany",
+    "question": {
+      "text": "如果只选一张建设海军作支付，能否满足这个窗口的费用？回答是或否。 只填字符串 answer。",
+      "kind": "rule_application"
+    },
+    "expected": "是",
+    "stateSha256": "928b36621626f0282f9540f5dbe51a95d310f74b47917c72cc355dc7d4aeaba5",
+    "evidenceSha256": "6ef9218f5d9aae3d737986f046375af67fb17d7b561a24998656eb9f69646ccd"
+  },
+  {
+    "id": "new-forced-count-yes",
+    "source": "new-forced-count",
+    "pair": "new-forced-count",
+    "cohort": "new",
+    "seed": 20261207,
+    "seat": "united_kingdom",
+    "question": {
+      "text": "当前这个强制弃牌窗口必须选几张不同手牌？填写数字字符串。 只填字符串 answer。",
+      "kind": "fact_read"
+    },
+    "expected": "2",
+    "stateSha256": "a483c59744f3836ae3ff7637283fd63c48ffd12dbd79c14bb82b9f3c95278d77",
+    "evidenceSha256": "57413ce83ee1d989e384dfd3a82c6e2d9052a23c4204706bd2d7df11aa4c2d7c"
+  },
+  {
+    "id": "permuted-mulberry-sea_mediterranean",
+    "source": "候选及键内选项逆序",
+    "seed": 20261125,
+    "seat": "united_states",
+    "cohort": "permuted",
+    "original": "mulberry-sea_mediterranean",
+    "question": {
+      "text": "两个同名人工港候选是否来自不同的海域建设？回答是或否。 只填字符串 answer。",
+      "kind": "fact_read"
+    },
+    "expected": "是",
+    "stateSha256": "74b3e7e1c557f3be10fdd2d191c4f042df9fd0318b31ef60f2475af5f933d45e",
+    "evidenceSha256": "97284af44701d3728d960b26faab5e4e5ae0f203862370a80966901008623efd"
+  },
+  {
+    "id": "permuted-discard-forced-two",
+    "source": "候选及键内选项逆序",
+    "seed": 20261133,
+    "seat": "united_kingdom",
+    "cohort": "permuted",
+    "original": "discard-forced-two",
+    "question": {
+      "text": "当前必须弃几张？填写数字字符串。 只填字符串 answer。",
+      "kind": "fact_read"
+    },
+    "expected": "2",
+    "stateSha256": "1a90e34ea3b375cfdecdbf20b618d765dab5361b8a262986f2ae78bc25867d6c",
+    "evidenceSha256": "cb28c4a5dd5fc3504f38f6cc47901d60b2ddf20cbfb7edbde496f63fc120b3ef"
+  }
+]

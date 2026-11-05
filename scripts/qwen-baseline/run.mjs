@@ -6,6 +6,7 @@ import { join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { createInterface } from 'node:readline';
 import { build } from 'vite';
+import { freezeCases,inputPair,runExpression,sampleIds } from './expression-ab.mjs';
 import { inferenceRecovery } from './inference-recovery.mjs';
 
 const root = fileURLToPath(new URL('../../',import.meta.url));
@@ -27,10 +28,13 @@ const benchSeconds = Number(process.env.QM_QWEN_BENCH_SECONDS ?? 540);
 if (!Number.isSafeInteger(benchSeconds) || benchSeconds < 1 || benchSeconds > 540) throw Error('性能短测上限须在 1–540 秒');
 const sha = data => createHash('sha256').update(data).digest('hex');
 const mode = process.argv[2] ?? 'preview';
+const expressionRun=mode==='ab'||mode==='ab-smoke';
+const expressionWallSeconds=mode==='ab-smoke'?165:3600;
+const expressionRequestSeconds=60;
 const START = performance.now();
 const elapsed = () => (performance.now()-START)/1000;
 
-if (!['preview','bench','fixtures','games','verify','samples','bench-long','stability','stability-cold'].includes(mode)) throw Error('未知入口 '+mode);
+if (!['preview','bench','fixtures','games','verify','samples','bench-long','stability','stability-cold','ab','ab-smoke','ab-plan','ab-verify'].includes(mode)) throw Error('未知入口 '+mode);
 const base = 'c13904a0829f310e39f798215882653c21c26d64';
 if (git('diff','--name-only',base,'--','src/core','src/data')) throw Error('正式核心或数据偏离固定基线');
 const identity = JSON.parse(readFileSync(join(root,'src/matchLog/build-identity.json'),'utf8'));
@@ -47,6 +51,7 @@ const configuration = {
   node:process.version, python, modelDir, modelRevision, modelRepo:manifest.repo,
   gameSeeds:[20261105,20261106],
   backend, textOnly, compareKernels, memoryPolicy:process.env.QM_QWEN_MEMORY_POLICY??'pressure', kernelPath:kernels, compiler, limits:{benchWallSeconds:benchSeconds, requestSeconds:180, gameDecisions:3500, gameWallSeconds:14400, repeatedDecision:6},
+  ...(expressionRun?{expressionWallSeconds,expressionRequestSeconds}:{}),
   fullGameRules:{mode:'FULL',prelude:true,neutrality:true,balance:true},
 };
 
@@ -76,7 +81,7 @@ const fixed=fixtures();
 assert.equal(configuration.promptVersion,engine.PROMPT_VERSION);
 assert.equal(configuration.protocolVersion,engine.PROTOCOL_VERSION);
 write('run.json',{...configuration,...engine.engineIdentity,promptVersion:engine.PROMPT_VERSION,
-  diagnosticBundleSha256:sha(readFileSync(bundle)), equivalenceSha256:sha(readFileSync(join(root,'scripts/qwen-baseline/equivalence.py'))), recoverySha256:sha(readFileSync(join(root,'scripts/qwen-baseline/inference-recovery.mjs'))), modelWorkerSha256:sha(readFileSync(join(root,'scripts/qwen-baseline/model.py'))), orchestratorSha256:sha(readFileSync(fileURLToPath(import.meta.url))), fixtureSeeds:fixed.map(f=>({id:f.id,seed:f.seed}))});
+  diagnosticBundleSha256:sha(readFileSync(bundle)), equivalenceSha256:sha(readFileSync(join(root,'scripts/qwen-baseline/equivalence.py'))), expressionSha256:sha(readFileSync(join(root,'scripts/qwen-baseline/expression-ab.mjs'))), recoverySha256:sha(readFileSync(join(root,'scripts/qwen-baseline/inference-recovery.mjs'))), modelWorkerSha256:sha(readFileSync(join(root,'scripts/qwen-baseline/model.py'))), orchestratorSha256:sha(readFileSync(fileURLToPath(import.meta.url))), fixtureSeeds:fixed.map(f=>({id:f.id,seed:f.seed}))});
 console.log('结果目录 '+out);
 console.log('固定局面 '+fixed.length+' 个 · '+engine.PROMPT_VERSION+' · '+engine.PROTOCOL_VERSION+' · '+modelRevision+' · BF16 CUDA · '+backend);
 if(mode==='fixtures' || mode==='verify') {
@@ -111,6 +116,69 @@ function savePrompt(label,messages){
   write(label+'-messages.json',messages);
   writeFileSync(join(out,label+'-prompt.md'),messages.map(m=>'## '+m.role+'\n\n'+m.content).join('\n\n')+'\n','utf8');
 }
+const expressionModes=['ab','ab-smoke','ab-plan','ab-verify'];
+let pairedCases;
+if(expressionModes.includes(mode)){
+  const planned=engine.expressionCases(fixed);
+  const manifest=freezeCases(planned,sha);
+  write('ab-plan.json',manifest);
+  if(mode==='ab-plan')process.exit(0);
+  const frozen=JSON.parse(readFileSync(join(root,'scripts/qwen-baseline/ab-freeze.json'),'utf8'));
+  assert.deepEqual(manifest,frozen,'冻结测试清单与当前实现不符');
+  if(mode==='ab-verify'){
+    let checked=0;
+    for(const c of planned){
+      const room=await createDiagnosticRoom({state:c.state,seed:c.seed,gameId:c.id});
+      try{
+        const side=sideOf(c.seat),o=await room.observe(side);
+        const {versions,display}=inputPair(c,o,room.reference,makeInput);
+        assert(versions[0].action.offers.length>0,c.id);
+        if(c.cohort==='permuted'){
+          const normal=makeInput(o,room.reference).offers;
+          const actual=versions[0].action.offers;
+          assert.deepEqual(actual.map(v=>v.id),normal.map(v=>v.id).reverse());
+          assert(actual.some(v=>Object.values(v.selections??{}).some(rule=>rule.ids.length>1)));
+          for(const v of actual)for(const [key,rule] of Object.entries(v.selections??{})){
+            assert.deepEqual(rule.ids,[...normal.find(n=>n.id===v.id).selections[key].ids].reverse());
+          }
+        }
+        const b=versions[1].action.messages[1].content;
+        for(const u of o.mapFacts.units)assert(b.includes('部队 '+u.id+'：国家='),c.id+' 缺部队 '+u.id);
+        const other=await room.observe(1-side);
+        const publiclyKnown=new Set(Object.values(o.public.countries).flatMap(v=>[...v.active,...v.visibleDiscard,...v.revealedResponses]).map(card=>card.id));
+        for(const d of Object.values(other.privateCountries))for(const card of [...d.hand,...d.faceDown]){
+          if(!publiclyKnown.has(card.id))assert(!b.includes(card.id),c.id+' 泄露对方牌实例 '+card.id);
+        }
+        if(sampleIds.includes(c.id))for(const {version,action,question} of versions){
+          savePrompt(c.id+'-'+version,action.messages);
+          if(question)savePrompt(c.id+'-'+version+'-qa',question.messages);
+        }
+        // For ordered/unordered permutations, reconstruct the same formal IDs
+        // using each displayed index, without submitting any guessed move.
+        if(c.cohort==='permuted'){
+          const index=versions[0].action.offers.findIndex(v=>v.selections);
+          const offer=versions[0].action.offers[index];
+          const select=Object.fromEntries(Object.entries(offer.selections).map(([k,r])=>[k,Array.from({length:r.min},(_,i)=>i)]));
+          const parsed=parseAction(JSON.stringify({offer:index,select}),versions[0].action.offers,display,randomUUID());
+          for(const [k,nums] of Object.entries(select))assert.deepEqual(parsed.request.selections[k],nums.map(i=>offer.selections[k].ids[i]));
+        }
+        checked++;
+      }finally{await room.close();}
+    }
+    write('summary.json',{mode,checked,cases:manifest.length,sampleIds});
+    console.log('冻结场景、相同候选、问答隔离、权限及逆序编号映射检查通过 · '+checked+' 例');
+    process.exit(0);
+  }
+  pairedCases=mode==='ab-smoke'?planned.filter(c=>c.id==='mulberry-sea_mediterranean'):planned;
+  const firstRequests=pairedCases.length*2+pairedCases.filter(c=>c.fact).length*2;
+  const experiment={sourceHead:configuration.sourceHead,model:manifestModel(),A:engine.PROMPT_VERSION,B:engine.EXPRESSION_VERSION,
+    cases:pairedCases.length,firstRequests,maxRequests:firstRequests*2+1,
+    requestSeconds:expressionRequestSeconds,wallSeconds:expressionWallSeconds,freezeSha256:sha(JSON.stringify(frozen))};
+  write('ab-config.json',experiment);
+  console.log(JSON.stringify(experiment,null,2));
+}
+function manifestModel(){return manifest.repo+' @ '+modelRevision+' · BF16 CUDA · thinking=false';}
+
 if(mode==='samples'){
   for(const [label,id] of sampleCases){
     const f=fixed.find(v=>v.id===id),room=await createDiagnosticRoom({state:f.state,seed:f.seed,gameId:id});
@@ -280,7 +348,7 @@ class ModelWorker {
 if(accelerated&&!existsSync(compiler)) throw Error('找不到独立加速环境的 TinyCC '+compiler);
 const stability=mode==='stability'||mode==='stability-cold';
 const benchmark=mode==='bench'||mode==='bench-long'||stability;
-const deadline=benchmark?START+benchSeconds*1000:Infinity;
+const deadline=benchmark?START+benchSeconds*1000:expressionRun?START+expressionWallSeconds*1000:Infinity;
 const stabilityRounds=Number(process.env.QM_QWEN_STABILITY_ROUNDS??2);
 if(stability&&![1,2,3].includes(stabilityRounds))throw Error('连续验证轮数须为 1、2 或 3');
 let worker=new ModelWorker(deadline);
@@ -433,7 +501,16 @@ try {
     return {pid:restarted.pid,launcherPid:worker.child.pid,coldWorkerSeconds:restarted.coldWorkerSeconds};
   }
 
-  if(stability) {
+  if(expressionRun){
+    const results=await runExpression({cases:pairedCases,engine,corrected,saveReplay,record,write,
+      infer:(room,side,o,messages)=>infer(room,side,o,messages,expressionRequestSeconds,deadline),
+      progress:(index,c,version)=>console.log('输入表达 A/B · '+index+'/'+pairedCases.length+' · '+c.id+' · '+version),
+      shouldStop:()=>canceled||performance.now()>=deadline||worker.stopping||worker.child.exitCode!==null||worker.child.signalCode!==null,
+    });
+    summaries.push(...results.map(({questionAttempts,actionAttempts,...r})=>r));
+    failed=results.length!==pairedCases.length*2||results.some(r=>r.error||r.closeError||!r.engine?.ok||!r.replay?.entries||
+      [...r.questionAttempts,...r.actionAttempts].some(a=>a.classification==='runtime_failure'));
+  } else if(stability) {
     const labels=mode==='stability-cold'?['long-prelude']:['standard-play','response-chain','long-prelude','standard-play'];
     const prompts=new Map();
     for(const label of new Set(labels)){
@@ -486,6 +563,10 @@ try {
       }
       if(failed)break;
     }
+    const checks={generation:summaries.every(r=>r.model.ok),protocol:summaries.every(r=>r.protocol?.ok===true),
+      engine:summaries.every(r=>r.engine?.ok===true),replay:summaries.every(r=>Number.isInteger(r.replay?.entries)&&r.replay.entries>0&&!r.replay.error)};
+    write('stability-checks.json',checks);
+    failed||=Object.values(checks).some(ok=>!ok);
   } else if(benchmark) {
     // Attempt each input length before spending budget on corrective retries.
     const profiles=mode==='bench-long'?[['cold-long','long-prelude',110]]:[

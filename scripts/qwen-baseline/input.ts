@@ -13,6 +13,8 @@ type VisibleCard = Observation['privateCountries'][string]['hand'][number];
 type Reference = Awaited<ReturnType<typeof referenceData>>['data'];
 export type Question = { text: string; kind: 'fact_read' | 'rule_application' };
 export const PROMPT_VERSION = 'qm-qwen-baseline/2.1';
+export const EXPRESSION_VERSION = 'qm-qwen-expression/1';
+export type Expression = 'A' | 'B';
 export const PROTOCOL_VERSION = 'qm-qwen-decision/2';
 
 const modules = new Map(rulesDocument.trim().split(/^## /m).filter(Boolean).map(section => {
@@ -74,14 +76,16 @@ function exampleFor(offer:Offer, index:number, cards:Map<string,VisibleCard>){
   return Object.keys(select).length?{offer:index,select}:{offer:index};
 }
 
-export function makeInput(o: Observation, ref: Reference, question?: Question, previous?: unknown) {
+export function makeInput(o: Observation, ref: Reference, question?: Question, previous?: unknown, expression:Expression='A') {
   if (ref.id !== o.reference.id || ref.rulesFingerprint !== o.reference.rulesFingerprint) throw Error('REFERENCE_MISMATCH');
-  const offers=relevantOffers(o), cards=cardIndex(o);
+  const offers=relevantOffers(o), cards=cardIndex(o), revised=expression==='B';
   const name=(id:unknown)=>typeof id==='string'?ref.countries[id as keyof typeof ref.countries]??id:id;
   const regionNames=new Map(ref.map.regions.map(r=>[r.id,r.name]));
   const region=(id:unknown)=>typeof id==='string'?regionNames.get(id)??id:id;
   const cardName=(id:unknown)=>typeof id==='string'?cards.get(id)?.name??BASIC_NAMES[id as keyof typeof BASIC_NAMES]??id:id;
   const phase=PHASE_NAMES[o.phase]??o.phase;
+  const actionName=(id:string)=>BASIC_NAMES[id as keyof typeof BASIC_NAMES]??
+    ({recruit_army:'征召陆军',recruit_navy:'征召海军',remove:'移除部队',move_air:'调度空军'} as Record<string,string>)[id]??id;
   const ownCards=(list:VisibleCard[])=>list.map(c=>[c.id,definitionKey(c)]);
   const composition=(list:VisibleCard[])=>{
     const tally=new Map<string,number>();
@@ -135,13 +139,43 @@ export function makeInput(o: Observation, ref: Reference, question?: Question, p
         地区:effect&&'regionId' in effect?region(effect.regionId):undefined};
     }),
   });
+  function describeOrigin(q:Observation['decisions'][number], windows:readonly string[]){
+    return windows.map(window=>{
+      const origin=q.triggerReasons.find(r=>r.windowId===window), e=origin?.effect;
+      const when=origin?.timing==='Before'?'结算前':origin?.timing==='After'?'结算后':'时点未显示';
+      const action=e?.kind==='action'?actionName(e.action):e?.kind==='signal'&&e.phase?PHASE_NAMES[e.phase as keyof typeof PHASE_NAMES]:undefined;
+      const where=e?.kind==='action'&&e.regionId?'在'+region(e.regionId):'';
+      const country=e?.kind==='action'?name(e.country):'';
+      const source=action?[country,where,action,when].filter(Boolean).join(''):
+        origin?.sourceCard?origin.sourceCard.name+'｜'+when:'来源细节未显示';
+      return '来源='+source+'｜窗口='+window;
+    }).join('；');
+  }
   const mapped=offers.map((offer,index)=>{
     const q=decisions.get(String(offer.command.choiceId));
     const lines=['候选 '+index+' · '+name(offer.seat)+' · '+offer.label
       +(offer.command.cardId?' · '+offer.command.cardId:'')];
     if(offer.details)lines.push('  确定目标 '+JSON.stringify(localizedDetails(offer.details)));
+    if(revised&&!Object.keys(offer.selections??{}).length)lines.push('  本次只选此操作，不填写参数。'+(offer.command.type==='PLAY_CARD'?'如需后续目标，将由后续窗口询问。':''));
     for(const [key,spec] of Object.entries(offer.selections??{})){
       const requirement=spec.requirements?.map(r=>r.split('|').map(v=>v==='*'?'任意手牌':cardName(v)).join(' 或 '));
+      if(revised){
+        const quantity=spec.min===spec.max?'恰好 '+spec.min+' 项':spec.min+'–'+spec.max+' 项';
+        lines.push('  参数键='+key+'｜填写编号数组｜数量='+quantity+'｜允许空选='+(spec.min===0?'是，填 []':'否')
+          +'｜对象不得重复｜保留提交顺序='+(spec.ordered?'是':'否')
+          +(requirement?.length?'｜指定费用类别='+requirement.join('、'):''));
+        lines.push(...spec.ids.map((id,n)=>{
+          const option=q?.options.find(v=>v.id===id);
+          const windows=option?.mergedWindowIds??(option?.windowId?[option.windowId]:[]);
+          const raw=cardName(option?.label??id);
+          const label=cards.get(id)?.name??(option?.regionId?region(raw):(name(raw)!==raw?name(raw):region(raw)));
+          return ['    选项'+n+'：'+label,'编号对应='+id,
+            q&&windows.length?describeOrigin(q,windows):q?.kind==='TRIGGER'?'来源细节未显示':undefined,
+            option?.regionId?'地区='+region(option.regionId):undefined,
+            option?.details?JSON.stringify(localizedDetails(option.details)):undefined].filter(Boolean).join('｜');
+        }));
+        continue;
+      }
       lines.push('  输出参数 '+key+'：编号数组，选 '+spec.min+'–'+spec.max+' 项'
         +(spec.ordered?'，保留选择顺序':'')+(requirement?.length?'；须匹配 '+requirement.join('、'):'')+'。');
       lines.push('  '+spec.ids.map((id,n)=>{
@@ -166,6 +200,28 @@ export function makeInput(o: Observation, ref: Reference, question?: Question, p
     ...(activeDecision?.kind==='REALLOCATE'?['资源重整此处只选取得的基本牌，保留其余牌原有顺序。']:[]),
     ...(activeDecision?.kind==='TRIGGER'?['同名效果按窗口编号对应的来源地区区分；只从当前仍有效候选中选择。']:[]),
   ].join('\n');
+  const currentTasks:Record<string,string>={PAY_COST:'支付发动费用',FORCE_HAND:'处理插入的强制弃牌',
+    AIR_DEFENSE:'处理插入的空军防御',AIR_INTERCEPT:'决定是否出动空军拦截',TRIGGER:'处理触发或响应窗口',
+    ORDER_MANDATORY_TRIGGERS:'排列必须处理的触发',RELOCATE:'选择空军转移目的地',REALLOCATE:'资源重整取牌'};
+  const commandTasks:Record<string,string>={KEEP_OPENING:'起手留牌',RESOLVE_FORCED_DISCARD:'处理插入的强制弃牌',
+    DISCARD_HAND:'本国弃牌',SELECT_AIR_ACTION:'选择空军行动',MOVE_AIR:'调动空军',
+    RELOCATE_AIR:'选择空军转移目的地',PLAY_PRELUDE:'序章出牌',ACK_RESPONSE_NOTICE:'确认通知'};
+  const primary=offers.find(v=>v.selections)??offers[0];
+  const task=activeDecision?(currentFee?'支付发动费用':currentTasks[activeDecision.kind]??activeDecision.prompt):
+    primary?commandTasks[String(primary.command.type)]??(selectCard?'选择标准出牌或结束当前阶段':primary.label):'等待';
+  const requirements=[...new Set(offers.flatMap(v=>Object.entries(v.selections??{}).map(([key,spec])=>
+    key+' 选'+(spec.min===spec.max?'恰好 '+spec.min:spec.min+'–'+spec.max)+((key==='cardIds'||currentFee)?' 张不同手牌':' 项不同选项')+
+      (spec.requirements?.length?'，满足 '+spec.requirements.map(r=>r.split('|').map(v=>v==='*'?'任意手牌':cardName(v)).join(' 或 ')).join('、'):'')
+  )))];
+  const revisedSummary=[
+    '当前行动国：'+name(o.activeSeat),'当前回合阶段：'+phase+'阶段',
+    '当前决策国：'+([...new Set(offers.map(v=>name(v.seat)))].join('、')||'无'),
+    '当前实际任务：'+task,
+    ...(activeDecision?['窗口说明：'+activeDecision.prompt]:[]),
+    ...(requirements.length?['选择要求：'+requirements.join('；')]:[]),
+    ...(currentFee?['发动来源：'+(cardName(activeDecision?.context?.cardId)??activeDecision?.prompt??'按窗口说明')+
+      '。可支付的手牌是参数下列出的选项；按指定类别和数量选择。']:[]),
+  ].join('\n');
   const {axis,allies}=o.public.allianceScores;
   const state={
     身份:o.bindings.map(name),阵营:o.alliance==='axis'?'轴心':'同盟',轮:o.round,当前行动国:name(o.activeSeat),阶段:phase,
@@ -177,7 +233,7 @@ export function makeInput(o: Observation, ref: Reference, question?: Question, p
       海峡:ref.map.straits.map(s=>[region(s.landRegion),region(s.seaA),region(s.seaB),
         (o.mapFacts.landControllers[s.landRegion]??s.defaultController)==='axis'?'轴心':'同盟']),
       当前邻接:[...adjacency.values()],动态国别:mapCountries,
-      部队:o.mapFacts.units.map(u=>[u.id,name(u.country),kindName[u.type],region(u.regionId),u.supplied?'有补给':'断补']),
+      部队:revised?undefined:o.mapFacts.units.map(u=>[u.id,name(u.country),kindName[u.type],region(u.regionId),u.supplied?'有补给':'断补']),
       临时补给:o.mapFacts.temporarySupply,其他临时规则:o.public.turnFlags},
     近期公开记录:o.public.log?.slice(-6),前次本方结算:previous,
   };
@@ -185,12 +241,15 @@ export function makeInput(o: Observation, ref: Reference, question?: Question, p
     ? '只输出一个JSON对象，例如 {"answer":"是"}。回答原问题所要求的字符串。不要选动作，不要附加字段。'
     : '只输出一个JSON对象。offer 是候选编号；select 里的每个键必须与该候选列出的输出参数完全一致，数组填该键自己的选项编号，不是卡牌 ID。无参数时只需 offer，勿填 select；列了输出参数的候选按原样填写每个参数键，允许选0项时填空数组。参数值只能是整数数组。不要复述候选、输出说明、对象型参数或额外字段。'
       +(sample?' 当前窗口的格式示例（只演示格式，不推荐该动作）：'+JSON.stringify(sample):' 当前没有可提交候选。');
-  return {offers,output,messages:[
+  const boardDetails=revised?'\n地区名称与 ID：'+ref.map.regions.map(r=>r.name+'='+r.id).join('；')
+    +'\n部队（当前授权观察）：\n'+o.mapFacts.units.map(u=>
+      '部队 '+u.id+'：国家='+name(u.country)+'｜兵种='+kindName[u.type]+'｜地区='+region(u.regionId)+'｜当前补给='+(u.supplied?'有':'无')).join('\n'):'';
+  return {offers,output,example:question?undefined:sample,messages:[
     {role:'system',content:ruleText(o)},
-    {role:'user',content:'C. 当前授权局势与己方资源\n'+JSON.stringify(state)
+    {role:'user',content:'C. 当前授权局势与己方资源\n'+JSON.stringify(state)+boardDetails
       +'\n\n卡面词典，每行：定义 ID | 牌名 | 类型 | 部队国 | 紧张度 | 当前效果。牌库组成按定义计数，无牌序。\n'+dictionary.join('\n')
       +'\n\nD. 决策与候选\n'+JSON.stringify(o.decisions.map(describe))+'\n'+mapped.join('\n')
-      +'\n\nE. 当前任务\n'+summary+(question?'\n独立诊断问题：'+question.text:'\n选择一项合法游戏操作。')+'\n'+output},
+      +'\n\nE. 当前任务\n'+(revised?revisedSummary:summary)+(question?'\n独立诊断问题：'+question.text:'\n选择一项合法游戏操作。')+'\n'+output},
   ]};
 }
 

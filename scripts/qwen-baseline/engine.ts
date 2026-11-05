@@ -2,13 +2,13 @@ import { Room, LocalAiAdapter } from '../../src/network/Room';
 import { openReplay } from '../../src/actionReplay/openReplay';
 import { ENGINE, VERSION } from '../../src/actionReplay/state';
 import identity from '../../src/matchLog/build-identity.json';
-import { makeInput, parseAction, parseAnswer, PROMPT_VERSION, PROTOCOL_VERSION } from './input';
+import { makeInput, parseAction, parseAnswer, PROMPT_VERSION, EXPRESSION_VERSION, PROTOCOL_VERSION } from './input';
 import type { Observation } from './input';
 import type { GameState, SeatId } from '../../src/core';
 import type { Identity } from '../../src/network/protocol';
 
-export { fixtures } from './cases';
-export { makeInput, parseAction, parseAnswer, PROMPT_VERSION, PROTOCOL_VERSION };
+export { fixtures, expressionCases } from './cases';
+export { makeInput, parseAction, parseAnswer, PROMPT_VERSION, EXPRESSION_VERSION, PROTOCOL_VERSION };
 export const engineIdentity = {...identity, gameVersion:VERSION, rulesFingerprint:ENGINE};
 const axis = ['germany','japan','italy'] satisfies SeatId[];
 const allies = ['united_kingdom','soviet_union','united_states'] satisfies SeatId[];

@@ -12,9 +12,9 @@ if not exist "%qm_node%" (
 echo(
 type "scripts\qwen-baseline\menu.txt" || exit /b 1
 set "ERRORLEVEL="
-"%SystemRoot%\System32\choice.exe" /C 12345670 /N /M "Select: "
+"%SystemRoot%\System32\choice.exe" /C 123456780 /N /M "Select: "
 set "qm_option=%errorlevel%"
-if "%qm_option%"=="8" exit /b 0
+if "%qm_option%"=="9" exit /b 0
 if "%qm_option%"=="5" (
     if not exist "outputs\qwen-baseline\runs" (mkdir "outputs\qwen-baseline\runs" || exit /b 1)
     explorer "%CD%\outputs\qwen-baseline\runs"
@@ -27,6 +27,7 @@ if "%qm_option%"=="3" set "qm_mode=fixtures"
 if "%qm_option%"=="4" set "qm_mode=games"
 if "%qm_option%"=="6" set "qm_mode=samples"
 if "%qm_option%"=="7" set "qm_mode=stability"
+if "%qm_option%"=="8" set "qm_mode=ab"
 if not defined qm_mode exit /b 1
 "%qm_node%" scripts/qwen-baseline/run.mjs %qm_mode%
 goto menu
