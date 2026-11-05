@@ -125,7 +125,7 @@ export async function runExpression({cases,engine,infer,corrected,saveReplay,rec
       const {display,versions}=inputPair(c,o,room.reference,engine.makeInput);
       const {action,question}=versions.find(item=>item.version===version);
       row.task=o.decisions[0]?.kind??action.offers.find(v=>v.selections)?.command.type??action.offers[0]?.command.type??'none';
-      const evaluate=async(input,task,parse,attempts)=>{
+      const evaluate=async(input,task,parse,attempts,apply)=>{
         let messages=input.messages;
         for(let attempt=0;attempt<2;attempt++){
           const model=await infer(room,side,o,messages);
@@ -147,6 +147,26 @@ export async function runExpression({cases,engine,infer,corrected,saveReplay,rec
               messages=corrected(input,model.text,error.message);
             }
           }
+          if(parsed!==undefined&&apply){
+            try{
+              if(!sameState(o,await room.observe(side)))throw Error('stale_before_submission');
+              entry.engineAttempted=true;
+              row.engine=await apply(parsed);
+              entry.engine=row.engine;
+              if(!row.engine.ok){
+                entry.classification='engine_rejected';
+                entry.error=row.engine.error??'正式引擎拒绝动作';
+                if(!sameState(o,await room.observe(side)))throw Error('rejected_after_state_change');
+                messages=corrected(input,model.text,entry.error);
+                parsed=undefined;
+              }
+            }catch(error){
+              entry.classification='execution_failure';
+              entry.error=error.message;
+              record('ab-attempts.jsonl',{id:c.id,version,cohort:c.cohort,seat:c.seat,...entry});
+              throw error;
+            }
+          }
           record('ab-attempts.jsonl',{id:c.id,version,cohort:c.cohort,seat:c.seat,...entry});
           if(!model.ok||parsed!==undefined)return parsed;
         }
@@ -157,12 +177,11 @@ export async function runExpression({cases,engine,infer,corrected,saveReplay,rec
         row.expected=c.fact.expected;
       }
       if(!sameState(o,await room.observe(side)))throw Error('stale_after_question');
-      const parsed=await evaluate(action,'action',text=>engine.parseAction(text,action.offers,display,randomUUID()),row.actionAttempts);
+      const parsed=await evaluate(action,'action',text=>engine.parseAction(text,action.offers,display,randomUUID()),
+        row.actionAttempts,async move=>(await room.submit(side,move.request)).result);
       if(parsed){
-        if(!sameState(o,await room.observe(side)))throw Error('stale_before_submission');
         row.selection=selectedIdentity(parsed);
-        row.engine=(await room.submit(side,parsed.request)).result;
-        if(row.engine.ok)row.replay=await saveReplay(room,c.id+'-'+version);
+        row.replay=await saveReplay(room,c.id+'-'+version);
       }
     }catch(error){row.error=error.message;}
     finally{if(room)await room.close().catch(error=>{row.closeError=error.message;});}

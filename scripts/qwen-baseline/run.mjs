@@ -507,6 +507,14 @@ try {
       progress:(index,c,version)=>console.log('输入表达 A/B · '+index+'/'+pairedCases.length+' · '+c.id+' · '+version),
       shouldStop:()=>canceled||performance.now()>=deadline||worker.stopping||worker.child.exitCode!==null||worker.child.signalCode!==null,
     });
+    for(const r of results){
+      requests.actionFormatAttempts+=r.actionAttempts.filter(a=>a.model.ok).length;
+      requests.actionFormatAccepted+=r.actionAttempts.filter(a=>a.legal).length;
+      requests.answerFormatAttempts+=r.questionAttempts.filter(a=>a.model.ok).length;
+      requests.answerFormatAccepted+=r.questionAttempts.filter(a=>a.classification==='parsed').length;
+      requests.engineAttempts+=r.actionAttempts.filter(a=>a.engineAttempted).length;
+      requests.engineAccepted+=Number(r.engine?.ok===true);
+    }
     summaries.push(...results.map(({questionAttempts,actionAttempts,...r})=>r));
     failed=results.length!==pairedCases.length*2||results.some(r=>r.error||r.closeError||!r.engine?.ok||!r.replay?.entries||
       [...r.questionAttempts,...r.actionAttempts].some(a=>a.classification==='runtime_failure'));
