@@ -13,7 +13,7 @@ import {near} from './fullCardEffects';
 import {publicRecord} from './publicHistory';
 
 export const isPrelude=(c:{definitionId:string})=>c.definitionId.startsWith('prelude_');
-export const persistentHistory=(id:string,balance=false)=>['neutrality_united_states_status','neutrality_soviet_union_status','prelude_UK-17','prelude_JP-14','prelude_SU-08','prelude_SU-10'].includes(id)||balance&&id==='prelude_IT-15';
+export const persistentHistory=(id:string,balance=false)=>['neutrality_united_states_status','neutrality_soviet_union_status','prelude_UK-17','prelude_JP-14','prelude_SU-08','prelude_SU-10'].includes(id)||balance&&['prelude_IT-15','prelude_US-17'].includes(id);
 export function initializePrelude(s:GameState){
  const decks=Object.fromEntries(SEATS.map(seat=>{
   const drawPile=preludeCatalog(!!s.rules?.balanceEnabled).filter(d=>d.deckOwner===seat).map(d=>({id:`${seat}:${d.id}`,definitionId:d.id,deckOwner:seat,country:d.country,...(s.rules?.balanceEnabled?{balance:true}:{})}));
@@ -23,7 +23,7 @@ export function initializePrelude(s:GameState){
  s.prelude={historyDiscard:true,round:1,active:true,turn:1,tension:0,played:false,discarded:0,decks,installed:{},wars:[]};
  s.phase='PRELUDE';s.status='PLAYING';
  fact(s,'card_moved','准备序章牌库');
- for(const seat of SEATS){const d=decks[seat];shuffle(d.drawPile,s);d.discardPile=d.drawPile.splice(0,2);fact(s,'card_moved','序章初始化弃两张',{seat,cardIds:d.discardPile.map(c=>c.id)});d.hand=d.drawPile.splice(0,2);fact(s,'card_moved','序章初始化抽两张',{seat,cardIds:d.hand.map(c=>c.id)});}
+ for(const seat of SEATS){const d=decks[seat];shuffle(d.drawPile,s);d.discardPile=[];for(let i=0;i<d.drawPile.length&&d.discardPile.length<2;){if(s.rules?.balanceEnabled&&d.drawPile[i].definitionId==='prelude_IT-15'){i++;continue;}d.discardPile.push(...d.drawPile.splice(i,1));}fact(s,'card_moved','序章初始化弃两张',{seat,cardIds:d.discardPile.map(c=>c.id)});d.hand=d.drawPile.splice(0,2);fact(s,'card_moved','序章初始化抽两张',{seat,cardIds:d.hand.map(c=>c.id)});}
  publicRecord(s,'germany','序章开始：各国序章牌库弃两张、抽两张；常规起手暂不选留。');
 }
 export function finishPrelude(s:GameState){
@@ -32,7 +32,7 @@ export function finishPrelude(s:GameState){
  s.turnFlags=undefined;if(s.resolution)s.resolution.turnUses={};
  for(const seat of SEATS){const d=p.decks[seat];d.discardPile.push(...d.hand.splice(0),...d.drawPile.splice(0));}
  p.active=false;s.status='SETUP';s.phase='SETUP';s.activeSeat=s.viewSeat=s.operatorSeat='germany';s.setupCompleted=[];
- publicRecord(s,'germany',`序章结束，紧张度 ${p.tension}。各国从当前常规手牌保留至多七张。`);
+ publicRecord(s,'germany',`序章结束，紧张度 ${p.tension}。各国从当前常规手牌保留至起手上限。`);
 }
 export function finishPreludeTurn(s:GameState){
  const p=s.prelude;if(!p?.active||!p.played||s.resolution?.running)return;
@@ -47,7 +47,7 @@ export function finishPreludeTurn(s:GameState){
  checkNeutralityTurn(s);
 }
 export function preludeEffect(seat:SeatId,op:string,count=0,cardId?:string):Effect{
- const labels:Record<string,string>={'spanish-burn':'逐张查看序章牌库顶，决定是否弃置（至多3张）','spanish-pay':'弃置当前序章牌库顶','spanish-settle':'意大利弃置相同数量的序章牌库顶','picnic-uk':'英国可先弃置一张序章手牌，再打出另一张序章手牌；请选择要弃置的牌，或跳过','picnic-pay':'弃置选定的英国序章手牌','play-hand-required':'英国：请选择并打出另一张序章手牌','play-hand-or-top':'美国继续序章操作：可弃置牌库顶，并再打出一张序章牌','purge-double':'可逐张弃置序章牌库顶，每张获得2分','tension':'调整紧张度','discard':`弃置序章牌库顶 ${count} 张`,'shuffle':'洗混序章牌库','shuffle-normal':'洗混常规牌库','arm-from-deck':'从序章牌库选择军备并暗置','unplayed-from-discard':'苏联：从序章弃牌堆选择一张未打出过的牌并打出','play-discard':'打出所选序章弃牌','arm-from-discard':'从序章弃牌选择军备并暗置','install-deck':'暗置所选军备','install-discard':'暗置所选军备','play-hand':'选择一张序章手牌打出（可以跳过）','play-top':'打出序章牌库顶','play-selected':'打出所选序章牌','purge':'逐张弃置序章牌库顶并获得分数','inspect-status':'检视常规牌库顶十张，选择状态牌','play-status':'打出所选状态牌','bottom-seven':'选择7张手牌置于牌库底','wartime-hand':'生产线调至战时状态：调整手牌','draw-to-seven':'补至七张手牌','draw-if-installed':'暗置成功后抽一张','draw-bottomed':'补回相同数量手牌'};
+ const labels:Record<string,string>={'tizard-offer':'蒂泽德代表团：英国可将起手保留上限改为5张以打出一张序章手牌','tizard-play':'英国降低起手保留上限并打出所选序章牌','spanish-burn':'逐张查看序章牌库顶，决定是否弃置（至多3张）','spanish-pay':'弃置当前序章牌库顶','spanish-settle':'意大利弃置相同数量的序章牌库顶','picnic-uk':'英国可先弃置一张序章手牌，再打出另一张序章手牌；请选择要弃置的牌，或跳过','picnic-pay':'弃置选定的英国序章手牌','play-hand-required':'英国：请选择并打出另一张序章手牌','play-hand-or-top':'美国继续序章操作：可弃置牌库顶，并再打出一张序章牌','purge-double':'可逐张弃置序章牌库顶，每张获得2分','tension':'调整紧张度','discard':`弃置序章牌库顶 ${count} 张`,'shuffle':'洗混序章牌库','shuffle-normal':'洗混常规牌库','arm-from-deck':'从序章牌库选择军备并暗置','unplayed-from-discard':'苏联：从序章弃牌堆选择一张未打出过的牌并打出','play-discard':'打出所选序章弃牌','arm-from-discard':'从序章弃牌选择军备并暗置','install-deck':'暗置所选军备','install-discard':'暗置所选军备','play-hand':'选择一张序章手牌打出（可以跳过）','play-top':'打出序章牌库顶','play-selected':'打出所选序章牌','purge':'逐张弃置序章牌库顶并获得分数','inspect-status':'检视常规牌库顶十张，选择状态牌','play-status':'打出所选状态牌','bottom-seven':'选择7张手牌置于牌库底','wartime-hand':'生产线调至战时状态：调整手牌','draw-to-seven':'补至七张手牌','draw-if-installed':'暗置成功后抽一张','draw-bottomed':'补回相同数量手牌'};
  return {kind:'prelude',seat,op,count,cardId,label:labels[op]??op};
 }
 export function historyEffects(s:ReadState,card:CardInstance):Effect[]{
@@ -59,7 +59,15 @@ export function historyEffects(s:ReadState,card:CardInstance):Effect[]{
  const installResponse=():Effect[]=>[{kind:'cards',seat,from:'hand',to:'faceDown',filter:'响应',min:1,max:1,remember:'installed-response',label:'选择常规响应并暗置'},preludeEffect(seat,'draw-if-installed')];
  const own=s.units.filter(u=>u.country===seat);
  if(s.rules?.balanceEnabled){switch(id){
-  case 'US-10':return [preludeEffect('united_kingdom','picnic-uk'),preludeEffect('united_states','play-hand-or-top')];
+  case 'US-10':return [preludeEffect('united_kingdom','arm-from-discard',1)];
+  case 'US-07':return [preludeEffect('united_kingdom','tizard-offer'),preludeEffect('united_states','play-hand-or-top')];
+  case 'US-17':return [score(2),{kind:'signal',tag:'INSTALL',label:'正面放置罗斯福整顿经济'}];
+  case 'SU-20':return [a('recruit_army',['eastern_china','western_china'],'china')];
+  case 'DE-20':return [score(1),a('air_deploy')];
+  case 'UK-16':case 'US-15':return [score(3)];
+  case 'UK-17':return [top('italy',2),{kind:'signal',tag:'INSTALL',label:'正面放置意大利煤炭禁运'}];
+  case 'UK-13':return [choose([a('recruit_army',['south_africa']),a('recruit_army',['south_africa'],'france')]),balanceEffect(seat,'africa-score')];
+  case 'JP-17':return [score(2*own.filter(u=>u.type!=='air'&&near(s,c,'sea_east_china').includes(u.regionId)).length)];
   case 'SU-19':return [a('recruit_army',['ukraine'])];
   case 'SU-14':return [{kind:'cards',seat,from:'hand',to:'discardPile',min:1,max:1,fee:true,label:'支付一张常规手牌'},balanceEffect(seat,'inspect-response')];
   case 'JP-13':return [a('destroy',['eastern_china'])];
@@ -74,7 +82,7 @@ export function historyEffects(s:ReadState,card:CardInstance):Effect[]{
   case 'US-06':return [preludeEffect('soviet_union','unplayed-from-discard',1)];
   case 'US-14':return [top('japan',4)];
   case 'IT-09':return [...(['united_kingdom','soviet_union','united_states'] as SeatId[]).map(v=>top(v,1)),score(1)];
-  case 'IT-14':return [score(2)];
+  case 'IT-14':return [score(3)];
   case 'IT-15':return [{kind:'signal',tag:'INSTALL',label:'正面放置条约【意大利雄心】'}];
  }}
  switch(id){
@@ -155,6 +163,8 @@ export function applyPreludeEffect(s:GameState,f:ResolutionFrame,e:Extract<Effec
  case 'play-discard':{const i=d.discardPile.findIndex(c=>c.id===e.cardId&&!Object.hasOwn(p.installed,c.id));if(i>=0){const card=d.discardPile.splice(i,1)[0];s.decks[seat].hand.push(card);markPreludeInstall(s,card.id);const v=preludeCardEffects(s,card);push(card,v.effects,v.zone);}break;}
  case 'arm-from-discard':pick(d.discardPile.filter(c=>specialCard(c.definitionId,c.balance)?.type==='军备'),'install-discard',e.count,seat!==f.owner);break;
  case 'install-deck':case 'install-discard':{const z=e.op==='install-deck'?d.drawPile:d.discardPile,i=z.findIndex(c=>c.id===e.cardId);if(i>=0){const c=z.splice(i,1)[0];s.decks[seat].faceDown.push(c);markPreludeInstall(s,c.id);publicRecord(s,seat,`${COUNTRY_NAMES[seat]}暗置一张军备。`);}break;}
+ case 'tizard-offer':if(d.hand.length)insert([{kind:'choose',seat,min:0,max:1,label:'英国可将起手保留上限改为5张，额外打出一张序章手牌',options:d.hand.map(c=>({id:c.id,label:c.definitionId,effects:[preludeEffect(seat,'tizard-play',0,c.id)]}))}]);break;
+ case 'tizard-play':if(d.hand.some(c=>c.id===e.cardId)){(s.openingHandLimits??={})[seat]=5;insert([preludeEffect(seat,'play-selected',0,e.cardId)]);}break;
  case 'picnic-uk':if(d.hand.length>=2)pick(d.hand,'picnic-pay',1,true);break;
  case 'picnic-pay':{const i=d.hand.findIndex(c=>c.id===e.cardId);if(i>=0){d.discardPile.push(...d.hand.splice(i,1));insert([preludeEffect(seat,'play-hand-required')]);}break;}
  case 'play-hand-required':pick(d.hand,'play-selected',1);break;

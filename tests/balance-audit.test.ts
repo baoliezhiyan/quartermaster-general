@@ -13,7 +13,7 @@ function game(){const s=createGame('audit',1940,'FULL',true,false,true);s.prelud
 function add(s:GameState,id:string,zone:'hand'|'faceDown'|'active'='hand'){const def=specialCard(id,true)!;const d=s.decks[def.deckOwner];const i=d.drawPile.findIndex(c=>c.definitionId===id);const c=i>=0?d.drawPile.splice(i,1)[0]:{id:'fixture:'+id,definitionId:id,country:def.country,deckOwner:def.deckOwner,balance:true};d[zone].push(c);return c;}
 function choose(s:GameState,id?:string){const q=s.resolution!.choice!;expect(q).toBeTruthy();expect(resolveChoice(s,q.seat,q.id,id?[id]:q.options.slice(0,q.min).map(o=>o.id))).toBe(true);}
 function actions(s:GameState,region:string){for(let i=0;i<15&&s.resolution?.choice?.kind==='ACTION';i++){const q=s.resolution.choice;choose(s,q.options.find(o=>o.id===region)?.id??q.options[0].id);}}
-for(const d of BALANCE_CARDS.filter(c=>c.id.startsWith('special_')&&['状态','响应'].includes(c.type)&&c.id!=='special_91'))it(`balance declaration installs ${d.id} ${d.name} without running replaced effects`,()=>{
+for(const d of BALANCE_CARDS.filter(c=>c.id.startsWith('special_')&&['状态','响应'].includes(c.type)&&!['special_91','special_42'].includes(c.id)))it(`balance declaration installs ${d.id} ${d.name} without running replaced effects`,()=>{
  const s=game(),c:CardInstance={id:'audit:'+d.id,definitionId:d.id,deckOwner:d.deckOwner,country:d.country,balance:true};
  expect(cardEffects(s,c)).toEqual([expect.objectContaining({kind:'signal',tag:'INSTALL'})]);
 });

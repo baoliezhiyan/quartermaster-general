@@ -60,10 +60,11 @@ it('replays a whole prelude without intermediate snapshots and crosses two forma
 it('injects recorded random insertion order, verifies exact consumption and rejects missing random results',async()=>{
  const s=createGame('shuffle',1940,'FULL',false,false,true);s.status='PLAYING';s.round=1;s.phase='PLAY';s.setupCompleted=[...SEATS];s.activeSeat=s.operatorSeat=s.viewSeat='united_kingdom';
  const d=s.decks.united_kingdom;d.drawPile.push(...d.hand);d.hand=[];
- const ration=d.drawPile.splice(d.drawPile.findIndex(c=>c.definitionId==='special_13'),1)[0];d.faceDown=[ration];
- const card=d.drawPile.splice(d.drawPile.findIndex(c=>c.definitionId==='special_3'),1)[0];d.hand.push(card);
+ const ration=d.drawPile.splice(d.drawPile.findIndex(c=>c.definitionId==='special_13'),1)[0];d.hand=[ration];
+ const card=d.drawPile.splice(d.drawPile.findIndex(c=>c.definitionId==='build_army'),1)[0];d.hand.push(card);const fee=d.drawPile.shift()!;d.hand.push(fee);
  const originalOrder=d.drawPile.map(v=>v.id);
  const c=new LocalGameController();await load(c,s);await send(c,{type:'PLAY_CARD',cardId:card.id,targetIds:[],effectIndices:[0]});
+ while(c.getSnapshot()!.resolution!.choice?.kind==='ACTION'){const q=c.getSnapshot()!.resolution!.choice!;await send(c,{type:'RESOLVE_ENGINE_CHOICE',choiceId:q.id,ids:[q.options[0].id]});}
  const q=c.getSnapshot()!.resolution!.choice!;await send(c,{type:'RESOLVE_ENGINE_CHOICE',choiceId:q.id,ids:[q.options.find(o=>o.label==='配给')!.id]});await settled(c);const a=await replayEquals(c);
  expect(c.getSnapshot()!.decks.united_kingdom.drawPile.filter(v=>v.id!==card.id).map(v=>v.id)).toEqual(originalOrder);
  expect(a.records.some(r=>r.type==='shuffle')).toBe(true);

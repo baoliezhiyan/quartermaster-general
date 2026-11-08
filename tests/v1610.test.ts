@@ -1,3 +1,4 @@
+import {statusActionEffects} from '../src/core/statusActions';
 import {it,expect} from 'vitest';
 import {createGame} from '../src/core/game';
 import {specialCard,regularCatalog,preludeCatalog} from '../src/core/cardCatalog';
@@ -29,15 +30,14 @@ it.each([['prelude_JP-16',2,2],['prelude_JP-11',3,1],['prelude_IT-08',4,1],['pre
  const s=game(),effects=historyEffects(s,card(id as string));expect(effects.filter(e=>e.kind==='prelude'&&e.op==='discard').every(e=>e.kind==='prelude'&&e.count===count)).toBe(true);expect(effects.filter(e=>e.kind==='score').reduce((n,e)=>n+(e.kind==='score'?e.amount:0),0)).toBe(points);
 });
 it('updated tension and Stalins recruitment are executable',()=>{
- const s=game();for(const [id,n] of [['prelude_IT-15',1],['prelude_JP-11',0],['prelude_SU-17',1],['prelude_US-10',-1]] as const)expect(preludeCardEffects(s,card(id)).effects[0]).toMatchObject({count:n});expect(historyEffects(s,card('prelude_SU-19'))[0]).toMatchObject({action:'recruit_army',regions:['ukraine']});
+ const s=game();for(const [id,n] of [['prelude_IT-15',1],['prelude_JP-11',0],['prelude_SU-17',1],['prelude_US-10',0]] as const)expect(preludeCardEffects(s,card(id)).effects[0]).toMatchObject({count:n});expect(historyEffects(s,card('prelude_SU-19'))[0]).toMatchObject({action:'recruit_army',regions:['ukraine']});
 });
-it('Hyde restores UK discard/play and US normal-panel extra play independently',()=>{
+it('Tizard grants US normal-panel extra play even when UK has no hand',()=>{
  const s=game('united_states');s.prelude!.active=true;s.prelude!.played=true;s.prelude!.discarded=3;s.prelude!.decks.united_kingdom.hand=[];
- startResolution(s,'野餐','united_states',historyEffects(s,card('prelude_US-10')),[]);finish(s);expect(s.prelude!.played).toBe(false);expect(s.prelude!.discarded).toBe(0);expect(s.resolution?.choice).toBeFalsy();
+ startResolution(s,'野餐','united_states',historyEffects(s,card('prelude_US-07')),[]);finish(s);expect(s.prelude!.played).toBe(false);expect(s.prelude!.discarded).toBe(0);expect(s.resolution?.choice).toBeFalsy();
 });
-it('Kamikaze is a supply-start trigger, not an air action, and preserves existing air action state',()=>{
- const s=game('japan'),c=card('special_247');s.decks.japan.active=[c];s.units=[{id:'home',country:'japan',type:'army',regionId:'japan'},{id:'plane',country:'japan',type:'air',regionId:'japan'},{id:'target',country:'united_kingdom',type:'navy',regionId:'sea_east_china'}];s.phase='AIR';expect(airActionOptions(s).some(o=>(o.id as string)==='kamikaze')).toBe(false);expect(fullTrigger(s,c,phase('AIR'),'After')).toBeUndefined();s.phase='SUPPLY';s.airAction='deploy';
- startResolution(s,'补给','japan',[phase('SUPPLY')],[]);expect(s.resolution!.choice!.options.some(o=>o.label==='神风敢死队')).toBe(true);answer(s,[s.resolution!.choice!.options.find(o=>o.label==='神风敢死队')!.id]);finish(s);expect(s.units.some(u=>u.id==='plane'||u.id==='target')).toBe(false);expect(s.airAction).toBe('deploy');
+it('Kamikaze is an air action and no longer offers a supply trigger',()=>{
+ const s=game('japan'),c=card('special_247');s.decks.japan.active=[c];s.units=[{id:'home',country:'japan',type:'army',regionId:'japan'},{id:'plane',country:'japan',type:'air',regionId:'japan'},{id:'target',country:'united_kingdom',type:'navy',regionId:'sea_east_china'}];s.phase='AIR';expect(airActionOptions(s).some(o=>(o.id as string)==='kamikaze')).toBe(false);expect(fullTrigger(s,c,phase('AIR'),'After')).toBeUndefined();expect(fullTrigger(s,c,phase('SUPPLY'),'After')).toBeUndefined();startResolution(s,'神风','japan',statusActionEffects(s,c),[]);finish(s);expect(s.units.some(u=>u.id==='plane'||u.id==='target')).toBe(false);
 });
 it.each(['prelude_SU-01','prelude_SU-03'])('army fee bypasses removal for %s',id=>{
  const s=game(),c=card(id),fee=card('build_army');s.decks.soviet_union.faceDown=[c];s.decks.soviet_union.hand=[fee];s.units=[{id:'home',country:'soviet_union',type:'army',regionId:'moscow'}];
@@ -58,9 +58,9 @@ it.each(['drawPile','discardPile'] as const)('production management retains dire
 it('quick production has indexed score trigger and pays one top card before playing status',()=>{
  const s=game('united_states'),c=card('special_259'),status=card('special_87');s.phase='SCORE';s.decks.united_states.hand=[c,status];const n=s.decks.united_states.drawPile.length;startResolution(s,'计分','united_states',[phase('SCORE')],[]);answer(s,[s.resolution!.choice!.options.find(o=>o.label==='快速生产')!.id]);finish(s);expect(s.decks.united_states.active.some(v=>v.id===status.id)).toBe(true);expect(s.decks.united_states.drawPile).toHaveLength(n-1);
 });
-it('tank transport accepts all three pairs but never unrelated cards',()=>{
+it('tank transport accepts a constrained card plus any filler',()=>{
  const s=game(),r=fullTrigger(s,card('special_44'),{kind:'action',country:'soviet_union',action:'build_army',option:{regionId:'ukraine'} as any,label:'建设'},'After')!;
- for(const defs of [['build_army','build_army'],['land_battle','land_battle'],['land_battle','build_army']])expect(coversCost(defs.map((id,i)=>card(id,String(i))),r.costRequirements!)).toBe(true);expect(coversCost([card('air_power'),card('build_army')],r.costRequirements!)).toBe(false);
+ for(const defs of [['build_army','build_army'],['land_battle','land_battle'],['land_battle','build_army']])expect(coversCost(defs.map((id,i)=>card(id,String(i))),r.costRequirements!)).toBe(true);expect(coversCost([card('air_power'),card('build_army')],r.costRequirements!)).toBe(true);expect(coversCost([card('air_power'),card('build_navy')],r.costRequirements!)).toBe(false);
 });
 it('winter war, human wave, and forward force have actual new targets',()=>{
  const s=game();s.decks.soviet_union.faceDown=[card('prelude_SU-04'),card('prelude_SU-07')];const winter=preludeTriggers(s,frame,phase('SCORE'),'After')[0].effects.at(-1)!;expect(winter).toMatchObject({kind:'choose'});if(winter.kind==='choose'){expect(winter.options[0].effects[0]).toMatchObject({action:'build_army',regions:['scandinavia']});}if(winter.kind==='choose')expect(winter.options[1].effects[0]).toMatchObject({action:'recruit_army',regions:['scandinavia']});const wave=preludeTriggers(s,frame,{kind:'action',country:'soviet_union',action:'land_battle',option:{regionId:'ukraine'} as any,label:'陆战'},'After').find(r=>r.sourceInstanceId===card('prelude_SU-07').id)!;expect(wave.effects.at(-1)).toMatchObject({action:'land_battle'});s.activeSeat='united_states';s.decks.united_states.faceDown=[card('prelude_US-16')];expect(preludeTriggers(s,frame,phase('SCORE'),'After')[0].effects.at(-1)).toMatchObject({regions:['philippines','iwo_jima','indonesia']});

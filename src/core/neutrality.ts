@@ -1,3 +1,4 @@
+import {drawCards} from './decks';
 import {fact} from './factObserver';
 import {homeRegion} from './modifiers';
 import type {CountryId,GameState,ReadState,SeatId} from './types';
@@ -46,8 +47,8 @@ export function endNeutrality(s:GameState,seat:NeutralSeat,reason:string){
  const d=s.decks[seat],cardId=neutralityCardId(seat);
  // The rule effect belongs to the first entry into the war, never to recycling the card.
  for(const zone of ['active','resolving'] as const){const index=d[zone].findIndex(c=>c.id===cardId);if(index>=0){const cards=d[zone].splice(index,1);d.discardPile.push(...cards);revealPublic(s,cards);}}
- if(seat==='united_states'){s.scores[seat]+=4;publicRecord(s,seat,`美国弃置【孤立主义】，获得 4 分。`);}
- else {s.neutralityStatusPending=true;publicRecord(s,seat,s.rules?.balanceEnabled?'苏联弃置【混乱的政局】，可以打出手牌状态，或查看最靠近牌库顶的状态并决定是否打出。':'苏联弃置【混乱的政局】，可以打出一张手牌中的状态牌。');}
+ if(seat==='united_states'){if(s.rules?.balanceEnabled){const i=d.active.findIndex(c=>c.definitionId==='prelude_US-17');if(i>=0){const cards=d.active.splice(i,1);d.discardPile.push(...cards);revealPublic(s,cards);}}s.scores[seat]+=4;publicRecord(s,seat,`美国弃置【孤立主义】，获得 4 分。`);}
+ else {if(s.rules?.balanceEnabled)s.sovietNeutralityDrawRound=s.round+(s.activeSeat==='soviet_union'?1:0);s.neutralityStatusPending=true;publicRecord(s,seat,s.rules?.balanceEnabled?'苏联弃置【混乱的政局】，可以打出手牌状态，或查看随机一张牌库状态并决定是否打出。':'苏联弃置【混乱的政局】，可以打出一张手牌中的状态牌。');}
  fact(s,'neutrality_ended','结束中立',{seat,reason});
  return true;
 }
@@ -59,6 +60,7 @@ export function checkNeutralitySupply(s:GameState){
  if(isNeutral(s,'united_states')&&(s.rules?.balanceEnabled?occupiedNeutralitySupply(s).length>=3:occupiedNeutralitySupply(s).reduce((n,region)=>n+(region==='hawaii'?2:1),0)>=4))endNeutrality(s,'united_states',`轴心国合计占领了至少${s.rules?.balanceEnabled?'三个':'四个'}大本营之外的补给点`);
 }
 export function checkNeutralityTurn(s:GameState){
+ if(s.activeSeat==='soviet_union'&&s.sovietNeutralityDrawRound!==undefined&&s.round>=s.sovietNeutralityDrawRound&&!s.prelude?.active){drawCards(s,'soviet_union',Math.max(0,7-s.decks.soviet_union.hand.length));delete s.sovietNeutralityDrawRound;}
  if(!s.prelude?.active&&s.round>=8)endNeutrality(s,'united_states','正式游戏第8轮开始');
  if(!s.prelude?.active&&s.round>=12)endNeutrality(s,'soviet_union','正式游戏第12轮开始');
  if(s.activeSeat!=='soviet_union'||!isNeutral(s,'soviet_union'))return;
@@ -75,4 +77,4 @@ export function neutralityIndiaPenalty(s:ReadState){
  return isNeutral(s,'soviet_union')?s.units.filter(u=>u.country==='soviet_union'&&u.type!=='air'&&(u.regionId==='india'||adjacent(s,'soviet_union','india',u.regionId))).length:0;
 }
 
-export const neutralityDiscardPenalty=(s:ReadState,seat:SeatId)=>seat==='united_states'&&isNeutral(s,seat)?1:0;
+export const neutralityDiscardPenalty=(s:ReadState,seat:SeatId)=>seat==='united_states'&&isNeutral(s,seat)&&!(s.rules?.balanceEnabled&&s.decks[seat].active.some(c=>c.definitionId==='prelude_US-17'))?1:0;

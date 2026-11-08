@@ -8,15 +8,17 @@ import { hasStatus } from './modifiers';
 export function statusActionEffects(s:ReadState,card:CardInstance):Effect[] {
   const id=Number(card.definitionId.replace('special_',''));
   if(s.activeSeat!==card.deckOwner||!hasStatus(s,id))return [];
+  if(s.phase==='AIR'&&s.rules?.balanceEnabled&&id===247)return kamikazeEffects(s,card);
   if(s.phase!=='PLAY')return [];
   const action=(action:'land_battle'|'build_army'|'recruit_army',regions?:string[]):Effect=>({kind:'action',country:card.country,action,regions,label:action});
   const pay:Effect={kind:'cards',seat:card.deckOwner,from:'hand',to:'discardPile',min:2,max:2,fee:true,label:'支付两张手牌（费用）'};
   const top:Effect={kind:'deckTop',seat:card.deckOwner,count:2,fee:true,label:'弃置牌库顶两张牌（费用）'};
   if(s.rules?.balanceEnabled&&id===163){const navy=s.units.find(u=>u.country==='germany'&&u.type==='navy'&&u.regionId==='sea_baltic');if(!navy)return [];return [{...top,count:2+(s.units.some(u=>u.type==='army'&&u.regionId==='scandinavia'&&allianceOf(u.country)==='allies')?1:0)},{kind:'action',country:'germany',action:'sea_battle',boundAttackerId:navy.id,label:'以波罗的海德国海军发起海战'}];}
   switch(id){
+    case 2:case 8:return s.rules?.balanceEnabled?[{...pay,min:1,max:1,label:'弃置一张手牌'},action('recruit_army',[id===2?'australia':'india'])]:[];
     case 1:return [pay,action('land_battle',['western_europe','italy'])];
     case 7:return [action('recruit_army',['eastern_europe'])];
-    case 10:return [action('recruit_army',['south_africa'])];
+    case 10:return s.rules?.balanceEnabled?[]:[action('recruit_army',['south_africa'])];
     case 46:return [pay,{kind:'extraPlay',seat:card.deckOwner,from:'discardPile',filter:'build_army',label:'打出弃牌堆的一张建设陆军'}];
     case 52:return [action('recruit_army',['western_china','eastern_china','mongolia'])];
     case 91:return [action('recruit_army',['western_china'])];

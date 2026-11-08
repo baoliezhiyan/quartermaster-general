@@ -47,8 +47,8 @@ it('scry splits top and bottom and orders each group without duplicating cards',
  startResolution(s,'卓越规划','germany',[balanceEffect('germany','scry')],[]);respond(s,[ids[2],ids[0]]);respond(s,[ids[3],ids[1]]);finish(s);
  expect(s.decks.germany.drawPile.map(c=>c.id)).toEqual([ids[3],ids[1],...rest,ids[2],ids[0]]);
 });
-it('attrition counts costs and forced hand discards, not deck-top discard',()=>{
- const s=game();move(s,'special_49','active');const d=s.decks.soviet_union,cards=d.drawPile.filter(c=>c.definitionId==='build_army').slice(0,2);d.drawPile=d.drawPile.filter(c=>!cards.includes(c));d.hand.push(...cards);discardHandCards(s,'soviet_union',cards.map(c=>c.id));expect(s.scores.soviet_union).toBe(2);discardDeckTop(s,'soviet_union',1);expect(s.scores.soviet_union).toBe(2);
+it('attrition no longer rewards hand or deck discards',()=>{
+ const s=game();move(s,'special_49','active');const d=s.decks.soviet_union,cards=d.drawPile.filter(c=>c.definitionId==='build_army').slice(0,2);d.drawPile=d.drawPile.filter(c=>!cards.includes(c));d.hand.push(...cards);discardHandCards(s,'soviet_union',cards.map(c=>c.id));expect(s.scores.soviet_union).toBe(0);discardDeckTop(s,'soviet_union',1);expect(s.scores.soviet_union).toBe(0);
 });
 it('new army binding cannot silently switch to another army',()=>{
  const s=game();s.units=[{id:'bound',country:'china',type:'army',regionId:'eastern_china'},{id:'other',country:'china',type:'army',regionId:'western_china'},{id:'enemy',country:'japan',type:'army',regionId:'vladivostok'}];
@@ -84,7 +84,7 @@ it('bomber cost selection cannot discard the economic card selected for extra pl
 });
 
 it('balance rollback tensions are separate from original cards',()=>{
- for(const [id,tension] of [['prelude_IT-15',1],['prelude_IT-08',1],['prelude_IT-09',0],['prelude_US-10',-1]] as const)expect(specialCard(id,true)?.tension).toBe(tension);
+ for(const [id,tension] of [['prelude_IT-15',1],['prelude_IT-08',1],['prelude_IT-09',0],['prelude_US-10',0]] as const)expect(specialCard(id,true)?.tension).toBe(tension);
  expect(specialCard('prelude_US-10',false)?.tension).toBe(1);
 });
 it('steel pact discards two Italian cards, sets a remaining response, then lets Germany play a state',()=>{

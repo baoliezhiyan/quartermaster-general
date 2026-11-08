@@ -15,7 +15,7 @@ import type {Effect,ResolutionFrame} from '../src/core/resolutionTypes';
 const card=(id:string,suffix=''):CardInstance=>{const d=specialCard(id,true)!;return {id:id+suffix,definitionId:id,deckOwner:d.deckOwner,country:d.country,balance:true};};
 function game(seat:SeatId='united_kingdom'){const s=createGame('v21',9,'FULL',true,false,true);s.prelude!.active=false;s.status='PLAYING';s.activeSeat=seat;s.phase='PLAY';for(const d of Object.values(s.decks)){d.hand=[];d.faceDown=[];d.active=[];d.drawPile=[];d.discardPile=[];}s.units=[];return s;}
 function answer(s:GameState,ids:string[]){const q=s.resolution!.choice!;expect(resolveChoice(s,q.seat,q.id,ids)).toBe(true);}
-function finish(s:GameState){for(let i=0;s.resolution?.running&&i<80;i++){const q=s.resolution!.choice!;expect(q).toBeTruthy();answer(s,q.options.slice(0,q.min).map(o=>o.id));}expect(s.resolution?.running).toBe(false);}
+function finish(s:GameState){for(let i=0;s.resolution?.running&&i<80;i++){const q=s.resolution!.choice!;expect(q).toBeTruthy();answer(s,q.options.slice(0,q.kind==='EXTRA_EFFECTS'?q.max:q.min).map(o=>o.id));}expect(s.resolution?.running).toBe(false);}
 const frame={id:'test',currentEventId:'ev'} as ResolutionFrame;
 it.each(['hand','drawPile'] as const)('French base chooses either state from %s and only hand adds troops',from=>{
  for(const id of ['special_5','special_9']){

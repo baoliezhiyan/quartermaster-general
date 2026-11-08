@@ -25,6 +25,14 @@ async function fixture(){
  }
  return {room,join,store,ids,get saved(){return saved;}};
 }
+it('AI observer names are excluded while player and GM seats remain visible; GM disconnect releases only GM',async()=>{
+ const f=await fixture(),a=await f.join('AI测试'),b=await f.join('普通用户');
+ await a.call('seat',{kind:'observer',seat:'germany'});expect(b.snapshot.room.members.some(m=>m.name==='AI测试')).toBe(false);
+ await a.call('seat',{kind:'player',seat:'germany'});expect(b.snapshot.room.members.some(m=>m.name==='AI测试'&&m.access.kind==='player')).toBe(true);
+ await a.disconnect();expect(b.snapshot.room.members.some(m=>m.name==='AI测试'&&!m.online)).toBe(true);await a.reconnect();
+ await a.call('seat',{kind:'gm'});expect(b.snapshot.room.members.some(m=>m.name==='AI测试'&&m.access.kind==='gm')).toBe(true);
+ await a.disconnect();expect(b.snapshot.room.members.some(m=>m.access.kind==='gm')).toBe(false);await b.call('seat',{kind:'gm'});await a.reconnect();expect(a.snapshot.room.access.kind).toBe('public');
+});
 describe('multiplayer room',()=>{
  it('scene lock blocks player mutations but permits GM edits, reads, and automatic unlock',async()=>{
   const f=await fixture(),gm=await f.join('GM'),de=await f.join('德国');
@@ -41,7 +49,7 @@ describe('multiplayer room',()=>{
   await gm.call('sceneLock',false);expect(de.snapshot.room.sceneLocked).toBe(false);
   expect(await de.call('dispatch',{type:'DISCARD_PRELUDE_TOP',seat:'germany',expectedRevision:de.snapshot.state!.revision})).toMatchObject({ok:true});
   await gm.call('sceneLock',true);await gm.disconnect();expect(de.snapshot.room.sceneLocked).toBe(false);
-  await gm.reconnect();await gm.call('sceneLock',true);await gm.call('seat',{kind:'public'});expect(de.snapshot.room.sceneLocked).toBe(false);
+  await gm.reconnect();await gm.call('seat',{kind:'gm'});await gm.call('sceneLock',true);await gm.call('seat',{kind:'public'});expect(de.snapshot.room.sceneLocked).toBe(false);
  });
 
  it('keeps armament prompts and payment usable after repeated cached player projections',async()=>{

@@ -1,7 +1,7 @@
 import {fact} from './factObserver';
 import {neutralityDiscardPenalty} from './neutrality';
 import {hasStatus} from './modifiers';
-import {publicRecord,rememberPublicDiscards} from './publicHistory';
+import {rememberPublicDiscards} from './publicHistory';
 import {concealPublic,revealDiscardedCards} from './publicHistory';
 import { addResponseNotice } from './responseNotices';
 import { COUNTRY_NAMES, cardName } from './basic';
@@ -22,8 +22,7 @@ export function putDiscardedCards(state:GameState,seat:SeatId,cards:CardInstance
 export function discardHandCards(state: GameState, seat: SeatId, ids: string[], publicIds:readonly string[] = []) {
   const deck = state.decks[seat];
   if(state.trainingCourse)state.trainingCourse.openIds[seat]=state.trainingCourse.openIds[seat].filter(id=>!ids.includes(id));
-  if(state.rules?.balanceEnabled&&seat==='soviet_union'&&hasStatus(state,49)){const count=deck.hand.filter(c=>ids.includes(c.id)&&c.definitionId==='build_army').length;if(count){state.scores[seat]+=count;publicRecord(state,seat,`苏联发动状态【消耗战】，获得 ${count} 分。`);}}
-  const shown=deck.hand.filter(c=>ids.includes(c.id)&&(publicIds.includes(c.id)||state.rules?.balanceEnabled&&seat==='soviet_union'&&hasStatus(state,49)&&c.definitionId==='build_army'));
+  const shown=deck.hand.filter(c=>ids.includes(c.id)&&(publicIds.includes(c.id)));
   concealPublic(state,ids);
   revealDiscardedCards(state,seat,shown);
   putDiscardedCards(state,seat,deck.hand.filter(c => ids.includes(c.id)));

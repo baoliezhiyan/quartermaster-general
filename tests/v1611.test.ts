@@ -31,15 +31,15 @@ it.each([0,1,2,3])('Spanish support burns %s cards one by one then Italy pays th
 it('Spanish support stops at an empty Soviet prelude deck and spills only Italys deficit',()=>{
  const s=game();s.prelude!.active=true;s.phase='PRELUDE';s.prelude!.decks.soviet_union.drawPile=s.prelude!.decks.soviet_union.drawPile.slice(0,1);s.prelude!.decks.italy.drawPile=[];const n=s.decks.italy.drawPile.length;startResolution(s,'西班牙','soviet_union',historyEffects(s,card('prelude_SU-11')),[]);answer(s,['discard']);finish(s);expect(s.decks.italy.drawPile.length).toBe(n-1);
 });
-it.each([['build_army','build_army'],['land_battle','land_battle'],['build_army','land_battle']])('typed tank transport fee %s/%s is publicly visible after payment', (a,b)=>{
+it.each([['build_army','build_army'],['land_battle','land_battle'],['build_army','land_battle']])('tank transport reveals the constrained card, filler stays private (%s/%s)', (a,b)=>{
  const s=game(),cards=[a,b].map(id=>{const pile=s.decks.soviet_union.drawPile;return pile.splice(pile.findIndex(c=>c.definitionId===id),1)[0];});s.decks.soviet_union.hand=cards;const requirements=fullTrigger(s,card('special_44'),{kind:'action',country:'soviet_union',action:'build_army',label:'建设'},'After')!.costRequirements;
- startResolution(s,'费用','soviet_union',[{kind:'cards',seat:'soviet_union',from:'hand',to:'discardPile',min:2,max:2,requirements,fee:true,label:'支付坦克运输费用'},{kind:'trace',label:'效果'}],[]);answer(s,cards.map(c=>c.id));finish(s);expect(publicDiscard(s,'soviet_union')).toEqual(cards);const view=projectState(s,{kind:'player',seat:'japan'},'japan')!;expect(publicDiscard(view,'soviet_union').map(c=>c.definitionId)).toEqual([a,b]);validateState(s);
+ startResolution(s,'费用','soviet_union',[{kind:'cards',seat:'soviet_union',from:'hand',to:'discardPile',min:2,max:2,requirements,fee:true,label:'支付坦克运输费用'},{kind:'trace',label:'效果'}],[]);answer(s,cards.map(c=>c.id));finish(s);expect(publicDiscard(s,'soviet_union')).toEqual([cards[0]]);const view=projectState(s,{kind:'player',seat:'japan'},'japan')!;expect(publicDiscard(view,'soviet_union').map(c=>c.definitionId)).toEqual([a]);validateState(s);
 });
 it('typed filter fees are public but an unrestricted filler is private',()=>{
  const s=game(),army=card('build_army'),secret=card('special_55');s.decks.soviet_union.hand=[army,secret];startResolution(s,'军备费','soviet_union',[{kind:'cards',seat:'soviet_union',from:'hand',to:'discardPile',min:2,max:2,requirements:['*','build_army'],fee:true,label:'费用'},{kind:'trace',label:'效果'}],[]);answer(s,[secret.id,army.id]);finish(s);expect(publicDiscard(s,'soviet_union')).toEqual([army]);expect(publicCostIds([secret],undefined,'响应')).toEqual([secret.id]);
 });
-it('Attrition reveals only scoring army cards; ordinary private discards remain hidden',()=>{
- const s=game(),army=card('build_army'),secret=card('special_55');s.decks.soviet_union.active=[card('special_49')];s.decks.soviet_union.hand=[army,secret];discardPhase(s,'soviet_union',[army.id,secret.id]);expect(s.scores.soviet_union).toBe(1);expect(publicDiscard(s,'soviet_union')).toEqual([army]);
+it('Attrition no longer scores or reveals discarded army cards',()=>{
+ const s=game(),army=card('build_army'),secret=card('special_55');s.decks.soviet_union.active=[card('special_49')];s.decks.soviet_union.hand=[army,secret];discardPhase(s,'soviet_union',[army.id,secret.id]);expect(s.scores.soviet_union).toBe(0);expect(publicDiscard(s,'soviet_union')).toEqual([]);
  const t=game();t.decks.soviet_union.hand=[army,secret];discardHandCards(t,'soviet_union',[army.id,secret.id]);expect(publicDiscard(t,'soviet_union')).toEqual([]);
 });
 it('known discard becomes private again if drawn back to hand',()=>{

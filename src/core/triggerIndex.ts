@@ -38,6 +38,12 @@ act([250],'After','build_army','recruit_army');
 act([78,80,84,124,141,183,184,193,196,208],'After','build_navy');
 act([70,119,146,205],'After','air_deploy','air_move','air_power');
 add([203],'After','action:*');
+phase([261,7,10,210,211,257,'DE-22','SU-10'],'SCORE');
+phase([10,'UK-05'],'TURN_START_WINDOW');
+phase(['DE-21'],'DRAW');
+act([49],'After','build_army','land_battle');
+act([49],'Before','land_battle');
+act(['UK-09'],'After','recruit_army');
 // Prelude armaments and treaties.
 phase(['DE-02','DE-08','DE-11','UK-03','UK-07','UK-06','JP-01','JP-02','JP-03','JP-06','JP-09','SU-04','IT-02','IT-03','IT-04','IT-05','IT-06','IT-07','IT-12','US-02','US-16'],'SCORE');
 phase(['DE-03','DE-04','DE-06','DE-10','UK-10','US-01','US-05'],'TURN_START_WINDOW');

@@ -53,7 +53,10 @@ export interface GameState {
   rules?:{preludeEnabled:boolean;neutralityEnabled:boolean;balanceEnabled?:boolean};
   neutrality?:Record<'soviet_union'|'united_states',{neutral:boolean;reason?:string;eventId?:string;round?:number}>;
   neutralityNotices?:{id:string;seat:'soviet_union'|'united_states';reason:string}[];
+  manualShuffle?:{seed:number;randomState:number;counters:Partial<Record<SeatId,number>>;pending:SeatId[]};
   neutralityStatusPending?:boolean;
+  sovietNeutralityDrawRound?:number;
+  openingHandLimits?:Partial<Record<SeatId,number>>;
   prelude?:PreludeState;
   resolutionVersion?:2|3;
   scoringStart?:number;
@@ -106,6 +109,7 @@ export type Command =
   | { type: 'SET_VIEW'; seat: SeatId; expectedRevision: number }
   | ({ seat: SeatId; expectedRevision: number } & (
     | { type:'ARMAMENT_WINDOW' }
+    | { type:'REQUEST_SHUFFLE' }
     | { type:'SELECT_AIR_ACTION'; action:'move'|'deploy'|'supremacy'|null }
     | { type:'DISCARD_PRELUDE_TOP' }
     | { type:'PLAY_PRELUDE'; cardId:string }

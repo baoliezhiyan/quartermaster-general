@@ -11,7 +11,7 @@ import type {Effect} from '../src/core/resolutionTypes';
 function game(){const s=createGame('notices-audit',12,'FULL',true,true,true);s.prelude!.active=false;s.status='PLAYING';s.phase='PLAY';s.round=1;s.setupCompleted=[...SEATS];for(const seat of SEATS){const d=s.decks[seat];d.drawPile.push(...d.hand.splice(0));}return s;}
 function move(s:GameState,id:string,zone:'hand'|'active'|'faceDown'){for(const seat of SEATS)for(const z of ['drawPile','hand','active','faceDown'] as const){const d=s.decks[seat],i=d[z].findIndex(c=>c.definitionId===id);if(i>=0){const card=d[z].splice(i,1)[0];d[zone].push(card);return card;}}throw Error(id);}
 function reply(s:GameState,ids:string[]){const q=s.resolution!.choice!;expect(resolveChoice(s,q.seat,q.id,ids)).toBe(true);}
-function finish(s:GameState){for(let i=0;s.resolution?.running&&i<100;i++){const q=s.resolution!.choice!;expect(q).toBeTruthy();reply(s,q.options.slice(0,q.min).map(o=>o.id));}expect(s.resolution?.running).toBe(false);}
+function finish(s:GameState){for(let i=0;s.resolution?.running&&i<100;i++){const q=s.resolution!.choice!;expect(q).toBeTruthy();reply(s,q.options.slice(0,q.kind==='EXTRA_EFFECTS'?q.max:q.min).map(o=>o.id));}expect(s.resolution?.running).toBe(false);}
 it('Magic and Blue Division notices use real actor and target and keep discarded cards private',()=>{
  for(const [actor,target,id,ids] of [['united_states','japan','special_92',['special_195','special_196']],['italy','soviet_union','special_241',['special_68','special_69']]] as const){
  const s=game(),source=move(s,id,'hand');for(const x of (target==='soviet_union'?s.decks[target].drawPile.filter(c=>specialCard(c.definitionId,c.balance)?.type==='响应').slice(0,2).map(c=>c.definitionId):ids))move(s,x,'faceDown');
@@ -52,10 +52,10 @@ it('guided Magic and Blue Division never ask their victim to execute the effect'
  }
 });
 it('Bordeaux modifies submarine discard before the victim gets one five-card result',()=>{
- const s=game();s.settings.ignoreOtherPlayerInterrupts=false;const source=move(s,'special_169','hand');move(s,'special_230','hand');const before=s.decks.united_states.drawPile.slice(0,5).map(c=>c.id);
+ const s=game();s.settings.ignoreOtherPlayerInterrupts=false;const source=move(s,'special_169','hand');move(s,'special_230','hand');const before=s.decks.united_kingdom.drawPile.slice(0,5).map(c=>c.id);
  startResolution(s,source.definitionId,'germany',fullCardEffects(s,source,[])!,[],source.id,'discardPile',true);
  let bordeaux=false;
- for(let i=0;s.resolution?.running&&i<50;i++){const q=s.resolution!.choice!;expect(q).toBeTruthy();expect(q.seat).not.toBe('united_states');if(q.kind==='TRIGGER'){const o=q.options.find(o=>o.label.includes('波尔多'));if(o){expect(s.decks.united_states.discardPile).toHaveLength(0);expect(s.responseNotices?.filter(n=>n.recipients.includes('united_states'))??[]).toHaveLength(0);bordeaux=true;reply(s,[o.id]);}else reply(s,[]);}else reply(s,[q.options[0].id]);}
- expect(bordeaux).toBe(true);expect(s.resolution?.running).toBe(false);expect(s.decks.united_states.discardPile.map(c=>c.id)).toEqual(before);
- const notices=s.responseNotices!.filter(n=>n.recipients.includes('united_states'));expect(notices).toHaveLength(1);expect(notices[0].title).toBe('弃牌结果');expect(notices[0].cards.map(c=>c.id)).toEqual(before);
+ for(let i=0;s.resolution?.running&&i<50;i++){const q=s.resolution!.choice!;expect(q).toBeTruthy();expect(q.seat).not.toBe('united_kingdom');if(q.kind==='TRIGGER'){const o=q.options.find(o=>o.label.includes('波尔多'));if(o){expect(s.decks.united_kingdom.discardPile).toHaveLength(0);expect(s.responseNotices?.filter(n=>n.recipients.includes('united_kingdom'))??[]).toHaveLength(0);bordeaux=true;reply(s,[o.id]);}else reply(s,[]);}else reply(s,[q.options[0].id]);}
+ expect(bordeaux).toBe(true);expect(s.resolution?.running).toBe(false);expect(s.decks.united_kingdom.discardPile.map(c=>c.id)).toEqual(before);
+ const notices=s.responseNotices!.filter(n=>n.recipients.includes('united_kingdom'));expect(notices).toHaveLength(1);expect(notices[0].title).toBe('弃牌结果');expect(notices[0].cards.map(c=>c.id)).toEqual(before);
 });

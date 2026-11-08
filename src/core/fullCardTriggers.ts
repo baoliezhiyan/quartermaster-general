@@ -1,4 +1,3 @@
-import {kamikazeEffects} from './statusActions';
 import { countryActionName } from './effectNames';
 import {balanceEffect} from './balanceEffects';
 import { allianceOf, seatOf } from './basic';
@@ -26,12 +25,23 @@ export function fullTrigger(s:GameState,card:CardInstance,e:Effect,timing:'Befor
   const score=(amount:number):Partial<TriggerRule>=>({effects:[{kind:'score',seat:owner,amount,label:`获得 ${amount} 分`}],mandatory:true});
   const extra=(effects:Effect[],cost=0,costRequirements?:string[],oncePerTurn=false):Partial<TriggerRule>=>({effects,cost,costRequirements,oncePerTurn});
   const remove=(units:GameState['units'],label='选择要移除的部队'):Effect=>({kind:'choose',seat:owner,min:1,max:1,label,options:units.map(unit=>({id:unit.id,label:`${REGIONS.find(r=>r.id===unit.regionId)?.name} · ${unit.type}`,effects:[{kind:'remove',unit:{...unit},supplied:suppliedUnits(s).has(unit.id),cause:'card',label}]}))});
+  if(s.rules?.balanceEnabled&&id===49&&e.kind==='action'){
+    const hit=timing==='After'&&is('build_army','land_battle')||timing==='Before'&&e.action==='land_battle'&&s.units.some(u=>u.id===e.option?.defenderId&&u.country===c&&u.type==='army');
+    return hit?{...score(1),oncePerTurn:true}:undefined;
+  }
   if(s.rules?.balanceEnabled&&id===227)return;
   if(s.rules?.balanceEnabled&&id===226){return timing==='After'&&phase('EARLY_TURN_START')?extra([balanceEffect(owner,'two-basic-plays')]):undefined;}
   if(s.rules?.balanceEnabled&&id===145&&!(timing==='After'&&phase('DISCARD')))return;
   if(s.rules?.balanceEnabled&&timing==='After'){
 
-    if(id===247&&phase('SUPPLY'))return extra(kamikazeEffects(s,card));
+    if([210,211,257].includes(id)&&phase('SCORE')&&s.decks[owner].hand.some(v=>v.id===card.id)){
+      const regions=id===210?['middle_east','balkans','sea_black','sea_mediterranean']:id===211?['sea_north_sea','sea_mediterranean','western_europe','north_africa']:['north_africa','middle_east','sea_mediterranean','sea_arabian'];
+      if(new Set(s.units.filter(u=>u.type!=='air'&&allianceOf(u.country)==='axis'&&regions.includes(u.regionId)).map(u=>u.regionId)).size>=2)return {...extra([{kind:'signal',tag:'INSTALL',label:'打出海峡状态'}]),source:'enhancement',finalZone:'active'};
+    }
+    if(id===261&&phase('SCORE'))return extra([a('recruit_navy',['sea_north_pacific','sea_north_atlantic'])],1);
+    if(id===7&&phase('SCORE')&&count('army',['eastern_europe']))return score(1);
+    if(id===10&&phase('SCORE')&&count('army',['south_africa']))return score(1);
+    if(id===10&&phase('TURN_START_WINDOW'))return extra([a('recruit_army',['south_africa'])],2);
     if(id===258&&phase('PLAY'))return extra([balanceEffect(owner,'advanced-technology')]);
     if(id===259&&phase('SCORE'))return extra([top(1),{kind:'extraPlay',seat:owner,from:'hand',filter:'状态',label:'快速生产：打出一张手牌中的状态卡'}]);
     if(id===79&&phase('SCORE'))return score(new Set(s.units.filter(u=>u.type==='army'&&allianceOf(u.country)==='allies'&&['eastern_europe','south_africa','latin_america','western_china'].includes(u.regionId)).map(u=>u.regionId)).size);
@@ -56,12 +66,12 @@ export function fullTrigger(s:GameState,card:CardInstance,e:Effect,timing:'Befor
       const change=(delta:number):Effect=>({kind:'countChange',eventId:frame.currentEventId!,delta,label:`经济战弃牌数量调整 ${delta>=0?'+':''}${delta}`});
       switch(id) {
         case 87:if(!s.rules?.balanceEnabled&&source.country===c)return {...extra([change(2)]),mandatory:true};break;
-        case 121:if(source.country===c)return extra([change(s.units.filter(u=>u.country===c&&u.type==='air'&&distanceWithin(s,c,homeRegion(s,e.seat),u.regionId,2)).length)]);break;
+        case 121:if(source.country===c)return extra([change((s.rules?.balanceEnabled?2:1)*s.units.filter(u=>u.country===c&&u.type==='air'&&distanceWithin(s,c,homeRegion(s,e.seat),u.regionId,2)).length)]);break;
         case 128:if(source.name.includes('潜艇'))return extra([change(count('army',['scandinavia'])?(s.rules?.balanceEnabled?4:3):2)]);break;
         case 133:if(e.seat===owner||s.rules?.balanceEnabled&&e.seat==='italy')return {...extra([change(-3)]),mandatory:true};break;
         case 144:if(source.country===c&&source.name.includes('潜艇'))return extra([top(),a('sea_battle')]);break;
         case 149:if(source.country===c)return extra([{kind:'deckTop',seat:'united_kingdom',count:2*s.units.filter(u=>u.country===c&&u.type==='air'&&distanceWithin(s,c,'british_isles',u.regionId,2)).length,label:'轰炸伦敦：英国额外弃牌'}]);break;
-        case 220:if(e.seat===owner)return extra([change(-5)]);break;
+        case 220:if(e.seat===owner)return extra([change(-5),...(s.rules?.balanceEnabled?[{kind:'choose' as const,seat:owner,min:0,max:1,label:'可弃一张手牌，收回一张空中力量',options:[{id:'recover',label:'弃一张并收回空中力量',effects:[{kind:'cards' as const,seat:owner,from:'hand' as const,to:'discardPile' as const,min:1,max:1,fee:true,label:'弃置一张手牌'},{kind:'cards' as const,seat:owner,from:'discardPile' as const,to:'hand' as const,filter:'air_power',min:1,max:1,label:'收回空中力量'}]}]}]:[])]);break;
         case 226:if(e.seat===owner)return {...extra([remove(s.units.filter(u=>u.country==='italy'&&u.type==='air'),'移除意大利空军作为费用'),change(-e.count)]),atomic:true};break;
         case 230:if(source.country==='germany'&&source.name.includes('潜艇'))return extra([change(3)]);break;
       }
@@ -104,7 +114,7 @@ export function fullTrigger(s:GameState,card:CardInstance,e:Effect,timing:'Befor
   switch(id) {
     case 256:if(phase('TURN_START_WINDOW'))return {...extra([{kind:'cards',seat:owner,from:'hand',to:'drawPile',min:0,max:s.decks[owner].hand.filter(c=>c.id!==card.id).length,allowedIds:s.decks[owner].hand.filter(c=>c.id!==card.id).map(c=>c.id),bottom:true,order:true,label:'将任意数量手牌置于牌库底'},balanceEffect(owner,'draw-to-seven')]),atomic:true};break;
     case 3:if(phase('SCORE'))return score(Number(count('navy',['sea_north_atlantic'])>0)+Number(count('army',['canada'])>0));break;
-    case 4:if(is('sea_battle'))return extra([a('sea_battle',around())],2,undefined,true);break;
+    case 4:if(is('sea_battle'))return extra([a('sea_battle',s.rules?.balanceEnabled?undefined:around())],2,undefined,true);break;
     case 17:if(e.kind==='signal'&&e.tag==='CARD_EFFECT_DONE'){const completed=e.completedFrameId?s.resolution?.frames.find(f=>f.id===e.completedFrameId):frame;const target=s.decks.germany.resolving.find(c=>c.id===completed?.cardId);if(completed&&target&&specialCard(target.definitionId,target.balance)?.type==='状态')return extra([{kind:'frameChange',frameId:completed.id,finalZone:'discardPile',label:'将已结算的德国状态弃置'}]);}break;
     case 45:if(s.phase==='PLAY'&&(s.resolutionVersion===3&&is('build_army')||e.kind==='signal'&&e.tag==='CARD_PLAYED')&&frame?.cardId&&s.decks.soviet_union.resolving.some(c=>c.id===frame.cardId&&c.definitionId==='build_army'))return extra([{kind:'frameChange',frameId:frame.id,finalZone:'hand',label:'建设陆军返回手牌'}]);break;
     case 12:case 57:case 196:case 218:if(e.kind==='action'&&region) {
@@ -122,14 +132,14 @@ export function fullTrigger(s:GameState,card:CardInstance,e:Effect,timing:'Befor
     case 38:if(phase('SCORE'))return extra([a('recruit_army',['north_africa','middle_east','southeast_asia','indonesia'])],s.rules?.balanceEnabled?1:2);break;
     case 40:case 209:if(phase(id===40?'PLAY':'DISCARD'))return extra([remove(s.units.filter(u=>u.type==='air'&&allianceOf(u.country)!==allianceOf(c)&&s.units.some(v=>v.country===c&&v.type==='air'&&near(s,c,v.regionId,false).includes(u.regionId))))],id===40?(s.rules?.balanceEnabled?1:2):0);break;
     case 43:if(is('land_battle'))return extra([a('land_battle',around())],2,undefined,true);break;
-    case 44:if(is('build_army'))return extra([a('land_battle',adj())],2,s.rules?.balanceEnabled?['land_battle|build_army','land_battle|build_army']:['land_battle','build_army']);break;
+    case 44:if(is('build_army'))return extra([a('land_battle',adj())],2,s.rules?.balanceEnabled?['land_battle|build_army','*']:['land_battle','build_army'],!!s.rules?.balanceEnabled);break;
     case 50:if(own&&is('build_army'))return extra([a('build_army')],1,['build_army'],true);break;
     case 70:if(is('air_deploy','air_move','air_power')&&e.kind==='action'&&e.option?.mode!=='supremacy')return extra([a('build_army',adj())],1,['build_army']);break;
     case 71:if(is('land_battle','sea_battle')&&region&&['ross_region','eastern_europe','ukraine','balkans'].includes(region))return extra([a('build_army',[region])],1,['build_army']);break;
     case 72:if(phase('DISCARD'))return extra([{kind:'cards',seat:owner,from:'discardPile',to:'hand',min:Math.min(2,s.decks[owner].discardPile.filter(c=>c.definitionId==='build_army').length),max:2,filter:'build_army',label:'从弃牌堆取回两张建设陆军（不足取全部）'}]);break;
     case 74:if(phase('DISCARD'))return extra([{kind:'cards',seat:owner,from:'discardPile',to:'faceDown',min:1,max:1,filter:'响应',label:'选择一张响应牌暗置'}],1,['build_army']);break;
-    case 75:if(phase('SCORE'))return extra([a('destroy',['moscow','ross_region'])],3,['build_army','*','*']);break;
-    case 76:if(phase('PLAY'))return {...extra([remove(s.units.filter(u=>u.country===c&&u.type==='army'),'移除一支苏联陆军'),a('build_army')],1,['build_army']),atomic:true};break;
+    case 75:if(phase('SCORE'))return extra([a('destroy',['moscow','ross_region'])],s.rules?.balanceEnabled?2:3,s.rules?.balanceEnabled?['build_army','*']:['build_army','*','*']);break;
+    case 76:if(phase('PLAY'))return {...extra([...(!s.rules?.balanceEnabled?[remove(s.units.filter(u=>u.country===c&&u.type==='army'),'移除一支苏联陆军')]:[]),a('build_army')],1,['build_army']),atomic:true};break;
     case 73:if(e.kind==='remove'&&e.unit.country==='soviet_union'&&e.unit.type==='army'&&!s.units.some(u=>u.country==='soviet_union'&&u.type==='army'))return extra([a('destroy',near(s,c,'moscow'))],1,['build_army']);break;
     case 78:if(is('build_navy')&&region?.includes('pacific'))return extra([top(),a('land_battle',adj())]);break;
     case 80:if(is('build_navy'))return extra([top(),a('build_army',adj())],0,undefined,true);break;

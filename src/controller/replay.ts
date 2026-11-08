@@ -44,6 +44,7 @@ function describe(step:RecoveryStep,before:GameState,after:GameState):string {
  case 'DISCARD_HAND':case 'RESOLVE_FORCED_DISCARD':action=`${who}${c.cardIds.length?'弃置：'+c.cardIds.map(name).join('、'):'结束弃牌选择'}。`;break;
  case 'MOVE_AIR':case 'RELOCATE_AIR':action=`${who}调度空军。`;break;
  case 'REDISTRIBUTE':action=`${who}进行资源重整，交出${c.cardIds.map(name).join('、')}，取回${name(c.takeCardId)}。`;break;
+ case 'REQUEST_SHUFFLE':action=`${who}点击洗牌。`;break;
  case 'SET_INTERRUPTS':action=`${who}${c.enabled?'允许':'关闭'}其他国家可选响应。`;break;
  default:action=`${who}执行操作 ${c.type}。`;
  }

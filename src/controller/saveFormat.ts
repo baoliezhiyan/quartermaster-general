@@ -39,8 +39,8 @@ function validateEffects(value:unknown,depth=0):void {
   const kinds=['balance','copyStatus','prelude','trace','score','draw','deckTop','forceHand','cancel','signal','reallocate','choose','rebuild','remove','flag','frameChange','countChange','randomReturn','randomPlay','cards','extraPlay','action'];
   for(const e of value) {
     demand(object(e)&&kinds.includes(String(e.kind))&&typeof e.label==='string');
-    if(e.kind==='prelude')demand(seat(e.seat)&&integer(e.count)&&['spanish-burn','spanish-pay','spanish-settle','unplayed-from-discard','play-discard','bottom-seven','purge-double','picnic-uk','picnic-pay','play-hand-required','play-hand-or-top','tension','discard','shuffle','shuffle-normal','arm-from-deck','arm-from-discard','install-deck','install-discard','play-hand','play-top','play-selected','purge','inspect-status','play-status','wartime-hand','draw-to-seven','draw-if-installed','draw-bottomed'].includes(String(e.op)));
-    if(e.kind==='balance')demand(seat(e.seat)&&['soviet-neutrality','soviet-neutrality-deck','advanced-technology','armament-rebuild','shuffle-deck','italian-ambition','italian-ambition-deck','discard-to-seven','draw-to-seven','bomber-economy','draw-bottomed','end-neutrality','return-source','scry','scry-top','exile-government','relocate-industry','inspect-response','inspect-take','reveal-response','build-battle-region','two-basic-plays','play-vichy'].includes(String(e.op)));
+    if(e.kind==='prelude')demand(seat(e.seat)&&integer(e.count)&&['tizard-offer','tizard-play','spanish-burn','spanish-pay','spanish-settle','unplayed-from-discard','play-discard','bottom-seven','purge-double','picnic-uk','picnic-pay','play-hand-required','play-hand-or-top','tension','discard','shuffle','shuffle-normal','arm-from-deck','arm-from-discard','install-deck','install-discard','play-hand','play-top','play-selected','purge','inspect-status','play-status','wartime-hand','draw-to-seven','draw-if-installed','draw-bottomed'].includes(String(e.op)));
+    if(e.kind==='balance')demand(seat(e.seat)&&['africa-score','soviet-german-navy','soviet-german-score','soviet-neutrality','soviet-neutrality-deck','advanced-technology','armament-rebuild','shuffle-deck','italian-ambition','italian-ambition-deck','discard-to-seven','draw-to-seven','bomber-economy','draw-bottomed','end-neutrality','return-source','scry','scry-top','exile-government','relocate-industry','inspect-response','inspect-take','reveal-response','build-battle-region','two-basic-plays','play-vichy'].includes(String(e.op)));
     if(e.kind==='copyStatus')demand(seat(e.seat)&&typeof e.eventId==='string'&&['Before','After'].includes(String(e.timing)));
     if(e.publicDiscard!==undefined)demand(e.kind==='cards'&&typeof e.publicDiscard==='boolean');
     if(e.destroyedType!==undefined)demand(e.kind==='action'&&['army','navy','air'].includes(String(e.destroyedType)));
@@ -78,6 +78,12 @@ export function validateState(value:unknown,depth=0,archivedPartialDeck=false):a
   demand(object(s.settings)&&typeof s.settings.ignoreOtherPlayerInterrupts==='boolean' && typeof s.redistributed==='boolean');
   demand(object(s.scores)&&SEATS.every(k=>typeof s.scores==='object'&&Number.isFinite((s.scores as Record<string,unknown>)[k])));
   demand(Array.isArray(s.events)&&s.events.every(e=>object(e)&&['GAME_CREATED','UNIT_PLACED','VIEW_CHANGED','RULE_EVENT'].includes(String(e.type))&&integer(e.revision)));
+  if(s.manualShuffle!==undefined){
+    const m=s.manualShuffle;demand(object(m)&&integer(m.seed)&&Number(m.seed)>=0&&Number(m.seed)<=0xffffffff&&integer(m.randomState)&&Number(m.randomState)>=0&&Number(m.randomState)<=0xffffffff&&object(m.counters)&&strings(m.pending)&&m.pending.every(seat)&&new Set(m.pending).size===m.pending.length,'手动洗牌状态无效。');
+    demand(Object.entries(m.counters).every(([k,v])=>seat(k)&&integer(v)&&Number(v)>=0&&Number(v)<=4)&&m.pending.every(k=>(m.counters as Record<string,unknown>)[k]===3),'手动洗牌计数无效。');
+  }
+  if(s.openingHandLimits!==undefined)demand(object(s.openingHandLimits)&&Object.entries(s.openingHandLimits).every(([k,v])=>seat(k)&&v===5),'起手保留上限无效。');
+  if(s.sovietNeutralityDrawRound!==undefined)demand(integer(s.sovietNeutralityDrawRound)&&Number(s.sovietNeutralityDrawRound)>=0&&Number(s.sovietNeutralityDrawRound)<=21,'苏联下回合补牌时点无效。');
   if(s.publicCardIds!==undefined)demand(Array.isArray(s.publicCardIds)&&s.publicCardIds.every((id:unknown)=>typeof id==='string'));
   if(s.publicDiscardHistory!==undefined){
     demand(object(s.publicDiscardHistory));

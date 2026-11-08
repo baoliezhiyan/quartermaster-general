@@ -44,15 +44,15 @@ export function preludeTriggers(s:GameState,frame:ResolutionFrame,e:Effect,timin
   case 'DE-04':if(phase('TURN_START_WINDOW'))effects=[...(s.units.some(u=>u.country===seat&&u.type!=='air'&&near(s,c,'sea_north_atlantic').includes(u.regionId))?[top('united_states',b?4:3)]:[]),score(b?4:3)];break;
   case 'DE-05':case 'SU-07':if(mine('land_battle'))effects=[a('land_battle',[region!])];break;
   case 'DE-06':if(phase('TURN_START_WINDOW'))effects=[...(s.units.some(u=>u.country===seat&&u.type==='army'&&near(s,c,'sea_north_sea',false).includes(u.regionId))?[top('united_kingdom',3)]:[]),score(2)];break;
-  case 'DE-07':if(attacked&&region==='germany'&&defender?.type==='army')effects=[protect()];break;
+  case 'DE-07':if((b?timing==='Before'&&battle&&!!defender&&allianceOf(defender.country)==='axis':attacked)&&region==='germany'&&defender?.type==='army')effects=[protect()];break;
   case 'DE-08':if(phase('SCORE'))effects=[a('build_army',['eastern_europe'])];break;
   case 'DE-09':{copyFees=s.decks.germany.hand.filter(c=>copiedStatusRules(s,frame,e,timing,c).length>0).map(c=>c.id);if(copyFees.length)effects=[{kind:'copyStatus',seat,eventId:frame.currentEventId!,timing,label:'替代物资：选择可在此时点发动的弃牌状态'}];}break;
   case 'DE-10':if(phase('TURN_START_WINDOW'))effects=[...(s.units.some(u=>u.country===seat&&u.type==='army'&&u.regionId==='scandinavia'&&suppliedUnits(s).has(u.id))?[choose((['united_kingdom','soviet_union','united_states'] as SeatId[]).map(v=>top(v,b?3:2)))]:[]),score(3)];break;
   case 'DE-11':if(phase('SCORE'))effects=[a('land_battle')];break;
   case 'DE-12':if(mine('land_battle'))effects=[a('build_army',[region!])];break;
-  case 'UK-03':if(phase('SCORE'))effects=[a(b?'recruit_army':'build_army',['canada'])];break;
+  case 'UK-03':if(phase('SCORE'))effects=[a(b?'recruit_army':'build_army',['canada']),...(b?[score(1)]:[])];break;
   case 'UK-04':if(timing==='Before'&&e.kind==='signal'&&e.tag==='ARMAMENT'&&allianceOf(frame.owner)==='axis')effects=[{kind:'frameChange',frameId:frame.id,cancel:true,finalZone:'removed',label:'秘密情报机构：取消军备，免除费用'}];break;
-  case 'UK-05':if(phase('DISCARD'))effects=[a('destroy',['british_isles'])];break;
+  case 'UK-05':if(phase(b?'TURN_START_WINDOW':'DISCARD'))effects=[{...a('destroy',['british_isles']),destroyTypes:['army','navy']} as Effect];break;
   case 'UK-06':if(phase('SCORE'))effects=[{kind:'cards',seat,from:'hand',to:'discardPile',min:1,max:1,filter:'build_army',fee:true,label:'额外支付一张建设陆军'},a('recruit_army',['australia','india','south_africa'])];break;
   case 'UK-07':if(phase('SCORE'))effects=[choose([score(1),a('air_deploy',['australia','new_zealand','canada','south_africa'])])];break;
   case 'US-04':if(own&&timing==='After'&&e.kind==='signal'&&(e.tag==='ARMAMENT_ANYTIME'||e.tag.startsWith('PHASE:')))effects=[choose([score(1),a('air_deploy',undefined)])];break;
@@ -86,14 +86,11 @@ export function preludeTriggers(s:GameState,frame:ResolutionFrame,e:Effect,timin
    const axis=allianceOf(action.country)==='axis',build=action.action==='build_army',navy=action.action==='build_navy';
    const hit=id==='UK-01'&&axis&&(b?navy:['build_navy','recruit_navy'].includes(action.action))&&(b?['sea_south_china','sea_arabian']:['sea_south_china','sea_arabian']).includes(region!)
     ||id==='UK-02'&&axis&&['build_army','recruit_army'].includes(action.action)&&region==='western_europe'&&(b||(s.events.slice(s.prelude.installedEvent?.[card.id]??0).find(v=>v.type==='UNIT_PLACED'&&v.regionId===region&&allianceOf(v.country)==='axis')===[...s.events].reverse().find(v=>v.type==='UNIT_PLACED'&&v.unitId===placed.id)))
-    ||id==='UK-08'&&axis&&navy&&region==='sea_north_sea'||id==='UK-09'&&axis&&build&&region==='southeast_asia'
+    ||id==='UK-08'&&axis&&navy&&region==='sea_north_sea'||id==='UK-09'&&axis&&(build||b&&action.action==='recruit_army')&&region==='southeast_asia'
     ||id==='JP-07'&&!axis&&['build_army','recruit_army'].includes(action.action)&&region==='eastern_china'
     ||id==='IT-01'&&!axis&&navy&&region==='sea_mediterranean'||id==='US-03'&&action.country==='japan'&&build&&['eastern_china','western_china'].includes(region!);
    if(hit){effects=[remove(placed)];
-    if(b&&id==='UK-02')effects=[{kind:'choose',seat:seatOf(action.country),min:1,max:1,label:'斯通尼战役：弃置3张手牌保留陆军，或不支付并消灭此陆军',options:[
-     {id:'destroy',label:'不支付，消灭此陆军',effects:[remove(placed)]},
-     {id:'pay',label:'弃置3张手牌，保留此陆军',effects:[{kind:'cards',seat:seatOf(action.country),from:'hand',to:'discardPile',min:3,max:3,fee:true,label:'斯通尼战役：弃置3张手牌'},{kind:'trace',label:'已支付3张手牌，此陆军不被斯通尼战役消灭'}]}
-    ]}];
+
    }
   }
   if(!military&&timing==='Before'&&battle&&action){
@@ -102,6 +99,15 @@ export function preludeTriggers(s:GameState,frame:ResolutionFrame,e:Effect,timin
    if(id==='UK-17'&&action.country==='italy'&&s.round===1&&!s.prelude.active)effects=[score(4)];
   }
   if(b){
+   if(id==='DE-21'&&phase('DRAW'))effects=[choose([a('recruit_army',['scandinavia']),{kind:'extraPlay',seat,from:'hand',mention:'斯堪的纳维亚',label:'打出涉及斯堪的纳维亚的手牌'}])];
+   if(id==='DE-22'&&phase('SCORE'))effects=[choose([a('build_army',['north_africa']),a('land_battle',['south_africa','middle_east'])])];
+   if(id==='IT-04'&&phase('SCORE'))effects.push(balanceEffect(seat,'africa-score'));
+   if(id==='JP-14'&&effects.length)effects=effects.map(v=>v.kind==='score'?{...v,amount:v.amount?4:0}:v);
+   if(id==='SU-10'){
+    effects=[];
+    if(timing==='Before'&&battle&&action&&((action.country==='germany'&&defender?.country===seat)||(action.country===seat&&defender?.country==='germany')))effects=[score(action.country==='germany'?2:0)];
+    if(timing==='After'&&e.kind==='signal'&&e.tag==='PHASE:SCORE'&&s.activeSeat==='germany')effects=[balanceEffect(seat,'soviet-german-navy')];
+   }
    const install:Effect={kind:'cards',seat,from:'hand',to:'faceDown',filter:'响应',min:1,max:1,label:'暗置一张手牌响应'};
    if(id==='SU-04'&&phase('SCORE'))effects=[choose([a('build_army',['scandinavia']),a('recruit_army',['scandinavia'])])];
    if(id==='SU-07'&&mine('land_battle')&&region)effects=[a('land_battle',near(s,c,region))];
@@ -121,7 +127,7 @@ export function preludeTriggers(s:GameState,frame:ResolutionFrame,e:Effect,timin
   if(!effects.length)continue;
   const fee:Effect={kind:'cards',seat,from:'hand',to:'discardPile',min:id==='UK-06'&&!b?2:1,max:id==='UK-06'&&!b?2:1,strictFee:true,publicDiscard:!!copyFees,remember:b&&['SU-01','SU-03'].includes(id)?'armament-cost':undefined,allowedIds:b&&['SU-01','SU-03'].includes(id)&&!s.units.some(u=>u.country===seat&&u.type==='army'&&u.regionId!==(region??(e.kind==='remove'?e.unit.regionId:undefined)))?s.decks[seat].hand.filter(c=>c.definitionId==='build_army').map(c=>c.id):copyFees,requirements:b&&id==='UK-02'?['land_battle']:id==='UK-06'?(b?['build_army']:['*','build_army']):undefined,fee:true,label:b&&id==='UK-02'?'军备费用：弃一张发起陆战':b&&id==='UK-06'?'军备费用：弃一张建设陆军':id==='UK-06'?'军备费用：弃两张手牌，其中至少一张建设陆军':'军备通用费用：弃一张常规手牌'};
   if(id==='UK-06')effects=effects.slice(1);
-  rules.push({id:`${card.id}:${frame.currentEventId}:${timing}`,placementPriority:timing==='After'&&!!action&&['build_army','build_navy','recruit_army','recruit_navy'].includes(action.action)&&(id==='UK-02'||effects.some(effect=>effect.kind==='remove'||effect.kind==='action'&&effect.action==='destroy')),scopeId:d.id,boundEventId:frame.currentEventId!,label:d.name,sourceInstanceId:card.id,owner:seat,timing,on:e.label,mandatory:!military,source:military?'response':'active',finalZone:'removed',minHand:military?(id==='UK-06'&&!b?2:1):0,atomic:true,effects:military?[{kind:'signal',tag:'ARMAMENT',label:`发动军备【${d.name}】`},fee,...effects]:effects});
+  rules.push({id:`${card.id}:${frame.currentEventId}:${timing}`,placementPriority:timing==='After'&&!!action&&['build_army','build_navy','recruit_army','recruit_navy'].includes(action.action)&&(id==='UK-02'||effects.some(effect=>effect.kind==='remove'||effect.kind==='action'&&effect.action==='destroy')),scopeId:d.id,boundEventId:frame.currentEventId!,label:d.name,sourceInstanceId:card.id,owner:seat,timing,on:e.label,mandatory:!military,source:military?'response':'active',finalZone:b&&id==='SU-10'&&e.kind==='signal'?'active':'removed',minHand:military?(id==='UK-06'&&!b?2:1):0,atomic:true,effects:military?[{kind:'signal',tag:'ARMAMENT',label:`发动军备【${d.name}】`},fee,...effects]:effects});
  }
  return rules;
 }

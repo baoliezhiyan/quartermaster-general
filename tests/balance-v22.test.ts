@@ -32,27 +32,27 @@ it('Z fleet excludes South Pacific and recruitment',()=>{
  const s=game('japan');s.decks.united_kingdom.faceDown=[card('prelude_UK-01','united_kingdom')];
  for(const region of ['sea_south_china','sea_arabian','sea_south_pacific'])for(const action of ['build_navy','recruit_navy'] as const){s.units=[{id:'n',country:'japan',type:'navy',regionId:region}];const e:Effect={kind:'action',country:'japan',action,resultUnitId:'n',option:{regionId:region} as any,label:'海军'};expect(preludeTriggers(s,{id:'f',currentEventId:'e'} as ResolutionFrame,e,'After').length).toBe(action==='build_navy'&&region!=='sea_south_pacific'?1:0);}
 });
-it.each([false,true])('Soviet reveal commits source, decline shuffles without playing (guided=%s)',guided=>{
+it.each([false,true])('Soviet reveal commits source, random view preserves deck order on decline (guided=%s)',guided=>{
  const s=game(),d=s.decks.soviet_union;d.hand=[card('special_50')];d.drawPile=[card('build_army'),card('special_44'),card('special_42'),card('build_navy')];const before=s.randomState;
  s.neutralityStatusPending=true;startResolution(s,'neutrality','soviet_union',[{kind:'trace',label:'end'}],[],undefined,'discardPile',guided);
  expect(s.resolution!.choice!.options.map(o=>o.id)).toEqual(['hand','deck']);answer(s,['deck'],guided);
- const q=s.resolution!.choice!;expect(q.kind).toBe('EXTRA_CARD');expect(q.options.map(o=>o.id)).toEqual(['special_44']);expect(resolveChoice(s,q.seat,q.id,['special_50'],guided)).toBe(false);
- answer(s,[],guided);finish(s);expect(d.hand.map(c=>c.id)).toEqual(['special_50']);expect(d.active).toEqual([]);expect(d.drawPile.map(c=>c.id).sort()).toEqual(['build_army','build_navy','special_42','special_44'].sort());expect(s.randomState).not.toEqual(before);
+ const q=s.resolution!.choice!;expect(q.kind).toBe('EXTRA_CARD');expect(q.options).toHaveLength(1);expect(['special_44','special_42']).toContain(q.options[0].id);expect(resolveChoice(s,q.seat,q.id,['special_50'],guided)).toBe(false);
+ answer(s,[],guided);finish(s);expect(d.hand.map(c=>c.id)).toEqual(['special_50']);expect(d.active).toEqual([]);expect(d.drawPile.map(c=>c.id)).toEqual(['build_army','special_44','special_42','build_navy']);expect(s.randomState).not.toEqual(before);
 });
 it('Soviet revealed state plays without shuffling; hand alternative never touches deck',()=>{
  for(const source of ['deck','hand']){const s=game(),d=s.decks.soviet_union;d.hand=[card('special_50')];d.drawPile=[card('build_army'),card('special_44'),card('special_42')];const before=s.randomState;
- startResolution(s,'neutrality','soviet_union',[balanceEffect('soviet_union','soviet-neutrality')],[]);answer(s,[source]);answer(s,[source==='deck'?'special_44':'special_50']);finish(s);
- expect(d.active.map(c=>c.id)).toContain(source==='deck'?'special_44':'special_50');expect(d.drawPile.map(c=>c.id)).toEqual(source==='deck'?['build_army','special_42']:['build_army','special_44','special_42']);expect(s.randomState).toEqual(before);}
+ startResolution(s,'neutrality','soviet_union',[balanceEffect('soviet_union','soviet-neutrality')],[]);answer(s,[source]);const selected=source==='deck'?s.resolution!.choice!.options[0].id:'special_50';answer(s,[selected]);finish(s);
+ expect(d.active.map(c=>c.id)).toContain(selected);expect(d.drawPile.map(c=>c.id)).toEqual(['build_army','special_44','special_42'].filter(id=>id!==selected));if(source==='hand')expect(s.randomState).toEqual(before);else expect(s.randomState).not.toEqual(before);}
 });
 it('Soviet standard mode remains hand-only; empty balanced deck offers no reveal',()=>{
  const s=game('soviet_union',false);s.decks.soviet_union.hand=[card('special_50')];s.decks.soviet_union.drawPile=[card('special_44')];s.neutralityStatusPending=true;startResolution(s,'end','soviet_union',[{kind:'trace',label:'end'}],[]);expect(s.resolution!.choice!.kind).toBe('EXTRA_CARD');expect(s.resolution!.choice!.options.map(o=>o.id)).toEqual(['special_50']);
  const b=game();b.decks.soviet_union.hand=[card('special_50')];startResolution(b,'end','soviet_union',[balanceEffect('soviet_union','soviet-neutrality')],[]);expect(b.resolution!.choice!.options.map(o=>o.id)).toEqual(['hand']);
 });
-it.each(['drawPile','discardPile'] as const)('advanced technology triggers at PLAY and takes state from %s without installing',from=>{
+it.each(['drawPile'] as const)('advanced technology triggers at PLAY and takes state from %s without installing',from=>{
  const s=game('united_states'),d=s.decks.united_states,c=card('special_258','united_states');d.hand=[c];d.drawPile=[card('build_army','united_states'),card('build_navy','united_states'),card('land_battle','united_states')];d[from].push(card('special_79','united_states'));const before=s.randomState;
  const e:Effect={kind:'signal',tag:'PHASE:PLAY',label:'出牌阶段开始'};expect(triggerCandidate(c.definitionId,e,'After')).toBe(true);expect(specialCard(c.definitionId,true)!.type).toBe('增强');expect(fullTrigger(s,c,{...e,tag:'PHASE:SCORE'},'After')).toBeUndefined();
  startResolution(s,'play','united_states',[e],[]);answer(s,[s.resolution!.choice!.options.find(o=>o.label==='先进技术迭代')!.id]);answer(s,['special_79']);finish(s);
- expect(d.hand.some(c=>c.id==='special_79')).toBe(true);expect(d.active).toEqual([]);expect(d.discardPile.some(c=>c.id==='special_258')).toBe(true);expect(s.randomState).not.toEqual(before);
+ expect(d.hand.some(c=>c.id==='special_79')).toBe(true);expect(d.active).toEqual([]);expect(d.discardPile.some(c=>c.id==='special_258')).toBe(true);expect(s.randomState).toEqual(before);
 });
 it('redeployment selects units on map, rejects two navies, rebuilds navy then army and preserves unselected troops',()=>{
  const s=game('united_states');s.units=[{id:'a',country:'united_states',type:'army',regionId:'latin_america'},{id:'stay',country:'united_states',type:'army',regionId:'united_states'},{id:'n',country:'united_states',type:'navy',regionId:'sea_north_atlantic'},{id:'n2',country:'united_states',type:'navy',regionId:'sea_east_pacific'},{id:'cn',country:'china',type:'army',regionId:'eastern_china'}];
