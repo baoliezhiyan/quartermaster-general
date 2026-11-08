@@ -32,6 +32,18 @@ export function fullCardEffects(s:ReadState,card:CardInstance,targets:string[]):
     const choose=(effects:Effect[][]):Effect=>({kind:'choose',seat,min:1,max:1,label:'选择卡牌效果',options:effects.map((effects,i)=>({id:String(i),label:effects.map(e=>e.label).join('；'),effects}))});
     const returnSource=(filter:string):Effect=>({kind:'choose',seat,min:0,max:1,label:`可选择弃置一张【${cardName({definitionId:filter})}】，将本牌洗回牌库`,options:[{id:'return',label:'支付并洗回',effects:[{kind:'cards',seat,from:'hand',to:'discardPile',filter,min:1,max:1,fee:true,label:'支付'+cardName({definitionId:filter})},balanceEffect(seat,'return-source')]}]});
     switch(id){
+      case 262:return [a('build_army',['ross_region']),{...a('destroy',['scandinavia']),destroyTypes:['army']}];
+      case 42:return [{kind:'signal',tag:'INSTALL',label:'部署迁都古比雪夫'},a('recruit_army',['siberia'])];
+      case 25:return ['germany','italy'].includes(targets[0])?[top(targets[0] as SeatId,2+2*count('air'))]:[];
+      case 164:return ['united_kingdom','soviet_union','united_states'].includes(targets[0])?[top(targets[0] as SeatId,1),points(seat,3)]:[];
+      case 168:return [top('united_kingdom',1+['sea_north_sea','sea_north_atlantic','sea_mid_atlantic'].filter(r=>!alliedNavy(r)).length),points(seat,2)];
+      case 169:return [points(seat,count('navy')),top('united_kingdom',2)];
+      case 103:return range('italy',2)?[top('italy',5)]:[];
+      case 242:return [top('soviet_union',1+[1,2].filter(n=>s.units.some(u=>u.country==='united_kingdom'&&u.type==='army'&&distanceWithin(s,c,'ukraine',u.regionId,n))).length),points(seat,2)];
+      case 243:return [top('united_kingdom',3),points(seat,1)];
+      case 244:return [top('united_kingdom',2),points(seat,count('navy')+1)];
+      case 245:return [top('united_kingdom',alliedNavy('sea_mediterranean')?1:2),points(seat,2)];
+      case 96:return [choose([[{kind:'extraPlay',seat,from:'discardPile',label:'打出弃牌堆的一张牌'}],[{kind:'cards',seat,from:'discardPile',to:'hand',min:1,max:1,label:'将弃牌堆的一张牌放回手牌'}]])];
       case 178:return [{kind:"signal",tag:"INSTALL",label:"暗置响应：满洲攻略"}];
       case 227:return [{kind:"cards",seat,from:"hand",to:"discardPile",min:2,max:2,fee:true,label:"弃置两张手牌"},{kind:"cards",seat,from:"hand",to:"faceDown",filter:"响应",min:1,max:1,label:"从剩余手牌中暗置一张响应；没有响应则略过"},{kind:"extraPlay",seat:"germany",from:"hand",filter:"状态",allowSkip:true,label:"德国可打出一张手牌中的状态牌"},{kind:"signal",tag:"STEEL_PACT_COMPLETE",label:"钢铁条约结算完成"}];
       case 113:return [{...act('china','recruit_army',['eastern_china','western_china','mongolia']),bindAs:'new-china'},{...act('china','land_battle'),fromBinding:'new-china',bindAttacker:true,decisionSeat:seat},returnSource('land_battle')];

@@ -1,3 +1,5 @@
+import {statusActionEffects} from '../core/statusActions';
+import {canExecuteEffects} from '../core/resolution';
 import { PHASE_NAMES, TURN_PHASES } from '../core';
 import type { Command, ReadState } from '../core';
 import { COUNTRY_NAMES } from '../core/basic';
@@ -11,7 +13,8 @@ export function PhasePanel({ state, busy, dispatch, undo, record, panels, readOn
     <h3>{state.prelude?.active?`序章 · ${COUNTRY_NAMES[state.activeSeat]} · 紧张度 ${state.prelude.tension}`:state.phase==='SETUP' ? `${COUNTRY_NAMES[state.viewSeat]} · 起手选择` : `第 ${state.round} 轮 · ${COUNTRY_NAMES[state.activeSeat]} · ${PHASE_NAMES[state.phase]}`}</h3>
     {!state.prelude?.active&&<ol className="phase-strip">{TURN_PHASES.filter(p=>p!=='TURN_START_WINDOW').map(p=><li key={p} aria-current={state.phase===p?'step':undefined}>{PHASE_NAMES[p]}</li>)}</ol>}
     {!readOnly && canAdvance && <button className="primary" disabled={blocked} onClick={()=>dispatch({type:'ADVANCE_PHASE',seat:state.viewSeat,expectedRevision:state.revision})}>{label}</button>}
-    {!readOnly&&!state.prelude?.active&&state.prelude&&state.decks[state.viewSeat].faceDown.some(c=>['prelude_UK-07','prelude_US-04','prelude_DE-09',...(state.rules?.balanceEnabled?['prelude_SU-06']:[])].includes(c.definitionId))&&<button disabled={blocked} onClick={()=>dispatch({type:'ARMAMENT_WINDOW',seat:state.viewSeat,expectedRevision:state.revision})}>回合内军备</button>}
+    {!readOnly&&!state.prelude?.active&&state.prelude&&state.decks[state.viewSeat].faceDown.some(c=>['prelude_US-04','prelude_DE-09',...(state.rules?.balanceEnabled?['prelude_SU-06']:[])].includes(c.definitionId))&&<button disabled={blocked} onClick={()=>dispatch({type:'ARMAMENT_WINDOW',seat:state.viewSeat,expectedRevision:state.revision})}>回合内军备</button>}
+    {!readOnly&&state.phase==='AIR'&&state.decks[state.viewSeat].active.filter(c=>c.definitionId==='special_247'&&canExecuteEffects(state,statusActionEffects(state,c))).map(c=><button key={c.id} disabled={blocked} onClick={()=>dispatch({type:'STATUS_ACTION',seat:state.viewSeat,expectedRevision:state.revision,cardId:c.id,guided:true})}>神风敢死队</button>)}
     {panels}
     <div className="phase-right-actions"><div className="phase-undo">{undo}</div><div className="map-panel-buttons">{record}</div></div>
   </section>;

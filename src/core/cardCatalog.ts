@@ -19,4 +19,4 @@ export function regularCatalog(balance:boolean,_neutrality:boolean):SpecialDefin
  const excluded=new Set(['special_250','special_251','special_252']);
  return [...ALL_SPECIAL_CARDS.map(c=>specialCard(c.id,true)!),...BALANCE_CARDS.filter(c=>c.id.startsWith('special_')&&!ALL_SPECIAL_CARDS.some(v=>v.id===c.id))].filter(c=>!excluded.has(c.id));
 }
-export const preludeCatalog=(balance:boolean)=>balance?[...PRELUDE_CARDS.map(c=>specialCard(c.id,true)!),...BALANCE_CARDS.filter(c=>c.id.startsWith('prelude_')&&!PRELUDE_CARDS.some(v=>v.id===c.id))]:PRELUDE_CARDS;
+export const preludeCatalog=(balance:boolean)=>balance?[...PRELUDE_CARDS.map(c=>specialCard(c.id,true)!),...BALANCE_CARDS.filter(c=>c.id.startsWith('prelude_')&&!PRELUDE_CARDS.some(v=>v.id===c.id))].filter(c=>!['prelude_DE-15','prelude_DE-04','prelude_SU-17','prelude_US-01'].includes(c.id)):PRELUDE_CARDS;

@@ -127,3 +127,9 @@
 基线 3831dec，工作分支 codex/client-ai-finalize。正式 resolution 的 validEffect 开始校验已选 regionId/defenderId/attackerId/airIntercept；既有选择失效走原 invalid/推进路径，避免仍有其他候选时 Validate 循环，不换目标或发起部队，不重付费用。已宣告战斗的撤退后空地区处理保持不变。已复现为 GM 编辑 AIR_INTERCEPT 部队；未经证明的自然对局路径不宣称复现。训练调用共享规则会受影响，独立训练内核需评估并作差分验证，冻结实验不可热更新；本次未合并训练实现或启动训练。
 
 恢复的 recovery/commands/只读节点比较复用 diffValue，忽略对象键序但保留数组顺序和真实字段差异；不更改存档或回放 schema、身份要求或哈希。新规则/构建指纹正常生成，旧指纹动作回放和旧检查点仍严格拒绝；没有提供跨指纹转换。具体复现与验证见 ../ai-core-fixes-20261104.md，最终受测构建及测试结果见 ../local-ai-actions.md。状态：正式端已实现；训练端同步与独立内核差分待训练工作线实施，不能标为已完成训练联调。
+
+## 2026-11-08 · 客户端 v1.9.0 / 平衡补丁 v3
+
+本次正式规则及牌表发生实质变化，完整差异见 `../client-v1.9.0.md` 与生成的 `../cards/balanced.md`。新增6张牌、移除4张序章牌；消耗战、配给、坦克运输、中立奖励、海峡状态与经济战等改变实际行为。共享引擎的 balanceEnabled 课程会受到影响；不得直接续跑旧检查点，须重新冻结提交/指纹、白名单和编码上限（中国陆军增加模型尤其需核对）。本次没有启动 PPO 训练，也没有迁移模型。
+
+正式动作记录仍为 formatVersion=3/action_replay；新增 REQUEST_SHUFFLE 命令及可选状态 manualShuffle、openingHandLimits、sovietNeutralityDrawRound。手动洗牌结果继续使用现有 shuffle 行，以独立随机流执行，不消耗普通 randomState。正式回放严格同版本同指纹；旧训练只读快照身份继续走现有审查适配器，不放宽指纹验证。实际训练端须重新验证自身导出，本次客户端测试不代表新版训练课程验收。

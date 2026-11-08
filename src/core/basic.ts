@@ -36,7 +36,7 @@ export const UNIT_TOTALS: Record<CountryId, Record<Unit['type'], number>> = {
 export const allianceOf = (country: CountryId): Alliance => ['germany','italy','japan'].includes(country) ? 'axis' : 'allies';
 export const seatOf = (country: CountryId): SeatId => country === 'france' ? 'united_kingdom' : country === 'china' ? 'united_states' : country;
 export const phaseCountries = (seat: SeatId): CountryId[] => seat === 'united_kingdom' ? [seat,'france'] : seat === 'united_states' ? [seat,'china'] : [seat];
-export const reserve = (state: ReadState, country: CountryId, type: Unit['type']) => UNIT_TOTALS[country][type] + (state.rules?.balanceEnabled&&country==='italy'&&type==='army'?1:0) - state.units.filter(u => u.country === country && u.type === type).length;
+export const reserve = (state: ReadState, country: CountryId, type: Unit['type']) => UNIT_TOTALS[country][type] + (state.rules?.balanceEnabled&&country==='italy'&&type==='army'?1:0) + (state.rules?.balanceEnabled&&country==='china'&&type==='army'&&hasStatus(state,52)?1:0) - state.units.filter(u => u.country === country && u.type === type).length;
 export const cardName = (card: { definitionId: string; balance?:boolean }) => BASIC_NAMES[card.definitionId as BasicId] ?? specialCard(card.definitionId,card.balance)?.name ?? card.definitionId;
 
 /** Explicit serializable PRNG state; seed zero is valid. */

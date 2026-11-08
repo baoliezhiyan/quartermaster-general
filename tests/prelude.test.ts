@@ -39,16 +39,15 @@ it('air legion privately identifies discarded prelude cards for each victim with
  const notices=s.responseNotices!.filter(n=>n.recipients.includes('soviet_union'));expect(notices.some(n=>n.text.includes('本次未执行额外效果'))).toBe(false);const detail=notices.find(n=>n.title==='序章弃牌结果')!;expect(detail.cards.map(c=>c.id)).toEqual(lost.map(c=>c.id));expect(detail.recipients).toEqual(['soviet_union']);expect(projectState(s,{kind:'player',seat:'italy'},'italy')!.responseNotices?.some(n=>n.id===detail.id)).toBe(false);
 });
 
-it.each([false,true])('Hyde UK discard/play is optional and US gets another normal-panel play (%s)',ukPlays=>{
+it.each([false,true])('Tizard UK opening-cap trade is optional and US gets another normal-panel play (%s)',ukPlays=>{
  let s=createGame('picnic',44,'FULL',true,false,true);s.activeSeat=s.viewSeat=s.operatorSeat='united_states';
  const us=s.prelude!.decks.united_states,uk=s.prelude!.decks.united_kingdom;
- us.drawPile.push(...us.hand.splice(0),...us.discardPile.splice(0));const i=us.drawPile.findIndex(c=>c.definitionId==='prelude_US-10');us.hand.push(...us.drawPile.splice(i,1));
+ us.drawPile.push(...us.hand.splice(0),...us.discardPile.splice(0));const i=us.drawPile.findIndex(c=>c.definitionId==='prelude_US-07');us.hand.push(...us.drawPile.splice(i,1));
  uk.drawPile.push(...uk.hand.splice(0),...uk.discardPile.splice(0));const j=uk.drawPile.findIndex(c=>c.definitionId==='prelude_UK-01');uk.hand.push(...uk.drawPile.splice(j,1),...uk.drawPile.splice(0,1));
- const chosen=uk.hand[0].id,fee=uk.hand[1].id,discarded=uk.discardPile.length;
+ const chosen=uk.hand[0].id,discarded=uk.discardPile.length;
  s=send(s,{type:'PLAY_PRELUDE',seat:'united_states',expectedRevision:s.revision,cardId:us.hand[0].id});
- expect(s.resolution!.choice).toMatchObject({seat:'united_kingdom'});expect(s.resolution!.choice!.prompt).toContain('弃置');
- let q=s.resolution!.choice!;s=send(s,{type:'RESOLVE_ENGINE_CHOICE',seat:q.seat,expectedRevision:s.revision,choiceId:q.id,ids:ukPlays?[fee]:[]});
- if(ukPlays){q=s.resolution!.choice!;s=send(s,{type:'RESOLVE_ENGINE_CHOICE',seat:q.seat,expectedRevision:s.revision,choiceId:q.id,ids:[chosen]});}
- expect(s.resolution?.running).toBe(false);expect(s.activeSeat).toBe('united_states');expect(s.prelude!.played).toBe(false);expect(s.prelude!.tension).toBe(-1);expect(s.prelude!.decks.united_kingdom.discardPile).toHaveLength(discarded+Number(ukPlays));
+ expect(s.resolution!.choice).toMatchObject({seat:'united_kingdom'});expect(s.resolution!.choice!.prompt).toContain('5张');
+ let q=s.resolution!.choice!;s=send(s,{type:'RESOLVE_ENGINE_CHOICE',seat:q.seat,expectedRevision:s.revision,choiceId:q.id,ids:ukPlays?[chosen]:[]});
+ expect(s.resolution?.running).toBe(false);expect(s.activeSeat).toBe('united_states');expect(s.prelude!.played).toBe(false);expect(s.prelude!.tension).toBe(-1);expect(s.prelude!.decks.united_kingdom.discardPile).toHaveLength(discarded);
  expect(s.decks.united_kingdom.faceDown.some(c=>c.id===chosen)).toBe(ukPlays);validateState(s);
 });

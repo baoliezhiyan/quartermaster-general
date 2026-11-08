@@ -1,3 +1,4 @@
+import {initializeManualShuffle,requestManualShuffle,executeManualShuffles} from './manualShuffle';
 import {rememberPublicDiscards,publicDiscard} from './publicHistory';
 import {fact} from './factObserver';
 import {nextUnitId,replayBoundary} from './replayHooks';
@@ -41,6 +42,7 @@ export function createGame(gameId: string, seed: number, mode:GameState['mode']=
     events:[{ type:'GAME_CREATED', revision:0, gameId, seed }],
   };
   if(neutrality!==undefined||balance!==undefined)state.rules={preludeEnabled:prelude,neutralityEnabled:!!neutrality,...(balance!==undefined?{balanceEnabled:balance}:{})};
+  initializeManualShuffle(state);
   fact(state,'recording_start','初始化前');
   for(const seat of SEATS){const d=state.decks[seat];shuffle(d.drawPile,state);d.hand=d.drawPile.splice(0,12);fact(state,'card_moved','发放十二张起手牌',{seat,from:'regular_deck',to:'regular_hand',cardIds:d.hand.map(c=>c.id)});}
   state.units=REGIONS.filter(r => r.initialArmyCountry).map(r => ({ id:`initial:${r.initialArmyCountry}`, country:r.initialArmyCountry!, type:'army', regionId:r.id }));fact(state,'unit_built','初始部署');
@@ -113,7 +115,7 @@ function settleResolution(state:GameState) {
 /** Called only after phase-start windows and phase work have completed. */
 function autoAdvancePhase(state:GameState){
  if(state.mode==='BASIC_DEBUG'||state.status!=='PLAYING'||state.resolution?.running||state.pendingDiscard||state.pendingAir.length)return;
- if(state.phase==='AIR'&&!airActionOptions(state).some(o=>o.enabled))enterPhase(state,'SUPPLY');
+ if(state.phase==='AIR'&&!airActionOptions(state).some(o=>o.enabled)&&!state.decks[state.activeSeat].active.some(c=>canExecuteEffects(state,statusActionEffects(state,c))))enterPhase(state,'SUPPLY');
  else if(state.phase==='SUPPLY')enterPhase(state,'SCORE');
  else if(state.phase==='SCORE')enterPhase(state,'DISCARD');
  else if(state.phase==='PLAY'&&!hasStandardPlay(state)){
@@ -145,7 +147,7 @@ function resolveCard(state:GameState,cardId:string,effects:Effect[],guided=false
   const d=specialCard(card.definitionId,card.balance);
   if(state.rules?.balanceEnabled&&state.phase==='PLAY'&&state.basicPlaysRemaining){if(d)return false;state.basicPlaysRemaining--;state.resolutionResume=state.basicPlaysRemaining?{phase:'PLAY',apply:false,continuePlay:true}:{phase:'AIR',apply:false};}
   else state.resolutionResume={phase:state.phase==='PLAY'?'AIR':'SUPPLY',apply:false};
-  const standard:Effect[] = state.phase==='PLAY'&&card.definitionId!=='air_power'&&d?.type!=='增强'?[{kind:'signal',tag:'STANDARD_CARD_PLAYED',label:`标准出牌【${cardName(card)}】后`}]:[];
+  const standard:Effect[] = (state.phase==='PLAY'&&card.definitionId!=='air_power'||state.rules?.balanceEnabled&&state.phase==='AIR'&&card.definitionId==='air_power')&&d?.type!=='增强'?[{kind:'signal',tag:'STANDARD_CARD_PLAYED',label:`标准出牌【${cardName(card)}】后`}]:[];
   if(!startResolution(state,d?.name??cardName(card),state.activeSeat,[...effects,...standard,{kind:'signal',tag:'CARD_PLAYED',label:`打出【${cardName(card)}】后`}],[],card.id,d?.type==='状态'?'active':d?.type==='响应'?'faceDown':'discardPile',guided,rollback))return false;
   settleResolution(state);return true;
 }
@@ -155,6 +157,7 @@ function nextTurn(state: GameState,skipReplayBoundary=false) {
   if(index===5){const totals=allianceScores(state);if(Math.abs(totals.axis-totals.allies)>=30){finish(state,totals.axis>totals.allies?'AXIS_LEAD':'ALLIES_LEAD');replayBoundary(state,'round_end',state.round);return;}}
   if (index === 5 && state.round === 20) { finish(state,'TWENTY_ROUNDS'); replayBoundary(state,'round_end',state.round);return; }
   if(index===5&&!skipReplayBoundary&&replayBoundary(state,'round_end',state.round))return;
+  executeManualShuffles(state);
   if (index === 5) state.round++;
   state.activeSeat = SEATS[(index+1)%6];
   state.operatorSeat = state.viewSeat = state.activeSeat;
@@ -236,7 +239,7 @@ export function transition(state: GameState | null, command: Command): Transitio
   return result;
 }
 function transitionInternal(state: GameState | null, command: Command): Transition {
-  if (!command || !['SELECT_AIR_ACTION','ARMAMENT_WINDOW','DISCARD_PRELUDE_TOP','PLAY_PRELUDE','SET_CARD_RESPONSE','ACK_RESPONSE_NOTICE','CREATE_GAME','SET_VIEW','SET_INTERRUPTS','KEEP_OPENING','ADVANCE_PHASE','DISCARD_HAND','REDISTRIBUTE','PLAY_BASIC','MOVE_AIR','RELOCATE_AIR','RESOLVE_FORCED_DISCARD','DEBUG_DECK','DEBUG_PLACEMENT','START_RESOLUTION_SCENARIO','RESOLVE_ENGINE_CHOICE','PLAY_CARD','STATUS_ACTION'].includes(command.type)) return { ok:false,error:'INVALID_COMMAND' };
+  if (!command || !['REQUEST_SHUFFLE','SELECT_AIR_ACTION','ARMAMENT_WINDOW','DISCARD_PRELUDE_TOP','PLAY_PRELUDE','SET_CARD_RESPONSE','ACK_RESPONSE_NOTICE','CREATE_GAME','SET_VIEW','SET_INTERRUPTS','KEEP_OPENING','ADVANCE_PHASE','DISCARD_HAND','REDISTRIBUTE','PLAY_BASIC','MOVE_AIR','RELOCATE_AIR','RESOLVE_FORCED_DISCARD','DEBUG_DECK','DEBUG_PLACEMENT','START_RESOLUTION_SCENARIO','RESOLVE_ENGINE_CHOICE','PLAY_CARD','STATUS_ACTION'].includes(command.type)) return { ok:false,error:'INVALID_COMMAND' };
   if (command.type === 'CREATE_GAME') {
     if (typeof command.gameId !== 'string' || !command.gameId.trim() || !Number.isSafeInteger(command.seed) || command.seed < 0 || command.seed > 0xffffffff) return { ok:false,error:'INVALID_COMMAND' };
     if(command.mode && !['BASIC_DEBUG','REPRESENTATIVE','FULL'].includes(command.mode)) return {ok:false,error:'INVALID_COMMAND'};
@@ -246,6 +249,7 @@ function transitionInternal(state: GameState | null, command: Command): Transiti
   if (!state) return { ok:false,error:'GAME_NOT_CREATED' };
   if (!SEATS.includes(command.seat)) return { ok:false,error:'INVALID_COMMAND' };
   if (command.expectedRevision !== state.revision) return { ok:false,error:'STALE_REVISION' };
+  if(command.type==='REQUEST_SHUFFLE'){if(state.status==='FINISHED')return {ok:false,error:'ILLEGAL_ACTION'};const next=structuredClone(state);requestManualShuffle(next,command.seat);return {ok:true,state:next};}
   if (command.type === 'SET_CARD_RESPONSE') {
     const card=Object.values(state.decks[command.seat]).flat().find(c=>c.id===command.cardId);
     if(command.seat!==state.viewSeat||typeof command.enabled!=='boolean'||!card||!['响应','增强','军备'].includes(specialCard(card.definitionId,card.balance)?.type??''))return {ok:false,error:'ILLEGAL_ACTION'};
@@ -295,7 +299,7 @@ function transitionInternal(state: GameState | null, command: Command): Transiti
     return illegal;
   }
   if (command.type === 'KEEP_OPENING') {
-    if (state.phase !== 'SETUP' || state.setupCompleted.includes(command.seat) || !validCards(state,command.seat,command.cardIds) || command.cardIds.length !== Math.min(7,state.decks[command.seat].hand.length)) return illegal;
+    if (state.phase !== 'SETUP' || state.setupCompleted.includes(command.seat) || !validCards(state,command.seat,command.cardIds) || command.cardIds.length !== Math.min(state.openingHandLimits?.[command.seat]??7,state.decks[command.seat].hand.length)) return illegal;
     discard(next,command.seat,next.decks[command.seat].hand.filter(c => !command.cardIds.includes(c.id)).map(c => c.id));
     next.setupCompleted.push(command.seat);
     log(next,'OPENING_KEPT',`${COUNTRY_NAMES[command.seat]}保留 ${command.cardIds.length} 张、弃置 ${state.decks[command.seat].hand.length-command.cardIds.length} 张；起手不扣分。`);

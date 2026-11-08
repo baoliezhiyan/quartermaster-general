@@ -60,7 +60,7 @@ export function projectState(source:ReadState|null,access:RoomAccess,view:SeatId
   }
  }
  delete s.balanceFirstAttacks;
- s.seed=0;s.randomState=0;s.events=[];
+ s.seed=0;s.randomState=0;delete s.manualShuffle;s.events=[];
  s.disabledResponseIds=s.disabledResponseIds?.filter(id=>own&&Object.values(source.decks[own]).flat().some(c=>c.id===id));
  s.responseNotices=s.responseNotices?.filter(n=>own&&n.recipients.includes(own));
  if(s.resolution){

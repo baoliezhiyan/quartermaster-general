@@ -26,10 +26,10 @@ it.each([false,true])('wash-back pays the selected build card in one confirmatio
  const restored=JSON.parse(JSON.stringify(s));validateState(restored);reply(restored,pay?[cost.id]:[]);expect(restored.resolution!.running).toBe(false);
  expect(restored.decks.united_states.drawPile.some(c=>c.id===source.id)).toBe(pay);expect(restored.decks.united_states.discardPile.some(c=>c.id===cost.id)).toBe(pay);expect(restored.decks.united_states.hand.some(c=>c.id===cost.id)).toBe(!pay);expect(fee).toBeTruthy();
 });
-it.each([false,true])('kamikaze supply trigger can be used or declined without another air action (%s)',use=>{
+it.each([false,true])('kamikaze air action can be used or skipped (%s)',use=>{
  let s=game();add(s,'special_247','active');s.activeSeat=s.viewSeat=s.operatorSeat='japan';s.phase='AIR';s.units=[{id:'a',country:'japan',type:'army',regionId:'eastern_china'},{id:'air',country:'japan',type:'air',regionId:'eastern_china'},{id:'target',country:'united_states',type:'navy',regionId:'sea_east_china'}];
- const send=(payload:Record<string,unknown>)=>{const r=transition(s,{seat:s.operatorSeat,expectedRevision:s.revision,...payload} as Command);expect(r.ok).toBe(true);if(r.ok)s=r.state;};send({type:'ADVANCE_PHASE'});
- expect(s.phase).toBe('SUPPLY');let q=s.resolution!.choice!;send({type:'RESOLVE_ENGINE_CHOICE',choiceId:q.id,ids:use?[q.options.find(o=>o.label==='神风敢死队')!.id]:[],guided:true});
+ const send=(payload:Record<string,unknown>)=>{const r=transition(s,{seat:s.operatorSeat,expectedRevision:s.revision,...payload} as Command);expect(r.ok).toBe(true);if(r.ok)s=r.state;};if(use)send({type:'STATUS_ACTION',cardId:s.decks.japan.active.find(c=>c.definitionId==='special_247')!.id,guided:true});else send({type:'ADVANCE_PHASE'});
+ let q=s.resolution?.choice!;
  if(use){expect(s.resolution!.choice).toMatchObject({kind:'SELECT',options:[{id:'air'}]});expect(disabled(markup(s))).toBe(true);expect(disabled(markup(s,['air']))).toBe(false);}
  for(let i=0;s.resolution?.running&&i<15;i++){q=s.resolution!.choice!;send({type:'RESOLVE_ENGINE_CHOICE',choiceId:q.id,ids:q.kind==='TRIGGER'?[]:[q.options[0].id],guided:true});}
  expect(s.phase).toBe('DISCARD');expect(s.units.some(u=>u.id==='air')).toBe(!use);expect(s.units.some(u=>u.id==='target')).toBe(!use);

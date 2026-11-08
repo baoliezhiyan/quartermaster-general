@@ -86,9 +86,9 @@ export function realTriggers(s:GameState,frame:ResolutionFrame,e:Effect,timing:'
     let effects:Effect[]=[],cost=0,once=false,mandatory=false,finalZone:TriggerRule['finalZone'];
     const own=owner===s.activeSeat;
     switch(d.sourceIndex) {
-      case 13:if(own && s.phase==='PLAY' && !frame.parentEventId && e.kind==='signal' && e.tag==='STANDARD_CARD_PLAYED') {
+      case 13:if(own && (s.phase==='PLAY'||s.rules?.balanceEnabled&&s.phase==='AIR') && !frame.parentEventId && e.kind==='signal' && e.tag==='STANDARD_CARD_PLAYED') {
         const played=s.decks[owner].resolving.find(c=>c.id===frame.cardId),type=played&&specialCard(played.definitionId,played.balance)?.type;
-        if(played&&played.id!==card.id&&played.definitionId!=='air_power'&&type!=='增强')effects=[{kind:'frameChange',frameId:frame.id,finalZone:'drawPile',cancel:type==='状态'||type==='响应',label:'将刚刚标准打出的牌洗入牌库'}];
+        if(played&&played.id!==card.id&&(s.rules?.balanceEnabled?type!=='状态'&&type!=='响应':played.definitionId!=='air_power')&&type!=='增强')effects=[{kind:'frameChange',frameId:frame.id,finalZone:'drawPile',cancel:type==='状态'||type==='响应',label:'将刚刚标准打出的牌洗入牌库'}];if(effects.length&&s.rules?.balanceEnabled)cost=1;
       } break;
       case 36:if(own && phase('SCORE')) { effects=[action('united_kingdom','recruit_army',['eastern_europe'])];cost=s.rules?.balanceEnabled?1:2; }break;
       case 41:if(own && phase('AIR')) effects=[action('france','air_deploy')];break;
@@ -96,13 +96,13 @@ export function realTriggers(s:GameState,frame:ResolutionFrame,e:Effect,timing:'
       case 59:if(own && phase('TURN_START_WINDOW')) effects=[action('soviet_union','recruit_army',around(s,'soviet_union','moscow')),action('soviet_union','destroy',['moscow'])];break;
       case 77:case 125:if(own && phase('AIR')) effects=[action('china','air_power')];break;
       case 83:if(e.kind==='action' && e.country==='united_states' && e.action==='build_army') {effects=[deckTop(owner,1,true),action('united_states','build_army')];once=true;}break;
-      case 90:if(e.kind==='action' && (e.country==='china' && ['build_army','recruit_army'].includes(e.action) || e.action==='land_battle' && e.option?.defenderCountry==='china')) {effects=[{kind:'forceHand',seat:'japan',count:1,label:'抗日义勇军：日本弃 1 张手牌'}];mandatory=true;}break;
+      case 90:if(e.kind==='action' && (e.country==='china' && ['build_army','recruit_army'].includes(e.action) || e.action==='land_battle' && e.option?.defenderCountry==='china')) {effects=[{kind:'forceHand',seat:'japan',count:1,label:'抗日义勇军：日本弃 1 张手牌'},...(s.rules?.balanceEnabled?[deckTop('japan',1)]:[])];mandatory=true;}break;
       case 129:if(own && phase('TURN_START_WINDOW')) {effects=[deckTop(owner,1,true),action('germany','recruit_army',['germany'])];once=true;}break;
       case 134:if(e.kind==='action' && e.country==='germany' && e.action==='land_battle' && region) {effects=[deckTop(owner,1,true),action('germany','land_battle',around(s,'germany',region))];once=true;}break;
       case 136:if(e.kind==='action' && e.country==='germany' && e.action==='land_battle' && region) {effects=[deckTop(owner,1,true),action('germany','build_army',[region])];once=true;}break;
       case 171:if(own && phase('SCORE') && s.units.filter(u=>u.country==='japan' && u.type==='navy').length>=3) {effects=[score(owner,1)];mandatory=true;}break;
       case 188:if(own && phase('PLAY')) effects=[action('japan','recruit_army',['southeast_asia'])];break;
-      case 201:if(e.kind==='action' && e.country==='japan' && e.action==='land_battle' && region) effects=[action('japan','land_battle',around(s,'japan',region))];break;
+      case 201:if(e.kind==='action' && e.country==='japan' && e.action==='land_battle' && region) effects=s.rules?.balanceEnabled?[action('japan','land_battle',[region]),action('japan','land_battle',adjacentRegions(s,'japan',region,false))]:[action('japan','land_battle',around(s,'japan',region))];break;
       case 213:if(own && phase('SCORE')) {effects=[score(owner,s.units.filter(u=>u.country==='italy' && u.type==='navy').length)];mandatory=true;}break;
       case 224:if(own && phase('SCORE')) effects=[action('italy','recruit_army',['south_africa'])];break;
     }

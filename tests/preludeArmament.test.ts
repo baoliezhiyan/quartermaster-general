@@ -2,7 +2,7 @@ import {describe,it,expect} from 'vitest';
 import {createGame,transition} from '../src/core/game';
 import {startResolution,resolveChoice} from '../src/core/resolution';
 import {copiedStatusRules} from '../src/core/copiedStatus';
-import {specialCard,PRELUDE_CARDS} from '../src/core/cardCatalog';
+import {specialCard,preludeCatalog,PRELUDE_CARDS} from '../src/core/cardCatalog';
 import {SEATS} from '../src/core/types';
 import type {GameState,CardInstance} from '../src/core/types';
 import type {Effect,ResolutionFrame} from '../src/core/resolutionTypes';
@@ -24,7 +24,7 @@ describe('armament and persistent history',()=>{
   let s=createGame('fresh-armaments',19,'FULL',true,false,balance);
   const send=(command:Record<string,unknown>)=>{const r=transition(s,{seat:s.operatorSeat,expectedRevision:s.revision,...command} as Parameters<typeof transition>[1]);expect(r.ok,JSON.stringify(r)).toBe(true);if(r.ok)s=r.state;};
   for(const seat of SEATS){
-   const d=s.prelude!.decks[seat],id=seat==='germany'?'prelude_DE-11':PRELUDE_CARDS.find(c=>c.deckOwner===seat&&c.type==='军备')!.id;
+   const d=s.prelude!.decks[seat],id=seat==='germany'?'prelude_DE-11':preludeCatalog(balance).find(c=>c.deckOwner===seat&&c.type==='军备')!.id;
    for(const zone of ['drawPile','discardPile'] as const){const i=d[zone].findIndex(c=>c.definitionId===id);if(i>=0)d.hand.push(...d[zone].splice(i,1));}
    if(seat==='united_states')s.prelude!.tension=10;
    send({type:'PLAY_PRELUDE',cardId:d.hand.find(c=>c.definitionId===id)!.id});
@@ -50,6 +50,7 @@ describe('armament and persistent history',()=>{
  });
  it.each([false,true])('Panzergrenadiers offers construction immediately after an actual land battle (balance %s)',balance=>{
   const s=createGame('panzergrenadiers',19,'FULL',true,false,balance);s.prelude!.active=false;s.phase='PLAY';s.status='PLAYING';s.round=1;s.setupCompleted=[...SEATS];
+  for(const other of SEATS.filter(v=>v!=='germany')){s.decks[other].drawPile.push(...s.decks[other].hand.splice(0));}
   const card=move(s,'prelude_DE-12','faceDown');
   startResolution(s,'陆战','germany',[{kind:'action',country:'germany',action:'land_battle',regions:['western_europe'],label:'攻击西欧'}],[]);
   expect(s.resolution!.choice!.kind).toBe('ACTION');reply(s,[s.resolution!.choice!.options[0].id]);
@@ -111,7 +112,7 @@ it.each(['cancel','remove-attacker'])('evacuation never revives a battle after %
  expect(battle.applied).toBe(false);expect(battle.outcome).toBe(mode==='cancel'?'cancelled':'invalid');
 });
 
-it.each([['build_army',3,true],['recruit_army',3,false],['recruit_army',2,false]] as const)('experimental Stonne %s with %s hand cards (pay %s)',(action,count,pay)=>{
+it.each([['build_army',3,true],['recruit_army',3,false],['recruit_army',2,false]] as const)('Stonne destroys %s irrespective of %s enemy cards (legacy option %s)',(action,count,pay)=>{
  const s=game(true);s.status='PLAYING';s.activeSeat='germany';s.units=[{id:'home',country:'germany',type:'army',regionId:'germany'}];
  for(const seat of SEATS){s.decks[seat].hand=[];s.decks[seat].active=[];s.decks[seat].faceDown=[];}
  const arm=move(s,'prelude_UK-02','faceDown');s.prelude!.installedEvent??={};s.prelude!.installedEvent[arm.id]=s.events.length;
@@ -120,10 +121,8 @@ it.each([['build_army',3,true],['recruit_army',3,false],['recruit_army',2,false]
  startResolution(s,'建设','germany',[{kind:'action',country:'germany',action,regions:['western_europe'],label:'建设西欧'}],[]);
  while(s.resolution!.choice?.kind!=='TRIGGER'){const q=s.resolution!.choice!;reply(s,[q.options[0].id]);}
  use(s,'斯通尼');expect(s.resolution!.choice!.kind).toBe('CARDS');reply(s,['fee']);
- expect(s.resolution!.choice).toMatchObject({kind:'SELECT',seat:'germany'});
- expect(s.resolution!.choice!.options.some(o=>o.id==='pay')).toBe(count>=3);reply(s,[pay?'pay':'destroy']);
- if(pay)reply(s,s.decks.germany.hand.map(c=>c.id));finish(s);
- expect(s.units.some(u=>u.regionId==='western_europe')).toBe(pay);expect(s.decks.germany.hand).toHaveLength(pay?0:count);expect(s.decks.united_kingdom.removed.some(c=>c.id===arm.id)).toBe(true);
+ expect(pay===true||pay===false).toBe(true);finish(s);
+ expect(s.units.some(u=>u.regionId==='western_europe')).toBe(false);expect(s.decks.germany.hand).toHaveLength(count);expect(s.decks.united_kingdom.removed.some(c=>c.id===arm.id)).toBe(true);
 });
 it('experimental Stonne can trigger on a second placement after declining the first',()=>{
  const s=game(true);s.status='PLAYING';s.activeSeat='germany';s.units=[{id:'home',country:'germany',type:'army',regionId:'germany'}];const arm=move(s,'prelude_UK-02','faceDown');

@@ -29,9 +29,9 @@ for(const balance of [false,true])it('British armaments only match their correct
  const s=game();s.rules!.balanceEnabled=balance;s.activeSeat='united_kingdom';
  for(const id of ['UK-05','UK-07'])s.decks.united_kingdom.faceDown.push({id,definitionId:'prelude_'+id,deckOwner:'united_kingdom',country:'united_kingdom',balance});
  s.units.push({id:'invader',country:'germany',type:'army',regionId:'british_isles'});
- for(const tag of ['PHASE:SCORE','PHASE:DISCARD','ARMAMENT_ANYTIME']){
+ for(const tag of ['PHASE:SCORE','PHASE:DISCARD','PHASE:TURN_START_WINDOW','ARMAMENT_ANYTIME']){
  const rs=preludeTriggers(s,{id:'f',currentEventId:'e'} as ResolutionFrame,{kind:'signal',tag,label:tag},'After');
- expect(rs.some(r=>r.sourceInstanceId==='UK-05')).toBe(tag==='PHASE:DISCARD');expect(rs.some(r=>r.sourceInstanceId==='UK-07')).toBe(tag==='PHASE:SCORE');
+ expect(rs.some(r=>r.sourceInstanceId==='UK-05')).toBe(tag===(balance?'PHASE:TURN_START_WINDOW':'PHASE:DISCARD'));expect(rs.some(r=>r.sourceInstanceId==='UK-07')).toBe(tag==='PHASE:SCORE');
  }
 });
 for(const id of [161,198])it('first placement responses finish before choosing the same region again: '+id,()=>{
