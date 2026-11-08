@@ -1,3 +1,4 @@
+import {triggerTimingLabel} from '../controller/triggerTimingLabel';
 import {publicDiscard} from '../core/publicHistory';
 import {specialCard} from '../core/cardCatalog';
 import {waitingResponseSeats} from '../core/resolution';
@@ -65,7 +66,7 @@ export function projectState(source:ReadState|null,access:RoomAccess,view:SeatId
  s.responseNotices=s.responseNotices?.filter(n=>own&&n.recipients.includes(own));
  if(s.resolution){
   const r=s.resolution; r.waiting=!!own&&waitingResponseSeats(source,own).length>0;delete r.revealGroup;delete r.scoreBatches;
-  const choice=r.choice?.seat===own?r.choice:null;
+  const choice=r.choice?.seat===own?(r.choice.kind==='TRIGGER'?{...r.choice,options:r.choice.options.map(o=>({...o,timingLabel:triggerTimingLabel(source,o)}))}:r.choice):null;
   // Only the acting country's request and the minimum display context are sent.
   r.choice=choice;r.scenario='当前结算';r.trace=[];r.turnUses={};r.fired=[];r.stack=[];r.events=[];r.windows=[];
   r.rules=r.rules.filter(rule=>choice&&rule.owner===own).map(rule=>({...rule,effects:[]}));

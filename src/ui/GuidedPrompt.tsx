@@ -1,3 +1,4 @@
+import {triggerTimingLabel} from '../controller/triggerTimingLabel';
 import {sortCardChoices} from '../core/cardChoiceOrder';
 import {DraggableWindow} from './DraggableWindow';
 import {coversCost} from '../core/cardCosts';
@@ -68,7 +69,7 @@ export function GuidedPrompt({state,selected,toggle,focusCard,playCardId,playTar
 
  return <>
   <div className="guided-prompt" aria-label="当前操作"><p>{prompt}</p>
-   {(!preludeChoices&&generic&&!immediate||alternatives.length>1||loose.length>0&&!immediate&&!preludeChoices)&&<div className="guided-options">{(alternatives.length>1?c.options.filter(o=>alternatives.includes(o.id)):generic?c.options:loose).map(o=><button key={o.id} aria-pressed={selected.includes(o.id)} disabled={busy} onClick={()=>c.kind==='AIR_DEFENSE'||c.kind==='AIR_INTERCEPT'?choose([o.id]):toggle(o.id)}>{effectText(o.label)}{selected.includes(o.id)&&c.max>1?` ${selected.indexOf(o.id)+1}`:''}</button>)}</div>}
+   {(!preludeChoices&&generic&&!immediate||alternatives.length>1||loose.length>0&&!immediate&&!preludeChoices)&&<div className="guided-options">{(alternatives.length>1?c.options.filter(o=>alternatives.includes(o.id)):generic?c.options:loose).map(o=><button key={o.id} aria-pressed={selected.includes(o.id)} disabled={busy} onClick={()=>c.kind==='AIR_DEFENSE'||c.kind==='AIR_INTERCEPT'?choose([o.id]):toggle(o.id)}>{c.kind==='TRIGGER'&&alternatives.length>1?triggerTimingLabel(state,o):effectText(o.label)}{selected.includes(o.id)&&c.max>1?` ${selected.indexOf(o.id)+1}`:''}</button>)}</div>}
    {c.max>1&&<small>已选 {selected.length}/{c.max}</small>}
    {!['AIR_DEFENSE','AIR_INTERCEPT'].includes(c.kind)&&<div><button disabled={busy||!feeValid||!immediate&&(selected.length<required||selected.length>c.max)} onClick={()=>choose(immediate?['execute']:selected)}>确认</button>{canSkip&&<button disabled={busy} onClick={()=>choose([])}>跳过</button>}</div>}
   </div>
