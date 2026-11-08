@@ -30,7 +30,7 @@ export function fullTrigger(s:GameState,card:CardInstance,e:Effect,timing:'Befor
     return hit?{...score(1),oncePerTurn:true}:undefined;
   }
   if(s.rules?.balanceEnabled&&id===227)return;
-  if(s.rules?.balanceEnabled&&id===226){return timing==='After'&&phase('EARLY_TURN_START')?extra([balanceEffect(owner,'two-basic-plays')]):undefined;}
+  if(s.rules?.balanceEnabled&&id===226){return timing==='After'&&phase('TURN_START_WINDOW')&&!s.redistributed?extra([balanceEffect(owner,'two-basic-plays')]):undefined;}
   if(s.rules?.balanceEnabled&&id===145&&!(timing==='After'&&phase('DISCARD')))return;
   if(s.rules?.balanceEnabled&&timing==='After'){
 

@@ -115,6 +115,9 @@ export function realTriggers(s:GameState,frame:ResolutionFrame,e:Effect,timing:'
     rules.push({id:`${card.id}:${frame.currentEventId}`,scopeId:d.id,boundEventId:frame.currentEventId!,label:d.name,sourceInstanceId:card.id,owner,timing,on:e.label,mandatory,source:d.type==='状态'?'active':d.type==='响应'?'response':'enhancement',faceDownEnhancement:d.type==='增强'&&s.decks[owner].faceDown.some(c=>c.id===card.id),effects,cost,oncePerTurn:once,finalZone});
   }
   if(!sourceInstanceId && timing==='After' && phase('TURN_START_WINDOW') && !s.redistributed && mayReallocate(s,s.activeSeat)) rules.push({id:`resource:${frame.currentEventId}`,scopeId:'resource',label:'资源重整',sourceInstanceId:'resource',owner:s.activeSeat,timing,on:e.label,mandatory:false,source:'system',cost:reallocationCost(s),effects:[{kind:'reallocate',seat:s.activeSeat,label:'取得基本牌（含空中力量）并洗牌'}]});
+  if(s.rules?.balanceEnabled&&s.resolution?.turnUses[`${s.round}:${s.activeSeat}:turn-start-action`]){
+    for(let i=rules.length-1;i>=0;i--)if(rules[i].scopeId==='resource'||rules[i].scopeId==='special_226')rules.splice(i,1);
+  }
   // Recompute scoring candidates only after every earlier phase effect has settled.
   const scoring=(r:TriggerRule)=>r.source==='active'&&r.effects.length>0&&r.effects.every(x=>x.kind==='score'&&!x.fee);
   return !orderPhaseScores?rules:lateScore?rules.filter(scoring):phase('SCORE')?rules.filter(r=>!scoring(r)):rules;

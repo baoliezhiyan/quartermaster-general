@@ -184,6 +184,7 @@ function fire(s:GameState,w:TriggerWindow,rule:TriggerRule,rollback?:GameState) 
   }
   w.remaining=w.remaining.filter(id=>id!==rule.id);
   r.fired.push(`${w.originEventId}:${rule.id}`);
+  if(s.rules?.balanceEnabled&&(rule.scopeId==='resource'||rule.scopeId==='special_226'))r.turnUses[`${s.round}:${s.activeSeat}:turn-start-action`]=1;
   const scope=`${s.round}:${s.activeSeat}:${rule.sourceInstanceId}:${rule.scopeId??rule.id}`;
   if(rule.oncePerRound)(s.roundUses??={})[rule.sourceInstanceId]=s.round;
   r.turnUses[scope]=(r.turnUses[scope]??0)+1;
@@ -658,7 +659,7 @@ export function runResolution(s:GameState) {
 }
 export function startResolution(s:GameState,source:string,owner:SeatId,effects:Effect[],rules:TriggerRule[],cardId?:string,finalZone:FinalZone='discardPile',guided=false,rollback?:GameState) {
   if(s.resolution?.running || !SEATS.includes(owner)) return false;
-  effects=effects.flatMap((e):Effect[]=>e.kind!=='signal'?[e]:e.tag==='PHASE:TURN_START_WINDOW'?[{...e,tag:'PHASE:EARLY_TURN_START',label:'回合最开始：一日之狮'},e]:e.tag==='PHASE:SCORE'?[e,{...e,tag:'PHASE:SCORE_STATUS',label:'计分阶段末：结算加分状态'}]:[e]);
+  effects=effects.flatMap((e):Effect[]=>e.kind!=='signal'?[e]:e.tag==='PHASE:SCORE'?[e,{...e,tag:'PHASE:SCORE_STATUS',label:'计分阶段末：结算加分状态'}]:[e]);
   const probe=cardId?{...s,decks:{...s.decks,[owner]:{...s.decks[owner],hand:s.decks[owner].hand.filter(c=>c.id!==cardId)}}}:s;
   if(!canExecuteEffects(probe,effects)&&!(guided&&canPayEffectFees(probe,effects)&&
     (effects.some(e=>!e.fee)||!!s.trainingCourse&&!!cardId&&effects.length===0)))return false;

@@ -91,3 +91,11 @@ it('shuffle queue survives intermediate actions, clears on restore, and replays 
  const archive=await parseReplay(await c.exportReplay());expect(await stateHash(await new Player(archive).seek(archive.groups.at(-1)!.root.actionId,true,true))).toBe(await stateHash(c.getSnapshot()!));
  }
 });
+it.each(['lion','resource','skip'])('parallel opening action is mutually exclusive: %s',pick=>{
+ const s=game('italy');s.decks.italy.hand=[card('special_226'),...s.decks.italy.drawPile.splice(0,3)];s.phase='TURN_START_WINDOW';
+ startResolution(s,'回合开始','italy',[{kind:'signal',tag:'PHASE:TURN_START_WINDOW',label:'回合开始'}],[]);
+ const q=s.resolution!.choice!;expect(q.options.map(o=>o.label).sort()).toEqual(['一日之狮','资源重整'].sort());
+ answer(s,pick==='skip'?[]:[q.options.find(o=>o.label===(pick==='lion'?'一日之狮':'资源重整'))!.id]);
+ for(let i=0;s.resolution?.choice&&i<20;i++){const next=s.resolution.choice;expect(next.kind).not.toBe('TRIGGER');answer(s,next.options.slice(0,next.min).map(o=>o.id));}
+ expect(s.resolution!.running).toBe(false);expect(s.basicPlaysRemaining).toBe(pick==='lion'?2:undefined);expect(s.redistributed).toBe(pick==='resource');
+});
