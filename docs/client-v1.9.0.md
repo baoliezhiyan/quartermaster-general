@@ -27,15 +27,15 @@
 
 每局保存普通 seed/randomState 和 manualShuffle.seed/randomState。第二种子从初始 seed 经固定域隔离混合派生，不消耗普通随机调用；同初始种子可复现实验。卡牌效果的随机调用仍使用原流。
 
-manualShuffle.counters 为各国0至4计数，初始0；点击递增，3时加入 pending 并冻结。下一国家交接时按固定六国顺序各执行至多1次，清空 pending，计数仍为3；之后4、0、1、2、3。序章与起手阶段点击不修改计数。点击不打开结算窗口，实际洗牌不会插入进行中的卡牌/响应链。非GM投影不包含该内部状态。
+manualShuffle.counters 为各国0至4计数，初始0；点击递增，3时加入 pending 并冻结。下一国家交接时按固定六国顺序各执行至多1次，清空 pending，计数仍为3；之后4、0、1、2、3。序章与起手阶段点击不修改计数。点击走 shuffleRequest 独立请求队列，不更新局面修订号、不广播局面、不写入对局存档；实际洗牌不会插入进行中的卡牌/响应链。主机重启、回退、读档或新建对局会丢弃尚未交接的点击，已在交接提交的计数及随机状态则随存档恢复。非GM投影不包含该内部状态。
 
 按钮只显示“洗牌”，不显示内部计数。GM离线立即释放GM席位并解锁；六国席位继续保留离线绑定。大写 AI 开头的用户名在公共/国家观察者列表不展示，坐玩家或GM席位正常展示，不授予任何额外操作或信息权限。
 
 ## 存档、回放与训练边界
 
-正式协议仍为 quartermaster-match-log / formatVersion=3 / action_replay。新增无参数命令 REQUEST_SHUFFLE，仍携带普通 seat/expectedRevision（压缩记录省略网络修订号）。可选状态字段：manualShuffle（seed、randomState、counters、pending）、openingHandLimits、sovietNeutralityDrawRound。校验器验证字段范围与待洗牌计数一致性。
+正式协议仍为 quartermaster-match-log / formatVersion=3 / action_replay。旧 REQUEST_SHUFFLE 仍可重演；在线点击改为房间方法 shuffleRequest(seat)，仅校验当前对局 epoch、连接、席位权限和请求ID，不要求修订号一致。可选状态字段：manualShuffle（seed、randomState、counters、pending）、openingHandLimits、sovietNeutralityDrawRound。校验器验证字段范围与待洗牌计数一致性。
 
-开局检查点保存双种子。真实手动洗牌继续记录现有 shuffle 行的完整 cardInstanceIds 排列和 randomStreamAfter；在独立流执行上下文注入该结果，结束后恢复普通流。回退/读档同时恢复计数、队列和两套随机状态。进行中响应期间的洗牌点击作为既有动作组的输入，不截断该动作。
+开局检查点保存双种子。真实手动洗牌继续记录现有 shuffle 行的完整 cardInstanceIds 排列和 randomStreamAfter；在独立流执行上下文注入该结果，结束后恢复普通流。回退/读档同时恢复计数、队列和两套随机状态。进行中响应期间的点击不会成为记录条目。交接动作携带主机写入的 manualShuffleClicks（国家到1至5的点击数映射）；引擎只在交接处应用，回放按同一位置执行。前端不得自行提交该内部字段。轮末检查点与其继续动作之间允许同组的 shuffle 行。
 
 正式回放仍严格检查游戏版本和引擎/卡表指纹，不能将1.8.x正式局用1.9.0规则重演。资源池和真实手牌训练回放沿用现有适配器及身份校验，本次不放宽旧训练指纹，也不修改训练执行器或模型。训练同步记录见 [SYNC-LOG](training/SYNC-LOG.md)。
 
@@ -46,3 +46,5 @@ manualShuffle.counters 为各国0至4计数，初始0；点击递增，3时加�
 最终测试数量、构建身份与交付路径见本次发布说明；无PPO长训练、无真实多设备联网验收，不宣称训练端已经完成新规则适配。
 
 发布验证（2026-11-08）：完整回归1027项通过；生成最终构建指纹后，回放样例、训练读取和本版规则共31项复核通过。生产构建、291个发布文件哈希、内置Node后台服务启动及网页标题1.9.0检查通过。规则指纹：32e0ac3e8798a41d7b62cbca346760371cbdb810aee24ab02e90a08ea0455710。
+
+洗牌独立队列复核：完整回归1030项通过；最终构建身份下样例、训练读取、规则及网络队列47项通过。新规则指纹为28ff2751cc9483425eac9e5208b2dc207aa8de35b73fc3c077d2517829a3e343。此次同版本重打包仍严格校验指纹，先前构建导出的正式回放不能直接导入本构建。未执行跨真实手机/公网隧道的体验测试。

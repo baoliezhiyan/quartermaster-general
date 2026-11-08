@@ -102,7 +102,7 @@ export interface GameState {
   units: Unit[];
   events: GameEvent[];
 }
-export type Command =
+export type Command = { manualShuffleClicks?:Partial<Record<SeatId,number>> } & (
   | { type:'SET_CARD_RESPONSE'; seat:SeatId; expectedRevision:number; cardId:string; enabled:boolean }
   | { type:'ACK_RESPONSE_NOTICE'; seat:SeatId; expectedRevision:number; noticeId:string }
   | { type: 'CREATE_GAME'; gameId: string; seed: number; mode?:GameState['mode']; prelude?:boolean; neutrality?:boolean; balance?:boolean }
@@ -128,7 +128,7 @@ export type Command =
     | { type: 'RESOLVE_ENGINE_CHOICE'; guided?:boolean; choiceId: string; ids: string[] }
     | { type: 'DEBUG_DECK'; operation: 'pay' | 'force' | 'top' | 'draw'; target: SeatId; count: number; cardIds: string[] }
     | { type: 'DEBUG_PLACEMENT'; country: CountryId; unitType: 'army' | 'navy'; mode: 'build' | 'recruit'; regionId: string; optionId: string; cost: number; cardIds: string[] }
-  ));
+  )));
 export type GameEvent =
   | {type:'TRAINING_BOARD_APPLIED';revision:number;country:CountryId;action:string;
      regionId:string;attackerId?:string;defenderId?:string;airId?:string;recycleId?:string;

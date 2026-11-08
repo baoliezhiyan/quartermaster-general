@@ -81,3 +81,13 @@ it('ration offers recovery after standard Air Power but never for a status',()=>
  const q=next.resolution!.choice!;expect(q.options.some(o=>o.label==='配给')).toBe(true);answer(next,[q.options.find(o=>o.label==='配给')!.id]);finish(next);expect(next.decks.united_kingdom.drawPile.some(c=>c.id===air.id)).toBe(true);expect(next.decks.united_kingdom.discardPile.some(c=>c.id===fee.id)).toBe(true);
  const t=game('united_kingdom'),status=card('special_3');t.decks.united_kingdom.hand=[ration,fee];t.decks.united_kingdom.resolving=[status];expect(realTriggers(t,{id:'f',currentEventId:'e',cardId:status.id} as any,{kind:'signal',tag:'STANDARD_CARD_PLAYED',label:'标准打出'},'After').some(r=>r.label==='配给')).toBe(false);
 });
+it('shuffle queue survives intermediate actions, clears on restore, and replays across round checkpoints',async()=>{
+ for(const seat of ['germany','united_states'] as SeatId[]){
+ const s=game(seat);s.phase='DRAW';s.redistributed=true;const c=new LocalGameController();const save=JSON.stringify({format:'quartermaster-save',version:1,updatedAt:new Date().toISOString(),state:s,replayBase:s,rounds:[],nations:[],undo:[],commands:[]});await c.importSave(save);
+ const before=c.getSnapshot();for(let i=0;i<8;i++)c.queueManualShuffle('japan');expect(c.getSnapshot()).toBe(before);
+ await c.importSave(save);expect(await c.dispatch({type:'ADVANCE_PHASE',seat,expectedRevision:c.getSnapshot()!.revision})).toEqual({ok:true});expect(c.getSnapshot()!.manualShuffle!.counters.japan).toBeUndefined();
+ await c.importSave(save);for(let i=0;i<8;i++)c.queueManualShuffle('japan');
+ expect(await c.dispatch({type:'ADVANCE_PHASE',seat,expectedRevision:c.getSnapshot()!.revision})).toEqual({ok:true});expect(c.getSnapshot()!.manualShuffle!.counters.japan).toBe(3);
+ const archive=await parseReplay(await c.exportReplay());expect(await stateHash(await new Player(archive).seek(archive.groups.at(-1)!.root.actionId,true,true))).toBe(await stateHash(c.getSnapshot()!));
+ }
+});

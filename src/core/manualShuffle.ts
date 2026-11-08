@@ -32,3 +32,17 @@ export function executeManualShuffles(s:GameState){
   fact(s,'manual_shuffle','玩家洗牌',{seat,cardIds:s.decks[seat].drawPile.map(c=>c.id),randomState:m.randomState});
  }
 }
+
+// Scoped host input, consumed only at a national handover. Never retained in a live snapshot.
+let queuedClicks:Partial<Record<SeatId,number>>|undefined;
+let onConsumed:(()=>void)|undefined;
+export function withManualShuffleClicks<T>(clicks:Partial<Record<SeatId,number>>,run:()=>T,consumed?:()=>void):T {
+ const old=queuedClicks,oldConsumed=onConsumed;queuedClicks=clicks;onConsumed=consumed;
+ try{return run();}finally{queuedClicks=old;onConsumed=oldConsumed;}
+}
+export function applyQueuedManualShuffleClicks(s:GameState){
+ if(!queuedClicks)return;
+ const clicks=queuedClicks,done=onConsumed;queuedClicks=undefined;onConsumed=undefined;
+ for(const seat of SEATS)for(let i=0;i<(clicks[seat]??0);i++)requestManualShuffle(s,seat);
+ done?.();
+}

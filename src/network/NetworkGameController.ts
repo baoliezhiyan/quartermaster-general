@@ -83,8 +83,14 @@ export class NetworkGameController implements GameController {
   };
   ws.onclose=()=>{if(this.stopped||ws!==this.socket)return;this.info={...this.info,room:{...this.info.room!,connected:false,error:'连接中断，正在重新连接…'}};this.emit();setTimeout(()=>this.stream(),1500);};
  }
+ private shuffleTail:Promise<unknown>=Promise.resolve();
  async request<T=void>(method:string,...args:unknown[]):Promise<T>{
   if(!this.info.room?.connected)throw new Error('尚未连接，不能操作。');
+  if(method==='shuffleRequest'){
+   const request:RoomRequest={id:crypto.randomUUID(),connection:this.connection,epoch:this.info.room.epoch,revision:null,method,args};
+   const pending=this.shuffleTail.catch(()=>{}).then(()=>this.transmit(request));this.shuffleTail=pending;
+   try{return await pending as T;}catch(e){if((e as {uncertain?:boolean}).uncertain)throw Error('洗牌请求未能确认，请等待网络恢复；正常出牌不受影响。');throw e;}
+  }
   if(this.inFlight||this.recovering)throw new Error('上一项操作正在提交，请稍候。');
   if(this.uncertain){void this.recover();throw new Error('正在核对上次提交，请稍候再操作。');}
   const command=method==='dispatch'?args[0] as Command:null;

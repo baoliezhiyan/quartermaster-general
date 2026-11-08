@@ -47,6 +47,7 @@ export interface Action {
     | 'resource_reorganize' | 'phase_advance' | 'editor_change';
   decisionSeat: Seat; sourceSeat?: Seat; unitCountry?: string;
   cardInstanceId?: string; cardDefinitionId?: string;
+  // 1.9.0: optional manualShuffleClicks maps SeatId to 1..5; host-only, consumed at national handover.
   input: ObjectData; // 仅启动动作所需参数，不含已保存于choices中的重复答案。
   choices: Choice[];
   interventions: Array<{ at: Anchor; order: number; action: Action }>;

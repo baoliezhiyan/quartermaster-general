@@ -88,3 +88,10 @@ it('reports an export error as a download failure without marking game actions u
  const f=fixture();vi.stubGlobal('fetch',vi.fn(async()=>({ok:false,json:async()=>({error:'此功能仅GM可用。'})})));
  await expect(f.controller.exportSave()).rejects.toThrow('仅GM');expect(f.controller.getSessionInfo().room?.error).toBeUndefined();f.controller.close();
 });
+it('shuffle transport does not block or wait for gameplay submissions and retries with one ID',async()=>{
+ const f=fixture();let release!:()=>void;const gate=new Promise<void>(r=>release=r),ids:string[]=[];
+ vi.stubGlobal('fetch',vi.fn(async(_url,options)=>{const body=JSON.parse(options.body);if(body.method==='shuffleRequest'){ids.push(body.id);if(ids.length===1){await gate;throw Error('lost');}return{json:async()=>({ok:true,result:null})};}return{json:async()=>({ok:true,result:{ok:true}})};}));
+ const shuffle=f.controller.request('shuffleRequest','germany');
+ expect(await f.controller.dispatch({type:'ADVANCE_PHASE',seat:'germany',expectedRevision:0})).toEqual({ok:true});
+ release();await shuffle;expect(ids).toHaveLength(2);expect(new Set(ids).size).toBe(1);expect(f.controller.getSnapshot()!.revision).toBe(0);f.controller.close();
+});

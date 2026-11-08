@@ -1,4 +1,4 @@
-import {initializeManualShuffle,requestManualShuffle,executeManualShuffles} from './manualShuffle';
+import {initializeManualShuffle,requestManualShuffle,executeManualShuffles,withManualShuffleClicks,applyQueuedManualShuffleClicks} from './manualShuffle';
 import {rememberPublicDiscards,publicDiscard} from './publicHistory';
 import {fact} from './factObserver';
 import {nextUnitId,replayBoundary} from './replayHooks';
@@ -156,6 +156,7 @@ function nextTurn(state: GameState,skipReplayBoundary=false) {
   const index = SEATS.indexOf(state.activeSeat);
   if(index===5){const totals=allianceScores(state);if(Math.abs(totals.axis-totals.allies)>=30){finish(state,totals.axis>totals.allies?'AXIS_LEAD':'ALLIES_LEAD');replayBoundary(state,'round_end',state.round);return;}}
   if (index === 5 && state.round === 20) { finish(state,'TWENTY_ROUNDS'); replayBoundary(state,'round_end',state.round);return; }
+  applyQueuedManualShuffleClicks(state);
   if(index===5&&!skipReplayBoundary&&replayBoundary(state,'round_end',state.round))return;
   executeManualShuffles(state);
   if (index === 5) state.round++;
@@ -232,7 +233,7 @@ function applyPlacement(state: GameState, plan: PlacementPlan) {
 
 /** Validates an entire command before committing a cloned state. UI never writes rules. */
 export function transition(state: GameState | null, command: Command): Transition {
-  const result=transitionInternal(state,command);
+  const result=command?.manualShuffleClicks?withManualShuffleClicks(command.manualShuffleClicks,()=>transitionInternal(state,command)):transitionInternal(state,command);
   if(result.ok&&result.state!==state&&!['SET_VIEW','ACK_RESPONSE_NOTICE','SET_CARD_RESPONSE'].includes(command.type))checkNeutralitySupply(result.state);
   if(result.ok&&result.state.neutralityStatusPending&&!result.state.resolution?.running)startResolution(result.state,'中立规则参战结算',result.state.activeSeat,[{kind:'trace',label:'参战状态牌结算完成'}],[]);
   if(result.ok&&result.state!==state){const s=result.state;s.publicDiscardHistory={...s.publicDiscardHistory};for(const seat of Object.keys(state?.decks??{}) as SeatId[]){const cards=publicDiscard(state!,seat);if(cards.length)(s.publicDiscardHistory??={})[seat]=[...new Map([...cards,...(s.publicDiscardHistory?.[seat]??[])].map(c=>[c.id,c])).values()];}rememberPublicDiscards(s);concealPublic(s,Object.values(s.decks).flatMap(d=>[...d.hand,...d.drawPile,...d.faceDown.filter(c=>!s.faceUpResponseIds?.includes(c.id)),...d.removed]).map(c=>c.id));}

@@ -184,3 +184,8 @@ shuffle行是独立磁盘记录及可显示的洗牌条目。回放到该确切�
 所有引擎选择（包含空 TRIGGER 答案）都记录完整 compactCommand，保留 guided。UI 视角切换仍不进入规则记录。
 `editor_change` 仅可作为独立根动作，输入 `{type:'EDITOR_STATE', beforeHash: SHA256, state: Snapshot}`，无选择、子响应或随机记录。它是普通动作不得内嵌快照的特例：GM 可改变多个场景字段，封存经服务器验证的完整后状态更可靠。重演先校验前摘要和同局 gameId，再 restore 并检查 afterHash。不得据文件控制动作向真实房间发起编辑。
 游戏版本和构建指纹继续严格校验；这不使旧正式回放跨版本可导入。v4 真实手牌只读身份策略另见 client-v1.8.3.md。
+
+
+### 1.9.0 手动洗牌队列补充
+
+点击使用房间独立请求，不进入动作日志。主机在实际发生国家交接的命令输入中附加可选 `manualShuffleClicks: Partial<Record<SeatId, number>>`，仅接受六国ID以及1至5整数。此字段只在交接处推进隐藏计数和待洗牌队列；实际排列仍使用 shuffle 行。正常网络游戏命令不能提交此内部字段。轮末检查点之后、CONTINUE_BOUNDARY 动作行之前可能出现属于该继续动作的 shuffle 行，校验时跳过这些同组随机行寻找对应检查点，不允许跨过其他动作或其他组随机行。

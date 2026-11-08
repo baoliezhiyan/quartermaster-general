@@ -1,3 +1,4 @@
+import {withManualShuffleClicks} from '../core/manualShuffle';
 import {diffValue} from '../network/jsonPatch';
 import {recordSceneEdit} from '../actionReplay/recorder';
 import {rememberPublicDiscards} from '../core/publicHistory';
@@ -38,6 +39,14 @@ function copySession(s:SaveSession):SaveSession {
 export class LocalGameController implements GameController {
   setFactControllers=(_controllers:import('../matchLog/contract').ControllerMap,_participants:import('../matchLog/contract').Controller[])=>{};
   recordControllerChange=async()=>{};
+  private shuffleClicks:Partial<Record<import('../core/types').SeatId,number>>={};
+  queueManualShuffle=(seat:import('../core/types').SeatId)=>{
+    const s=this.state;if(!s||this.playback||s.status!=='PLAYING'||s.prelude?.active||s.phase==='SETUP')return;
+    const m=s.manualShuffle;if(m?.pending.includes(seat))return;
+    const count=this.shuffleClicks[seat]??0,initial=m?.counters[seat]??0;
+    if(count&&((initial+count)%5)===3)return;
+    this.shuffleClicks[seat]=count+1;
+  };
   private playback:{file:ReplayFile;cursor:number;entries:ReplayEntry[]}|null=null;
   private access:RoomAccess={kind:'gm'};
   setRoomAccess=(access:RoomAccess)=>{if(this.playback&&access.kind==='player')return;this.access=structuredClone(access);};
@@ -99,6 +108,10 @@ export class LocalGameController implements GameController {
   dispatchFromRoom=(command:Command):Promise<DispatchResult>=>this.dispatchCommand(command,true);
   private dispatchCommand=(command:Command,alignRoomView:boolean):Promise<DispatchResult>=>{
     const input=structuredClone(command);
+    if(input.type==='REQUEST_SHUFFLE')return this.enqueue(async()=>{
+      if(this.readOnly||this.access.kind==='player'&&this.access.seat!==input.seat)return {ok:false,error:'WRONG_OPERATOR'} as DispatchResult;
+      this.queueManualShuffle(input.seat);return {ok:true};
+    });
     return this.enqueue(async()=>{
       if(this.playback&&input.type==='SET_VIEW'){
         if(!this.state||input.expectedRevision!==this.state.revision)return {ok:false,error:'STALE_REVISION'} as DispatchResult;
@@ -117,10 +130,13 @@ export class LocalGameController implements GameController {
         }
       }
       const captures:Capture[]=[];
-      const result=measure('engine_transition',()=>captureTransition(captures,()=>transition(base,input)));
+      const clicks={...this.shuffleClicks};let shuffleConsumed=false;
+      const result=measure('engine_transition',()=>captureTransition(captures,()=>withManualShuffleClicks(clicks,()=>transition(base,input),()=>{shuffleConsumed=true;})));
+      if(shuffleConsumed&&Object.keys(clicks).length)input.manualShuffleClicks=clicks;
       if(!result.ok){this.failures.push({command:input,error:result.error});this.failures=this.failures.slice(-20);return result;}
       if(result.state===this.state)return {ok:true};
       const next=result.state,old=base;
+      if(shuffleConsumed||input.type==='CREATE_GAME')this.shuffleClicks={};
       if(input.type==='CREATE_GAME'){this.playback=null;this.failures=[];if(this.access.kind!=='player')this.access={kind:'gm'};}
       const session=input.type==='CREATE_GAME'||!this.session?this.fresh(next):measure('clone_session',()=>copySession(this.session!));
       if(input.type==='CREATE_GAME'&&next.prelude?.active)this.checkpoint(session,next);
@@ -157,6 +173,7 @@ export class LocalGameController implements GameController {
       }
       for(const f of s.resolution?.frames??[]){if(f.rollback)upgrade(f.rollback);if(f.extraRollback)upgrade(f.extraRollback);}
     };upgrade(restored);
+    this.shuffleClicks={};
     restored.revision=Math.max(this.state?.revision??0,restored.revision)+1;
     session.recovery!.steps.push({kind:'restore',reason,state:structuredClone(restored)});
     session.state=restored;session.replayBase=structuredClone(restored);session.commands=[];
@@ -224,6 +241,7 @@ export class LocalGameController implements GameController {
   };
   /** Trusted journal recovery retains the host archive; browser saves never supply it. */
   restoreHostSession=(text:string)=>this.enqueue(async()=>{
+    this.shuffleClicks={};
     const session=validateSession(JSON.parse(text));
     if(session.actionRecording)await validateRecords(session.actionRecording.records,false);
     this.persistedVersions.set(session.state.gameId,session.updatedAt);
@@ -232,6 +250,7 @@ export class LocalGameController implements GameController {
     await this.commit(session);
   });
   importSave=(json:string)=>this.enqueue(async()=>{
+    this.shuffleClicks={};
     if(json.trimStart().startsWith('{')&&json.split('\n',1)[0].includes('quartermaster-match-log')){
       const loaded=await readHistorySave(json),session=this.fresh(loaded.state);
       session.actionRecording=loaded.recording;session.rounds=loaded.rounds;session.nations=loaded.nations;session.historyPoints=loaded.points;

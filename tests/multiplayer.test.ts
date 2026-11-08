@@ -314,3 +314,19 @@ it('chat tones are assigned at send time and surviving messages retain them afte
  await gm.call('chatSend','d');expect(gm.snapshot.room.chat!.map(m=>m.tone)).toEqual([0,1,1]);
  await gm.call('chatDelete',gm.snapshot.room.chat![0].id);expect(gm.snapshot.room.chat![0]).toEqual(middle);
 });
+it('shuffle clicks do not revise, save, broadcast or invalidate an already prepared command',async()=>{
+ const f=await fixture(),gm=await f.join('GM'),de=await f.join('德国');await gm.call('seat',{kind:'gm'});await de.call('seat',{kind:'player',seat:'germany'});
+ const s=createGame('queue',18,'FULL',false,false,true);s.status='PLAYING';s.round=1;s.phase='DRAW';s.redistributed=true;for(const d of Object.values(s.decks)){d.drawPile.push(...d.hand,...d.active,...d.faceDown);d.hand=[];d.active=[];d.faceDown=[];}
+ await gm.call('importSave',JSON.stringify({format:'quartermaster-save',version:1,updatedAt:new Date().toISOString(),state:s,replayBase:s,rounds:[],nations:[],undo:[],commands:[]}));
+ const old=gm.snapshot,stored=f.saved,request=de.request('dispatch',{type:'ADVANCE_PHASE',seat:'germany',expectedRevision:de.snapshot.state!.revision});
+ const click=de.request('shuffleRequest','germany');click.revision=-100;
+ await de.raw(click);await de.raw(click);await de.call('shuffleRequest','germany');await de.call('shuffleRequest','germany');
+ expect(gm.snapshot).toBe(old);expect(f.saved).toBe(stored);
+ await expect(de.raw(request)).resolves.toMatchObject({ok:true});
+ expect(gm.snapshot.state!.manualShuffle!.counters.germany).toBe(3);expect(gm.snapshot.state!.manualShuffle!.pending).toEqual([]);
+ expect(gm.snapshot.state!.decks.germany.drawPile.map(c=>c.id)).not.toEqual(s.decks.germany.drawPile.map(c=>c.id));
+ const archive=await parseReplay(await gm.call('exportReplay') as string);expect(archive.groups.some(g=>g.root.input.type==='REQUEST_SHUFFLE')).toBe(false);
+ expect((await lastState(archive)).manualShuffle).toEqual(gm.snapshot.state!.manualShuffle);
+ const stale=de.request('shuffleRequest','germany');stale.epoch='old-game';await expect(de.raw(stale)).rejects.toThrow('对局已切换');
+ await expect(de.call('shuffleRequest','italy')).rejects.toThrow('不能操作');
+});

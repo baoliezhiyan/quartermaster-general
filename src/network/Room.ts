@@ -127,7 +127,14 @@ export class Room {
   const fingerprint=JSON.stringify([r.epoch,r.revision,r.decision,r.method,r.args]);const old=u.results.get(r.id);
   if(old){if(old.fingerprint!==fingerprint)throw new Error('请求编号重复。');return old.value;}
   let value:unknown;
-  if(['chatSend','chatDelete','chatClear'].includes(r.method)){
+  if(r.method==='shuffleRequest'||r.method==='dispatch'&&(r.args[0] as any)?.type==='REQUEST_SHUFFLE'){
+   const state=this.engine.getSnapshot(),seat=r.method==='shuffleRequest'?r.args[0]:(r.args[0] as any).seat;
+   if(!state||r.epoch!==this.epoch)throw Error('对局已切换，请刷新后重试。');
+   if(!SEATS.includes(seat as SeatId)||u.access.kind!=='gm'&&(u.access.kind!=='player'||u.access.seat!==seat))throw Error('不能操作其他国家。');
+   if(this.sceneLocked&&u.access.kind!=='gm')throw Error('GM已锁定场景，请等待解锁。');
+   this.engine.queueManualShuffle(seat as SeatId);
+   u.results.set(r.id,{fingerprint,value:null});return null;
+  }else if(['chatSend','chatDelete','chatClear'].includes(r.method)){
    await this.chatReady;let next:ChatMessage[];
    if(r.method==='chatSend'){
     const text=r.args[0];if(typeof text!=='string'||!text.trim()||Array.from(text).length>300)throw Error('消息不能为空或超过300字。');
@@ -179,7 +186,7 @@ export class Room {
    if(r.method==='metrics')return null;
    if(r.method==='replayEntries'){if(!gm)throw Error('此功能仅GM可用。');return this.engine.getSessionInfo().replayEntries;}
    if(r.method==='dispatch'){
-    const c=structuredClone(r.args[0]) as Command;if(!c||typeof c.type!=='string')throw new Error('无效操作。');
+    const c=structuredClone(r.args[0]) as Command;if(c&&'manualShuffleClicks' in c)throw Error('不能提交内部洗牌队列。');if(!c||typeof c.type!=='string')throw new Error('无效操作。');
     if(c.type==='CREATE_GAME'){if(!gm)throw new Error('只有GM可以新建对局。');c.mode='FULL';}
     else {
      if(!gm&&(u.access.kind!=='player'||c.seat!==u.access.seat))throw new Error('不能操作其他国家。');

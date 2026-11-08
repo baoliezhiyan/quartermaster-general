@@ -12,10 +12,10 @@ export function validateInput(v:any){
   require(Object.keys(v).every(k=>['type','beforeHash','state'].includes(k))&&/^[a-f0-9]{64}$/.test(v.beforeHash),'场景编辑控制参数非法');snap(v.state);return;
  }
  require(object(v)&&typeof v.type==='string'&&!!fields[v.type],'不支持的动作命令');
- require(Object.keys(v).every(k=>k==='type'||fields[v.type].includes(k)),'动作含多余字段或快照');
+ require(Object.keys(v).every(k=>k==='type'||k==='manualShuffleClicks'||fields[v.type].includes(k)),'动作含多余字段或快照');
  const required:Record<string,string[]>={REQUEST_SHUFFLE:[],KEEP_OPENING:['cardIds'],DISCARD_HAND:['cardIds'],PLAY_PRELUDE:['cardId'],PLAY_BASIC:['cardId','optionId'],MOVE_AIR:['cardId','optionId'],PLAY_CARD:['cardId','effectIndices','targetIds'],STATUS_ACTION:['cardId'],RESOLVE_ENGINE_CHOICE:['ids'],REDISTRIBUTE:['cardIds','takeCardId'],SELECT_AIR_ACTION:['action'],RELOCATE_AIR:['regionId'],RESOLVE_FORCED_DISCARD:['cardIds'],SET_INTERRUPTS:['enabled'],SET_CARD_RESPONSE:['cardId','enabled']};
  require((required[v.type]??[]).every(k=>k in v),'动作缺少必需参数');
- for(const [k,x]of Object.entries(v)){if(k==='type')continue;if(['cardIds','ids','targetIds'].includes(k))require(Array.isArray(x)&&x.length<=1000&&x.every(text),'无效的卡牌/目标选择');else if(k==='effectIndices')require(Array.isArray(x)&&x.every(integer),'效果序号无效');else if(['guided','enabled'].includes(k))require(typeof x==='boolean','布尔字段无效');else require(x===null||text(x),'动作参数类型错误');}
+ for(const [k,x]of Object.entries(v)){if(k==='type')continue;if(k==='manualShuffleClicks'){require(object(x)&&Object.entries(x as object).every(([seat,n])=>SEATS.includes(seat as any)&&integer(n)&&Number(n)>=1&&Number(n)<=5),'洗牌队列无效');continue;}if(['cardIds','ids','targetIds'].includes(k))require(Array.isArray(x)&&x.length<=1000&&x.every(text),'无效的卡牌/目标选择');else if(k==='effectIndices')require(Array.isArray(x)&&x.every(integer),'效果序号无效');else if(['guided','enabled'].includes(k))require(typeof x==='boolean','布尔字段无效');else require(x===null||text(x),'动作参数类型错误');}
  if(v.type==='CONTINUE_BOUNDARY')require(['formal_start','round_end'].includes(v.boundary),'检查点继续位置无效');
 }
 function anchor(v:Anchor){require(object(v)&&text(v.actionId)&&Array.isArray(v.effectPath)&&v.effectPath.length<=100&&v.effectPath.every(text)&&text(v.timing)&&integer(v.occurrence),'动作锚点损坏');}
@@ -52,7 +52,7 @@ export async function validateRecords(records:RecordLine[],requireEnd=true):Prom
   }else if(r.type==='action_group'){
    require(!seen.has(r.groupId)&&['prelude','opening','formal'].includes(r.stage)&&integer(r.round),'动作组无效');seen.add(r.groupId);require(groups.at(-1)?.status!=='pending','pending 只能在执行顺序末尾');
    const os=new Set<number>(),ids=new Set<string>();action(r.root,ids,os);for(const id of ids){require(!seen.has(id),'重复动作 ID');seen.add(id);}owners.set(r.groupId,ids);orders.set(r.groupId,os);groups.push(r);
-   if(r.root.input.type==='CONTINUE_BOUNDARY'){const prior=records[i-1];require(prior.type==='checkpoint'&&prior.boundary===r.root.input.boundary,'缺少继续动作对应的检查点');}
+   if(r.root.input.type==='CONTINUE_BOUNDARY'){let j=i-1;while(j>=0&&records[j].type==='shuffle'&&(records[j] as any).groupId===r.groupId)j--;const prior=records[j];require(prior?.type==='checkpoint'&&prior.boundary===r.root.input.boundary,'缺少继续动作对应的检查点');}
    if(r.status==='pending'){anchor(r.frontier.at);require(ids.has(r.frontier.at.actionId),'frontier 动作不存在');require(!('afterHash'in r),'pending 不得携带 afterHash');}else require(r.status==='complete'&&!('frontier'in r),'动作完成状态无效');
   }else if(r.type==='shuffle'){
    require(text(r.shuffleId)&&!seen.has(r.shuffleId)&&Array.isArray(r.cardInstanceIds)&&r.cardInstanceIds.every(text)&&new Set(r.cardInstanceIds).size===r.cardInstanceIds.length&&SEATS.includes(r.owner)&&text(r.zone),'洗牌记录无效');seen.add(r.shuffleId);anchor(r.at);require(integer(r.randomStreamAfter?.randomState),'缺少洗牌后随机流');
@@ -74,3 +74,4 @@ export async function seal(records:Exclude<RecordLine,End>[],finished=false,winn
  const end:End={type:'end',seq:records.length,recordingRevision:h.recordingRevision,status:finished?'finished':'ongoing',lastCompleteGroupId:groups.filter(g=>g.status==='complete').at(-1)?.groupId??null,...(groups.at(-1)?.status==='pending'?{pendingGroupId:groups.at(-1)!.groupId}:{}),...(winner?{winner}:{}),contentHash:await hashText(prefix)};
  return prefix+JSON.stringify(end)+'\n';
 }
+
